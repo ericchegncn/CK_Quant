@@ -33,7 +33,7 @@ from freqtrade.exceptions import (
 from freqtrade.freqtradebot import FreqtradeBot
 from freqtrade.persistence import Order, PairLocks, Trade
 from freqtrade.plugins.protections.iprotection import ProtectionReturn
-from freqtrade.util.datetime_helpers import dt_now, dt_utc
+from freqtrade.util.datetime_helpers import dt_now, dt_ts, dt_utc
 from freqtrade.worker import Worker
 from tests.conftest import (
     EXMS,
@@ -4835,6 +4835,148 @@ def test_handle_onexchange_order(mocker, default_conf_usdt, limit_order, is_shor
     assert len(trade.orders) == 2
     assert trade.is_open is False
     assert trade.exit_reason == ExitType.SOLD_ON_EXCHANGE.value
+
+
+@pytest.mark.usefixtures("init_persistence")
+def test_handle_onexchange_order_ignores_previous_trade_order(
+    mocker, default_conf_usdt, limit_order, caplog
+):
+    """
+    A rapid stop-and-reverse leaves the previous exit inside the recovery
+    lookback window.  It must not be replayed as an entry for the new trade.
+    """
+    default_conf_usdt["dry_run"] = False
+    freqtrade = get_patched_freqtradebot(mocker, default_conf_usdt)
+    mock_uts = mocker.spy(freqtrade, "update_trade_state")
+
+    current_entry = deepcopy(limit_order["buy"])
+    previous_exit = deepcopy(limit_order["sell"])
+    now = dt_now()
+    current_entry.update({"id": "current-entry", "timestamp": dt_ts(now)})
+    previous_exit.update(
+        {
+            "id": "previous-trade-exit",
+            "side": "buy",
+            "timestamp": dt_ts(now - timedelta(seconds=5)),
+            "lastTradeTimestamp": dt_ts(now - timedelta(seconds=5)),
+        }
+    )
+    mocker.patch(
+        f"{EXMS}.fetch_orders",
+        return_value=[current_entry, previous_exit],
+    )
+
+    trade = Trade(
+        pair="ETH/USDT",
+        fee_open=0.001,
+        fee_close=0.001,
+        open_rate=current_entry["price"],
+        open_date=now,
+        stake_amount=current_entry["cost"],
+        amount=current_entry["amount"],
+        exchange="binance",
+        is_short=False,
+        leverage=1,
+    )
+    trade.orders.append(Order.parse_from_ccxt_object(current_entry, trade.pair, "buy"))
+    Trade.session.add(trade)
+    Trade.commit()
+
+    freqtrade.handle_onexchange_order(trade)
+
+    assert len(trade.orders) == 1
+    assert mock_uts.call_count == 1
+    assert log_has_re(r"Ignoring recovered order previous-trade-exit.*predates", caplog)
+
+
+@pytest.mark.usefixtures("init_persistence")
+def test_handle_onexchange_order_keeps_existing_order_owner(
+    mocker, default_conf_usdt, limit_order, caplog
+):
+    """A globally known exchange order can never migrate to another trade."""
+    default_conf_usdt["dry_run"] = False
+    freqtrade = get_patched_freqtradebot(mocker, default_conf_usdt)
+    now = dt_now()
+
+    previous_order = deepcopy(limit_order["sell"])
+    previous_order.update(
+        {
+            "id": "already-owned",
+            "timestamp": dt_ts(now),
+            "lastTradeTimestamp": dt_ts(now),
+        }
+    )
+    previous_trade = Trade(
+        pair="ETH/USDT",
+        fee_open=0.001,
+        fee_close=0.001,
+        open_rate=previous_order["price"],
+        open_date=now - timedelta(minutes=5),
+        stake_amount=previous_order["cost"],
+        amount=previous_order["amount"],
+        exchange="binance",
+        is_short=False,
+        leverage=1,
+        is_open=False,
+    )
+    previous_trade.orders.append(
+        Order.parse_from_ccxt_object(previous_order, previous_trade.pair, "sell")
+    )
+
+    current_entry = deepcopy(limit_order["buy"])
+    current_entry.update({"id": "new-entry", "timestamp": dt_ts(now)})
+    current_trade = Trade(
+        pair="ETH/USDT",
+        fee_open=0.001,
+        fee_close=0.001,
+        open_rate=current_entry["price"],
+        open_date=now,
+        stake_amount=current_entry["cost"],
+        amount=current_entry["amount"],
+        exchange="binance",
+        is_short=False,
+        leverage=1,
+    )
+    current_trade.orders.append(
+        Order.parse_from_ccxt_object(current_entry, current_trade.pair, "buy")
+    )
+    Trade.session.add_all([previous_trade, current_trade])
+    Trade.commit()
+    mocker.patch(f"{EXMS}.fetch_orders", return_value=[previous_order])
+    mock_uts = mocker.spy(freqtrade, "update_trade_state")
+
+    freqtrade.handle_onexchange_order(current_trade)
+
+    assert len(current_trade.orders) == 1
+    assert previous_trade.orders[0].ft_trade_id == previous_trade.id
+    assert mock_uts.call_count == 0
+    assert log_has_re(r"Ignoring recovered order already-owned.*already belongs", caplog)
+
+
+@pytest.mark.usefixtures("init_persistence")
+def test_handle_onexchange_order_rolls_back_failed_recovery(
+    mocker, default_conf_usdt, limit_order
+):
+    default_conf_usdt["dry_run"] = False
+    freqtrade = get_patched_freqtradebot(mocker, default_conf_usdt)
+    mocker.patch(f"{EXMS}.fetch_orders", side_effect=RuntimeError("recovery failed"))
+    rollback = mocker.patch.object(Trade, "rollback")
+    entry_order = limit_order["buy"]
+    trade = Trade(
+        pair="ETH/USDT",
+        fee_open=0.001,
+        fee_close=0.001,
+        open_rate=entry_order["price"],
+        open_date=dt_now(),
+        stake_amount=entry_order["cost"],
+        amount=entry_order["amount"],
+        exchange="binance",
+        is_short=False,
+        leverage=1,
+    )
+
+    assert freqtrade.handle_onexchange_order(trade) is False
+    rollback.assert_called_once_with()
 
 
 @pytest.mark.usefixtures("init_persistence")

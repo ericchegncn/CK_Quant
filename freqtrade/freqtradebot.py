@@ -14,6 +14,7 @@ from typing import Any
 from schedule import Scheduler
 
 from freqtrade import constants
+from freqtrade.ck_quant.iceberg import IcebergSettings
 from freqtrade.configuration import remove_exchange_credentials, validate_config_consistency
 from freqtrade.constants import BuySell, Config, EntryExecuteMode, ExchangeConfig, LongShort
 from freqtrade.data.converter import order_book_to_dataframe
@@ -68,6 +69,9 @@ from freqtrade.wallets import Wallets
 
 
 logger = logging.getLogger(__name__)
+
+ICEBERG_ENTRY_KEY = "ckq_iceberg_entry"
+ICEBERG_EXIT_KEY = "ckq_iceberg_exit"
 
 
 class FreqtradeBot(LoggingMixin):
@@ -297,6 +301,11 @@ class FreqtradeBot(LoggingMixin):
             self.exit_positions(trades)
             Trade.commit()
 
+        # Replenish at most one child per trade and process loop.  This runs
+        # after regular exits so a stop or reversal always takes precedence.
+        with self._exit_lock:
+            self.process_iceberg_orders()
+
         # Check if we need to adjust our current positions before attempting to enter new trades.
         if self.strategy.position_adjustment_enable:
             with self._exit_lock:
@@ -363,6 +372,116 @@ class FreqtradeBot(LoggingMixin):
         """
         open_trades = Trade.get_open_trade_count()
         return max(0, self.config["max_open_trades"] - open_trades)
+
+    def _iceberg_ready(self, trade: Trade, side: BuySell, interval: float) -> bool:
+        orders = [order for order in trade.orders if order.ft_order_side == side]
+        if any(order.ft_is_open for order in orders):
+            return False
+        filled_dates = [order.order_filled_utc for order in orders if order.order_filled_utc]
+        return not filled_dates or (dt_now() - max(filled_dates)).total_seconds() >= interval
+
+    def _iceberg_entry_slice(
+        self,
+        trade: Trade | None,
+        mode: EntryExecuteMode,
+        stake_amount: float,
+        amount_requested: float,
+        rate: float,
+        leverage: float,
+    ) -> tuple[float, float, bool]:
+        iceberg = IcebergSettings.from_config(self.config)
+        if not iceberg.enabled or not iceberg.entry or mode == "replace":
+            return stake_amount, amount_requested, False
+
+        entry_plan = trade.get_custom_data(ICEBERG_ENTRY_KEY) if trade else None
+        total_amount = float(entry_plan["target_amount"]) if entry_plan else amount_requested
+        total_stake = total_amount * rate / leverage
+        child_stake = iceberg.slice_stake(stake_amount, total_stake)
+        child_amount = child_stake * leverage / rate
+        return child_stake, min(amount_requested, child_amount), child_amount < amount_requested
+
+    def _iceberg_exit_slice(
+        self,
+        trade: Trade,
+        amount: float,
+        rate: float,
+        exit_type: ExitType,
+        iceberg_replenishment: bool,
+    ) -> tuple[float, bool]:
+        iceberg = IcebergSettings.from_config(self.config)
+        allowed = exit_type in (ExitType.EXIT_SIGNAL, ExitType.CUSTOM_EXIT)
+        if not iceberg.enabled or not iceberg.exit or not allowed or iceberg_replenishment:
+            return amount, False
+
+        exit_plan = trade.get_custom_data(ICEBERG_EXIT_KEY)
+        target_amount = float(exit_plan["target_amount"]) if exit_plan else amount
+        remaining_stake = amount * rate / trade.leverage
+        total_stake = target_amount * rate / trade.leverage
+        child_stake = iceberg.slice_stake(remaining_stake, total_stake)
+        child_amount = min(amount, child_stake * trade.leverage / rate)
+        return child_amount, child_amount < amount
+
+    def process_iceberg_orders(self) -> None:
+        """Continue persisted synthetic iceberg entries and exits."""
+        settings = IcebergSettings.from_config(self.config)
+        if not settings.enabled:
+            return
+
+        for trade in Trade.get_open_trades():
+            exit_plan = trade.get_custom_data(ICEBERG_EXIT_KEY)
+            if exit_plan and settings.exit:
+                if not self._iceberg_ready(
+                    trade, trade.exit_side, settings.replenish_interval
+                ):
+                    continue
+                rate = self.exchange.get_rate(
+                    trade.pair, side="exit", is_short=trade.is_short, refresh=True
+                )
+                remaining_stake = (trade.amount * rate) / trade.leverage
+                total_stake = (
+                    float(exit_plan["target_amount"]) * rate / trade.leverage
+                )
+                child_stake = settings.slice_stake(remaining_stake, total_stake)
+                child_amount = min(trade.amount, child_stake * trade.leverage / rate)
+                exit_type = ExitType(exit_plan["exit_type"])
+                self.execute_trade_exit(
+                    trade,
+                    rate,
+                    ExitCheckTuple(exit_type, exit_plan["reason"]),
+                    ordertype=exit_plan["order_type"],
+                    sub_trade_amt=child_amount,
+                    skip_custom_exit_price=True,
+                    iceberg_replenishment=True,
+                )
+                continue
+
+            entry_plan = trade.get_custom_data(ICEBERG_ENTRY_KEY)
+            if not entry_plan or not settings.entry or trade.exit_reason:
+                continue
+            if not self._iceberg_ready(
+                trade, trade.entry_side, settings.replenish_interval
+            ):
+                continue
+
+            target_amount = float(entry_plan["target_amount"])
+            remaining_amount = max(0.0, target_amount - trade.amount)
+            if remaining_amount <= target_amount * 1e-8:
+                trade.set_custom_data(ICEBERG_ENTRY_KEY, None)
+                continue
+
+            rate = self.exchange.get_rate(
+                trade.pair, side="entry", is_short=trade.is_short, refresh=True
+            )
+            remaining_stake = remaining_amount * rate / trade.leverage
+            self.execute_entry(
+                trade.pair,
+                remaining_stake,
+                price=rate,
+                is_short=trade.is_short,
+                enter_tag=trade.enter_tag,
+                trade=trade,
+                mode="pos_adjust",
+            )
 
     def update_all_liquidation_prices(self) -> None:
         if self.trading_mode == TradingMode.FUTURES and self.margin_mode == MarginMode.CROSS:
@@ -533,12 +652,54 @@ class FreqtradeBot(LoggingMixin):
                     # We knew this order, but didn't have it updated properly
                     order_obj = trade_order[0]
                 else:
+                    recovered_at = dt_from_ts(
+                        safe_value_fallback(order, "lastTradeTimestamp", "timestamp")
+                    )
+                    known_entry_dates = [
+                        known.order_date_utc
+                        for known in trade.orders
+                        if known.ft_order_side == trade.entry_side and known.order_date is not None
+                    ]
+                    recovery_cutoff = (
+                        min(known_entry_dates)
+                        if known_entry_dates
+                        else trade.open_date_utc - timedelta(seconds=1)
+                    )
+                    if recovered_at < recovery_cutoff:
+                        # A stop-and-reverse can put the preceding trade's exit in
+                        # this trade's ten-second recovery window.  That order can
+                        # have the same side as the new entry, but it cannot predate
+                        # the current trade's first entry order.
+                        logger.warning(
+                            f"Ignoring recovered order {order['id']} for {trade.pair}: "
+                            f"order time {recovered_at.isoformat()} predates current "
+                            f"trade {trade.id} entry boundary {recovery_cutoff.isoformat()}."
+                        )
+                        continue
+
+                    existing_order = (
+                        Order.session.query(Order)
+                        .filter(
+                            Order.ft_pair == trade.pair,
+                            Order.order_id == str(order["id"]),
+                        )
+                        .first()
+                    )
+                    if existing_order is not None:
+                        # Order ownership is immutable.  Moving an order between
+                        # trades corrupts both positions and can violate the unique
+                        # order-id constraint during recovery.
+                        logger.warning(
+                            f"Ignoring recovered order {order['id']} for {trade.pair}: "
+                            f"it already belongs to trade {existing_order.ft_trade_id}, "
+                            f"not current trade {trade.id}."
+                        )
+                        continue
+
                     logger.info(f"Found previously unknown order {order['id']} for {trade.pair}.")
 
                     order_obj = Order.parse_from_ccxt_object(order, trade.pair, order["side"])
-                    order_obj.order_filled_date = dt_from_ts(
-                        safe_value_fallback(order, "lastTradeTimestamp", "timestamp")
-                    )
+                    order_obj.order_filled_date = recovered_at
                     trade.orders.append(order_obj)
                     Trade.commit()
                     trade.exit_reason = ExitType.SOLD_ON_EXCHANGE.value
@@ -600,9 +761,14 @@ class FreqtradeBot(LoggingMixin):
             Trade.commit()
 
         except ExchangeError:
+            Trade.rollback()
             logger.warning("Error finding onexchange order.")
         except Exception:
             # catching https://github.com/freqtrade/freqtrade/issues/9025
+            # Never leave SQLAlchemy in PendingRollbackError.  With a Docker
+            # restart policy, an unrolled-back failed recovery becomes a
+            # permanent crash/restart loop.
+            Trade.rollback()
             logger.warning("Error finding onexchange order", exc_info=True)
         return False
 
@@ -870,7 +1036,7 @@ class FreqtradeBot(LoggingMixin):
             logger.info(f"Bids to asks delta for {pair} does not satisfy condition.")
             return False
 
-    def execute_entry(
+    def execute_entry(  # noqa: C901
         self,
         pair: str,
         stake_amount: float,
@@ -938,6 +1104,23 @@ class FreqtradeBot(LoggingMixin):
         if trade and self.handle_similar_open_order(trade, enter_limit_requested, amount, side):
             return False
 
+        amount_requested = amount
+        stake_amount, amount, iceberg_entry = self._iceberg_entry_slice(
+            trade,
+            mode,
+            stake_amount,
+            amount_requested,
+            enter_limit_requested,
+            leverage,
+        )
+        if iceberg_entry:
+            logger.info(
+                "CK Quant iceberg entry for %s: placing %.8f of %.8f remaining.",
+                pair,
+                amount,
+                amount_requested,
+            )
+
         order = self.exchange.create_order(
             pair=pair,
             ordertype=order_type,
@@ -957,7 +1140,6 @@ class FreqtradeBot(LoggingMixin):
 
         # we assume the order is executed at the price requested
         enter_limit_filled_price = enter_limit_requested
-        amount_requested = amount
 
         if order_status == "expired" or order_status == "rejected":
             # return false if the order is not filled
@@ -1051,6 +1233,11 @@ class FreqtradeBot(LoggingMixin):
         trade.recalc_trade_from_orders()
         Trade.session.add(trade)
         Trade.commit()
+        if iceberg_entry and trade.get_custom_data(ICEBERG_ENTRY_KEY) is None:
+            trade.set_custom_data(
+                ICEBERG_ENTRY_KEY,
+                {"target_amount": amount_requested},
+            )
 
         # Updating wallets
         self.wallets.update()
@@ -2068,6 +2255,7 @@ class FreqtradeBot(LoggingMixin):
         ordertype: str | None = None,
         sub_trade_amt: float | None = None,
         skip_custom_exit_price: bool = False,
+        iceberg_replenishment: bool = False,
     ) -> bool:
         """
         Executes a trade exit for the given trade and limit
@@ -2143,6 +2331,22 @@ class FreqtradeBot(LoggingMixin):
             logger.info(f"User denied exit for {trade.pair}.")
             return False
 
+        amount, iceberg_exit = self._iceberg_exit_slice(
+            trade,
+            amount,
+            limit,
+            exit_check.exit_type,
+            iceberg_replenishment,
+        )
+        if iceberg_exit:
+            sub_trade_amt = amount
+            logger.info(
+                "CK Quant iceberg exit for %s: placing %.8f of %.8f remaining.",
+                trade.pair,
+                amount,
+                trade.amount,
+            )
+
         if trade.has_open_orders:
             if self.handle_similar_open_order(trade, limit, amount, trade.exit_side):
                 return False
@@ -2170,6 +2374,22 @@ class FreqtradeBot(LoggingMixin):
         order_obj = Order.parse_from_ccxt_object(order, trade.pair, trade.exit_side, amount, limit)
         order_obj.ft_order_tag = exit_reason
         trade.orders.append(order_obj)
+        if iceberg_exit:
+            trade.set_custom_data(ICEBERG_ENTRY_KEY, None)
+            if trade.get_custom_data(ICEBERG_EXIT_KEY) is None:
+                trade.set_custom_data(
+                    ICEBERG_EXIT_KEY,
+                    {
+                        "target_amount": trade.amount,
+                        "exit_type": exit_check.exit_type.value,
+                        "reason": exit_reason,
+                        "order_type": order_type,
+                    },
+                )
+        elif not iceberg_replenishment:
+            # Safety and force exits always supersede an unfinished iceberg.
+            trade.set_custom_data(ICEBERG_ENTRY_KEY, None)
+            trade.set_custom_data(ICEBERG_EXIT_KEY, None)
 
         trade.exit_order_status = ""
         trade.close_rate_requested = limit
