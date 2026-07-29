@@ -119,6 +119,48 @@ CONF_SCHEMA = {
             "minimum": 0.0,
             "maximum": 0.5,
         },
+        "iceberg_orders": {
+            "description": (
+                "CK Quant synthetic iceberg execution. Places one child order at a time "
+                "and keeps the total target in the local trade database."
+            ),
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "enabled": {"type": "boolean", "default": False},
+                "entry": {"type": "boolean", "default": True},
+                "exit": {"type": "boolean", "default": True},
+                "visible_ratio": {
+                    "type": "number",
+                    "exclusiveMinimum": 0.0,
+                    "maximum": 1.0,
+                    "default": 0.1,
+                },
+                "max_slices": {
+                    "type": "integer",
+                    "minimum": 2,
+                    "maximum": 100,
+                    "default": 10,
+                },
+                "min_slice_stake": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "default": 0.0,
+                },
+                "replenish_interval": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 3600.0,
+                    "default": 5.0,
+                },
+                "size_jitter": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 0.5,
+                    "default": 0.0,
+                },
+            },
+        },
         "stoploss": {
             "description": f"Value (as ratio) to use as Stoploss value. {__IN_STRATEGY}",
             "type": "number",

@@ -1,8 +1,16 @@
 # Freqtrade rules
+# CK Quant never versions live configuration or runtime state.
 config*.json
+**/config*.json
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+*.db
+*.db-shm
+*.db-wal
+*.tar
+*.tar.gz
+*.zip
 logfile.txt
 user_data/*
 !user_data/strategy/sample_strategy.py
@@ -101,7 +109,14 @@ target/
 .python-version
 
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*credentials*
+*secrets*
 .venv
+uv.lock
 .idea
 .vscode
 
@@ -113,5 +128,8 @@ target/
 !config_examples/config_full.example.json
 !config_examples/config_kraken.example.json
 !config_examples/config_freqai.example.json
+!config_examples/config_iceberg.example.json
 
 docker-compose-*.yml
+docker-compose*.yml
+!docker-compose.ck-quant.example.yml

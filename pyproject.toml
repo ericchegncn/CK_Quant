@@ -3,15 +3,15 @@ requires = ["setuptools >= 64.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "freqtrade"
+name = "ck-quant"
 dynamic = ["version"]
 
 authors = [
-  {name = "Freqtrade Team"},
+  {name = "CK Quant contributors"},
   {name = "Freqtrade Team", email = "freqtrade@protonmail.com"},
 ]
 
-description = "Freqtrade - Crypto Trading Bot"
+description = "CK Quant - a privacy-first Freqtrade distribution"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "GPLv3"}

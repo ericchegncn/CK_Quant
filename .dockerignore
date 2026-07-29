@@ -28,9 +28,20 @@ freqtrade.egg-info
 *.ps1
 
 config.json*
+config*.json
+**/config*.json
 *.sqlite
+*.sqlite-*
+*.db
+*.db-*
 user_data/
 *.log
+*.pem
+*.key
+*credentials*
+*secrets*
+.env
+.env.*
 
 .vscode
 .*_cache/
