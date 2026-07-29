@@ -1,4 +1,20 @@
-# ![freqtrade](https://raw.githubusercontent.com/freqtrade/freqtrade/develop/docs/assets/freqtrade_poweredby.svg)
+# CK Quant
+
+CK Quant is a privacy-first Freqtrade distribution with:
+
+- crash-safe exchange-order recovery for rapid stop-and-reverse trading;
+- optional synthetic iceberg execution for entries and regular exits;
+- a responsive, translucent card-based CK Quant UI;
+- reproducible CPU and FreqAI Docker image definitions.
+
+Real strategies, configurations, models, databases, logs, credentials, and
+server details are intentionally not part of this repository. See
+[CK_QUANT.md](CK_QUANT.md) for architecture and configuration notes.
+
+This project is derived from Freqtrade and remains GPL-3.0 licensed. The
+upstream project, attribution, documentation, and safety notice follow below.
+
+## Freqtrade upstream
 
 [![Freqtrade CI](https://github.com/freqtrade/freqtrade/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/freqtrade/freqtrade/actions/workflows/ci.yml)
 [![DOI](https://joss.theoj.org/papers/10.21105/joss.04864/status.svg)](https://doi.org/10.21105/joss.04864)

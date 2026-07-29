@@ -56,7 +56,7 @@ const resetDynamicLayout = (): void => {
   }
 };
 const setTitle = () => {
-  let title = 'freqUI';
+  let title = 'CK Quant';
   if (settingsStore.openTradesInTitle === OpenTradeVizOptions.asTitle) {
     title = `(${botStore.activeBot?.openTradeCount}) ${title}`;
   }
@@ -235,8 +235,8 @@ function editBotLogin(botId: string) {
 </script>
 
 <template>
-  <header>
-    <div class="flex border-b border-primary">
+  <header class="relative z-40">
+    <div class="ckq-topbar flex min-h-14">
       <RouterLink class="ms-2 flex flex-row items-center pe-2 gap-2" exact to="/">
         <AppIcon class="h-9 w-9" />
         <AppText class="md:hidden lg:inline" />

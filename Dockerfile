@@ -1,3 +1,15 @@
+FROM node:22-alpine AS ck-quant-ui
+
+WORKDIR /ui
+ENV CI=true
+RUN corepack enable
+COPY ck_quant_ui/package.json ck_quant_ui/pnpm-lock.yaml ck_quant_ui/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY ck_quant_ui/ ./
+RUN pnpm build \
+  && echo "CK Quant UI" > dist/.uiversion
+
+
 FROM python:3.14.6-slim-trixie AS base
 
 # Setup env
@@ -7,6 +19,10 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONFAULTHANDLER=1
 ENV PATH=/home/ftuser/.local/bin:$PATH
 ENV FT_APP_ENV="docker"
+LABEL org.opencontainers.image.title="CK Quant"
+LABEL org.opencontainers.image.description="Privacy-first Freqtrade distribution with resilient recovery and iceberg execution"
+LABEL org.opencontainers.image.licenses="GPL-3.0"
+LABEL org.opencontainers.image.source="https://github.com/ericchegncn/CK_Quant"
 
 # Prepare environment
 RUN mkdir /freqtrade \
@@ -45,8 +61,10 @@ USER ftuser
 COPY --chown=ftuser:ftuser . /freqtrade/
 
 RUN pip install -e . --user --no-cache-dir \
-  && mkdir /freqtrade/user_data/ \
-  && freqtrade install-ui
+  && mkdir -p /freqtrade/user_data/ /freqtrade/freqtrade/rpc/api_server/ui/installed/
+
+COPY --from=ck-quant-ui --chown=ftuser:ftuser \
+  /ui/dist/ /freqtrade/freqtrade/rpc/api_server/ui/installed/
 
 ENTRYPOINT ["freqtrade"]
 # Default to trade mode

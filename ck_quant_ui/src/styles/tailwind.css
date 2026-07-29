@@ -4,18 +4,17 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme static {
-      --color-brand-50: #DBFAFF;
-      --color-brand-100: #B8F4FF;
-      --color-brand-200: #75EAFF;
-      --color-brand-300: #2EE0FF;
-      --color-brand-400: #00C3E6;
-      --color-brand-500: #0089A1;
-      --color-brand-600: #006C80;
-      --color-brand-700: #005261;
-      --color-brand-800: #003842;
-      --color-brand-900: #001A1F;
-      --color-brand-950: #000D0F;
-
+      --color-brand-50: #eff8ff;
+      --color-brand-100: #dff1ff;
+      --color-brand-200: #b8e2ff;
+      --color-brand-300: #79caff;
+      --color-brand-400: #37a9ff;
+      --color-brand-500: #0a84ff;
+      --color-brand-600: #0067d8;
+      --color-brand-700: #0052ad;
+      --color-brand-800: #07478c;
+      --color-brand-900: #0b3c72;
+      --color-brand-950: #07264c;
 }
 
 /*
@@ -44,8 +43,23 @@
 
 :root {
   /* default profit loss colors, can be overridden by custom style */
-  --color-profit: #12bb7b;
-  --color-loss: #ef5350;
+  --color-profit: #30d158;
+  --color-loss: #ff453a;
+  --ckq-glass: rgba(255, 255, 255, 0.68);
+  --ckq-glass-strong: rgba(255, 255, 255, 0.84);
+  --ckq-border: rgba(255, 255, 255, 0.72);
+  --ckq-shadow: 0 22px 55px rgba(36, 68, 108, 0.13);
+  --ckq-text: #14233b;
+  --ckq-muted: #627089;
+}
+
+.dark {
+  --ckq-glass: rgba(18, 25, 38, 0.7);
+  --ckq-glass-strong: rgba(22, 30, 45, 0.86);
+  --ckq-border: rgba(255, 255, 255, 0.12);
+  --ckq-shadow: 0 26px 70px rgba(0, 0, 0, 0.38);
+  --ckq-text: #f4f8ff;
+  --ckq-muted: #aab6ca;
 }
 
 body.ft-theme-transition,
@@ -63,6 +77,113 @@ body.ft-theme-transition *:after {
 html {
     /*  Set the default font size to 14px */
     font-size: 14px;
+    background: #eaf2fb;
+}
+
+html.dark {
+    background: #07101e;
+}
+
+body {
+    min-height: 100dvh;
+    margin: 0;
+    color: var(--ckq-text);
+    background:
+      radial-gradient(circle at 12% -5%, rgba(80, 180, 255, 0.36), transparent 35rem),
+      radial-gradient(circle at 92% 8%, rgba(149, 104, 255, 0.24), transparent 32rem),
+      linear-gradient(145deg, #f8fbff 0%, #edf5fd 45%, #e8f0fa 100%);
+    background-attachment: fixed;
+}
+
+.dark body {
+    background:
+      radial-gradient(circle at 12% -5%, rgba(10, 132, 255, 0.26), transparent 34rem),
+      radial-gradient(circle at 92% 8%, rgba(122, 82, 255, 0.2), transparent 30rem),
+      linear-gradient(145deg, #0b1422 0%, #07101e 48%, #0d1524 100%);
+}
+
+button,
+[role="button"],
+input,
+select,
+textarea {
+    border-radius: 12px !important;
+}
+
+.ckq-topbar,
+.ckq-bottom-nav,
+.ckq-glass-card {
+    border: 1px solid var(--ckq-border);
+    background: var(--ckq-glass);
+    box-shadow: var(--ckq-shadow);
+    -webkit-backdrop-filter: saturate(180%) blur(26px);
+    backdrop-filter: saturate(180%) blur(26px);
+}
+
+.ckq-topbar {
+    margin: 10px 12px 0;
+    border-radius: 22px;
+}
+
+.ckq-bottom-nav {
+    margin: 0 10px 10px;
+    border-radius: 22px;
+    overflow: hidden;
+}
+
+.ckq-glass-card {
+    overflow: hidden;
+    border-radius: 22px;
+    transition:
+      transform 180ms ease,
+      box-shadow 180ms ease,
+      border-color 180ms ease;
+}
+
+.ckq-glass-card:hover {
+    border-color: color-mix(in srgb, var(--color-brand-400) 42%, var(--ckq-border));
+    box-shadow: 0 28px 70px rgba(36, 68, 108, 0.18);
+}
+
+.dark .ckq-glass-card:hover {
+    box-shadow: 0 30px 74px rgba(0, 0, 0, 0.48);
+}
+
+.ckq-card-header {
+    min-height: 42px;
+    color: var(--ckq-text);
+    background: linear-gradient(180deg, var(--ckq-glass-strong), transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--ckq-border) 75%, transparent);
+    font-weight: 650;
+    letter-spacing: -0.01em;
+}
+
+main {
+    padding: 10px 12px 16px;
+}
+
+table {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+tbody tr {
+    transition: background-color 140ms ease;
+}
+
+tbody tr:hover {
+    background: color-mix(in srgb, var(--color-brand-400) 8%, transparent);
+}
+
+@media (max-width: 768px) {
+    .ckq-topbar {
+        margin: 8px 8px 0;
+        border-radius: 18px;
+    }
+
+    main {
+        padding: 8px 6px 12px;
+    }
 }
 
 .vue-grid-item {
