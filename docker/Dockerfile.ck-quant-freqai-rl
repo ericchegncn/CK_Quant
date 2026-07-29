@@ -1,0 +1,7 @@
+ARG sourceimage=ck-quant
+ARG sourcetag=freqai
+FROM ${sourceimage}:${sourcetag}
+
+COPY requirements-freqai-rl.txt /freqtrade/
+RUN pip install -r requirements-freqai-rl.txt --user --no-cache-dir \
+    --retries 10 --timeout 120

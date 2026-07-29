@@ -3,9 +3,8 @@ const botStore = useBotStore();
 </script>
 
 <template>
-  <footer class="md:hidden">
+  <footer class="md:hidden ckq-bottom-nav">
     <!-- Only visible on xs (phone) viewport! -->
-    <hr class="my-0" />
     <div class="flex gap-2 justify-between px-2">
       <UButton
         v-if="!botStore.canRunBacktest"

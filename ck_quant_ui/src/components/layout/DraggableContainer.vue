@@ -21,10 +21,10 @@ withDefaults(
 
 <template>
   <div
-    class="flex flex-col h-full w-full border dark:border-neutral-800 border-neutral-200 rounded-sm"
+    class="ckq-glass-card flex flex-col h-full w-full"
   >
     <div
-      class="drag-header py-1 px-2 dark:bg-neutral-800 bg-neutral-100 border-b border-neutral-300 dark:border-neutral-700"
+      class="ckq-card-header drag-header py-2 px-3"
     >
       <slot name="header">
         <div class="flex justify-center items-center gap-2">

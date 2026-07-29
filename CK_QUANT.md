@@ -48,3 +48,21 @@ a minimum child size, so the plan cannot grow without bound. `min_slice_stake`
 must be chosen above the exchange minimum. Regular signal/custom exits may be
 sliced; stop-loss, liquidation, emergency, and forced exits always bypass the
 iceberg so risk controls are never delayed.
+
+## Build the Docker images
+
+From the repository root:
+
+```bash
+docker build -t ck-quant:local .
+docker build -f docker/Dockerfile.ck-quant-freqai \
+  --build-arg sourceimage=ck-quant --build-arg sourcetag=local \
+  -t ck-quant:freqai .
+docker build -f docker/Dockerfile.ck-quant-freqai-rl \
+  --build-arg sourceimage=ck-quant --build-arg sourcetag=freqai \
+  -t ck-quant:freqai-rl .
+```
+
+Copy `docker-compose.ck-quant.example.yml` to a local, ignored Compose file and
+mount your private `user_data` directory at runtime. The image itself contains
+no strategies, configuration, databases, models, credentials, or server data.

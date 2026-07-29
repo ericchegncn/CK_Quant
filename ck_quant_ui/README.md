@@ -1,4 +1,10 @@
-# FreqUI
+# CK Quant UI
+
+CK Quant UI is the card-oriented web interface bundled with CK Quant. It is
+derived from FreqUI and remains GPL-3.0 licensed. The original FreqUI
+development notes are retained below for upstream compatibility.
+
+## FreqUI upstream
 
 [![Open in Visual Studio Code](https://img.shields.io/static/v1?logo=visualstudiocode&label=&message=Open%20in%20Visual%20Studio%20Code&labelColor=2c2c32&color=007acc&logoColor=007acc)](https://vscode.dev/github/freqtrade/frequi)
 [![FreqUI CI](https://github.com/freqtrade/frequi/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/freqtrade/frequi/actions/)

@@ -16,7 +16,7 @@ watch(
 
 <template>
   <UApp>
-    <div id="app" class="flex flex-col h-dvh" :style="colorStore.cssVars">
+    <div id="app" class="flex flex-col h-dvh ckq-shell" :style="colorStore.cssVars">
       <NavBar />
       <BodyLayout class="grow overflow-auto" />
       <NavFooter />
@@ -26,7 +26,9 @@ watch(
 
 <style scoped>
 #app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
+  font-family:
+    Inter, ui-rounded, "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-align: center;
