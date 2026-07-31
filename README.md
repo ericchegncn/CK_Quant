@@ -14,6 +14,42 @@ server details are intentionally not part of this repository. See
 This project is derived from Freqtrade and remains GPL-3.0 licensed. The
 upstream project, attribution, documentation, and safety notice follow below.
 
+## CK Quant Docker quick start
+
+The recommended image is `ericchenghz/ck-quant:stable`. A new deployment uses
+the directory name `CK_Quant` by default:
+
+```bash
+mkdir CK_Quant
+cd CK_Quant
+
+curl -L https://raw.githubusercontent.com/ericchegncn/CK_Quant/main/docker-compose.yml \
+  -o docker-compose.yml
+
+docker compose pull
+docker compose run --rm ck-quant create-userdir --userdir user_data
+docker compose run --rm ck-quant new-config --config user_data/config.json
+```
+
+The raw GitHub URL is publicly downloadable only after this source repository
+is made public. The Docker Hub image itself is already public and can be pulled
+without signing in.
+
+Copy your strategy into `user_data/strategies/`, download `.env.example` as
+`.env`, and set `CK_QUANT_STRATEGY` to its class name. Then start:
+
+```bash
+docker compose up -d
+docker compose logs -f --tail 200
+```
+
+The WebUI listens on <http://127.0.0.1:8080> by default. Configuration,
+strategies, databases, credentials, models, and logs stay in the local
+`user_data` directory and are not included in the image.
+
+See [CK Quant Docker quick start](docs/ck-quant-docker.md) for updates,
+environment variables, image tags, security guidance, and common commands.
+
 ## Freqtrade upstream
 
 [![Freqtrade CI](https://github.com/freqtrade/freqtrade/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/freqtrade/freqtrade/actions/workflows/ci.yml)

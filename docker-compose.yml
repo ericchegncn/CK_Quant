@@ -1,36 +1,17 @@
 ---
 services:
-  freqtrade:
-    image: freqtradeorg/freqtrade:stable
-    # image: freqtradeorg/freqtrade:develop
-    # Use plotting image
-    # image: freqtradeorg/freqtrade:develop_plot
-    # # Enable GPU Image and GPU Resources (only relevant for freqAI)
-    # # Make sure to uncomment the whole deploy section
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-    # Build step - only needed when additional dependencies are needed
-    # build:
-    #   context: .
-    #   dockerfile: "./docker/Dockerfile.custom"
+  ck-quant:
+    image: ${CK_QUANT_IMAGE:-ericchenghz/ck-quant:stable}
+    container_name: ${CK_QUANT_CONTAINER_NAME:-CK_Quant}
     restart: unless-stopped
-    container_name: freqtrade
     volumes:
       - "./user_data:/freqtrade/user_data"
-    # Expose api on port 8080 (localhost only)
-    # Please read the https://www.freqtrade.io/en/stable/rest-api/ documentation
-    # for more information.
     ports:
-      - "127.0.0.1:8080:8080"
-    # Default command used when running `docker compose up`
+      - "${CK_QUANT_WEBUI_BIND:-127.0.0.1}:${CK_QUANT_WEBUI_PORT:-8080}:8080"
     command: >
       trade
-      --logfile /freqtrade/user_data/logs/freqtrade.log
-      --db-url sqlite:////freqtrade/user_data/tradesv3.sqlite
-      --config /freqtrade/user_data/config.json
-      --strategy SampleStrategy
+      --userdir /freqtrade/user_data
+      --logfile /freqtrade/user_data/logs/${CK_QUANT_LOGFILE:-ck-quant.log}
+      --db-url sqlite:////freqtrade/user_data/${CK_QUANT_DATABASE:-tradesv3.sqlite}
+      --config /freqtrade/user_data/${CK_QUANT_CONFIG:-config.json}
+      --strategy ${CK_QUANT_STRATEGY:-SampleStrategy}
