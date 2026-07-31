@@ -63,6 +63,18 @@ docker build -f docker/Dockerfile.ck-quant-freqai-rl \
   -t ck-quant:freqai-rl .
 ```
 
-Copy `docker-compose.ck-quant.example.yml` to a local, ignored Compose file and
-mount your private `user_data` directory at runtime. The image itself contains
-no strategies, configuration, databases, models, credentials, or server data.
+The public CPU image is `ericchenghz/ck-quant:stable`. The root
+`docker-compose.yml` can be downloaded and used directly:
+
+```bash
+mkdir CK_Quant
+cd CK_Quant
+curl -L https://raw.githubusercontent.com/ericchegncn/CK_Quant/main/docker-compose.yml \
+  -o docker-compose.yml
+docker compose pull
+docker compose run --rm ck-quant create-userdir --userdir user_data
+```
+
+The image itself contains no strategies, configuration, databases, models,
+credentials, or server data. See `docs/ck-quant-docker.md` for the complete
+deployment and update workflow.
