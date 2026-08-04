@@ -5,7 +5,11 @@ CK Quant is a privacy-first Freqtrade distribution with:
 - crash-safe exchange-order recovery for rapid stop-and-reverse trading;
 - optional synthetic iceberg execution for entries and regular exits;
 - a responsive, translucent card-based CK Quant UI;
-- reproducible CPU and FreqAI Docker image definitions.
+- reproducible CPU and FreqAI Docker image definitions;
+- a memory-friendly **tick-level backtest engine** that matches exits on real
+  tick sequences instead of guessing OHLCV bar paths;
+- accurate drawdown: backtest wallet balance now includes unrealized P&L of
+  open positions (true account equity);
 
 Real strategies, configurations, models, databases, logs, credentials, and
 server details are intentionally not part of this repository. See
