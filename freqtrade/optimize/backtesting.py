@@ -1674,6 +1674,8 @@ class Backtesting:
             pair_detail_cache: dict[str, list[tuple]] = {}
             pair_tradedir_cache: dict[str, LongShort | None] = {}
             pairs_with_open_trades = [t.pair for t in LocalTrade.bt_trades_open]
+            # 计算未平仓持仓的浮动盈亏（用当前 K 线价格），并记录到钱包快照，
+            # 使回测余额/回撤基于"真实钱包余额"（已平仓 + 未平仓）计算
             self._capture_wallet(current_time, self.strategy.config["stake_currency"], 1)
 
             for current_time_det, is_first, has_detail, idx, pair in self._time_pair_generator_det(
@@ -1756,10 +1758,29 @@ class Backtesting:
     def _capture_wallet(self, current_time: datetime, currency: str, price: float) -> None:
         """
         Capture the current wallet state.
+
+        修复：余额 = 已平仓余额 + 未平仓持仓的浮动盈亏（真实钱包余额）。
+        回测的 wallet 快照（以及基于它的回撤/Sharpe 等指标）因此包含未平仓浮盈，
+        比 freqtrade 原版（仅已平仓利润）更接近实盘账户权益。
         """
         if not self._is_backtest_runmode:
             return
         if total := self.wallets.get_total(currency):
+            if currency == self.strategy.config["stake_currency"] and LocalTrade.bt_trades_open:
+                # 加上所有未平仓持仓的浮动盈亏（用各自最新 K 线收盘价估算）
+                unrealized = 0.0
+                for trade in LocalTrade.bt_trades_open:
+                    try:
+                        dataframe, _ = self.dataprovider.get_analyzed_dataframe(
+                            trade.pair, self.timeframe
+                        )
+                        if dataframe is not None and len(dataframe) > 0:
+                            cur_rate = float(dataframe["close"].iat[-1])
+                            unrealized += trade.calculate_profit(cur_rate).profit_abs
+                    except Exception:
+                        # 数据不可用时跳过该持仓的浮盈（保持原行为）
+                        continue
+                total += unrealized
             self.wallet_captures.append((current_time, currency, price, total))
 
     def backtest(
