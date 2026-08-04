@@ -47,7 +47,8 @@ nav:
         - Recursive analysis: recursive-analysis.md
         - Advanced Strategy: strategy-advanced.md
         - Advanced Hyperopt: advanced-hyperopt.md
-        - Orderflow: advanced-orderflow.md
+        - Advanced Orderflow: advanced-orderflow.md
+        - Synthetic Iceberg Orders: advanced-iceberg.md
         - Producer/Consumer mode: producer-consumer.md
         - SQL Cheat-sheet: sql_cheatsheet.md
     - FAQ: faq.md
