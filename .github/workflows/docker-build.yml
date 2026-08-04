@@ -1,35 +1,7 @@
 name: Docker Build and Deploy
 
 on:
-  workflow_call:
-    secrets:
-      DOCKERHUB_USERNAME:
-        required: true
-      DOCKERHUB_TOKEN:
-        required: true
-      DISCORD_WEBHOOK:
-        required: false
   workflow_dispatch:
-    inputs:
-      branch_name:
-        description: 'Branch name to build Docker images for'
-        required: false
-        default: 'develop'
-        type: string
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
-
-env:
-  IMAGE_NAME: "freqtradeorg/freqtrade"
-  CACHE_IMAGE: "freqtradeorg/freqtrade_cache"
-  GHCR_IMAGE_NAME: "ghcr.io/freqtrade/freqtrade"
-  PI_PLATFORM: "linux/arm/v7"
-
 jobs:
   deploy-docker:
     name: "Deploy Docker x64 and armv7l"
