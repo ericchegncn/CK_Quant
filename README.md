@@ -1,27 +1,35 @@
 # CK Quant
 
-CK Quant is a privacy-first Freqtrade distribution with:
+**隐私优先的 Freqtrade 二次发行版** | Privacy-first Freqtrade distribution
 
-- crash-safe exchange-order recovery for rapid stop-and-reverse trading;
-- optional synthetic iceberg execution for entries and regular exits;
-- a responsive, translucent card-based CK Quant UI;
-- reproducible CPU and FreqAI Docker image definitions;
-- a memory-friendly **tick-level backtest engine** that matches exits on real
-  tick sequences instead of guessing OHLCV bar paths;
-- accurate drawdown: backtest wallet balance now includes unrealized P&L of
-  open positions (true account equity);
+---
 
-Real strategies, configurations, models, databases, logs, credentials, and
-server details are intentionally not part of this repository. See
-[CK_QUANT.md](CK_QUANT.md) for architecture and configuration notes.
+## 特性 | Features
 
+| 中文 | English |
+|---|---|
+| 崩溃安全的订单恢复（应对快速反手交易） | crash-safe exchange-order recovery for rapid stop-and-reverse trading |
+| 可选合成冰山单（入场/出场拆分隐藏意图） | optional synthetic iceberg execution for entries and regular exits |
+| 响应式半透明卡片式 CK Quant UI | a responsive, translucent card-based CK Quant UI |
+| 可复现的 CPU / FreqAI Docker 镜像 | reproducible CPU and FreqAI Docker image definitions |
+| **Tick 级回测引擎**（真实逐笔撮合，内存友好） | a memory-friendly **tick-level backtest engine** matching exits on real tick sequences instead of guessing OHLCV bar paths |
+| **精确回撤**（钱包余额含未平仓浮盈） | accurate drawdown: backtest wallet balance includes unrealized P&L of open positions (true account equity) |
+
+> **策略保密**：真实策略、配置、模型、数据库、日志、凭据和服务器信息
+> **有意不包含**在本仓库中。
+> **Strategy privacy**：Real strategies, configurations, models, databases,
+> logs, credentials, and server details are intentionally **not** part of
+> this repository. See [CK_QUANT.md](CK_QUANT.md) for architecture notes.
+
+本项目源自 Freqtrade，保持 GPL-3.0 许可。上游项目、归属、文档和安全声明见下文。
 This project is derived from Freqtrade and remains GPL-3.0 licensed. The
 upstream project, attribution, documentation, and safety notice follow below.
 
-## CK Quant Docker quick start
+---
 
-The recommended image is `ericchenghz/ck-quant:stable`. A new deployment uses
-the directory name `CK_Quant` by default:
+## Docker 快速开始 | Docker quick start
+
+推荐镜像：`ericchenghz/ck-quant:stable`。新部署默认使用目录名 `CK_Quant`：
 
 ```bash
 mkdir CK_Quant
@@ -35,24 +43,86 @@ docker compose run --rm ck-quant create-userdir --userdir user_data
 docker compose run --rm ck-quant new-config --config user_data/config.json
 ```
 
-The raw GitHub URL is publicly downloadable only after this source repository
-is made public. The Docker Hub image itself is already public and can be pulled
-without signing in.
+> 源码仓库公开后，任何人都可从 GitHub 下载该文件；Docker Hub 镜像无需登录即可拉取。
+> The raw GitHub URL is publicly downloadable once this repository is public.
+> The Docker Hub image is already public and can be pulled without signing in.
 
-Copy your strategy into `user_data/strategies/`, download `.env.example` as
-`.env`, and set `CK_QUANT_STRATEGY` to its class name. Then start:
+把你的策略放入 `user_data/strategies/`，下载 `.env.example` 为 `.env`，
+并将 `CK_QUANT_STRATEGY` 设为策略类名，然后启动：
 
 ```bash
 docker compose up -d
 docker compose logs -f --tail 200
 ```
 
-The WebUI listens on <http://127.0.0.1:8080> by default. Configuration,
-strategies, databases, credentials, models, and logs stay in the local
-`user_data` directory and are not included in the image.
+WebUI 默认监听 <http://127.0.0.1:8080>。配置、策略、数据库、凭据、模型和
+日志都保存在本地 `user_data` 目录，不进入镜像。
 
-See [CK Quant Docker quick start](docs/ck-quant-docker.md) for updates,
-environment variables, image tags, security guidance, and common commands.
+更多信息见 [CK Quant Docker 快速开始](docs/ck-quant-docker.md)（环境变量、
+镜像标签、安全指南、常用命令）。
+
+---
+
+## Tick 级回测引擎 | Tick-level backtest
+
+用真实逐笔成交（tick）撮合出场，解决 OHLCV 回测的精度问题：
+
+```text
+同一根 15m bar 内，止损和止盈都被触及 —— 谁先谁后？
+  OHLCV 回测：只能猜（假设路径）→ 系统性偏向乐观 ❌
+  Tick 回测：真实 tick 序列逐笔判断 → 精确 ✅
+```
+
+**实测**（ETH 2025-07，0.5% 止损）：7.1% 的交易触发顺序判断错误，
+且 OHLCV 总盈亏方向与真实 tick 相反。止损越紧误差越大。
+
+```bash
+# 下载 tick 数据（binance.vision，按周分块）
+python scripts/download_vision_chunked.py ETHUSDT 20250701 20250731 \
+    user_data/data/binance/futures/trades_eth
+
+# 运行 tick 回测
+python -m freqtrade.ck_quant.tick_backtest \
+    --config user_data/config.json --strategy CK_Trend \
+    --data-dir user_data/data/binance/futures/trades_eth \
+    --timerange 20250701-20250731 --pair "ETH/USDT:USDT" \
+    --stoploss 0.005 --takeprofit 0.005
+```
+
+详见 [docs/advanced-tick-backtest.md](docs/advanced-tick-backtest.md)。
+
+---
+
+## 合成冰山单 | Synthetic Iceberg Orders
+
+把一笔大订单拆成多个小子单，交易所同一时刻只看到一个，前一片成交后再补：
+
+```json
+{
+    "iceberg_orders": {
+        "enabled": true,
+        "entry": true,
+        "exit": true,
+        "visible_ratio": 0.1,
+        "max_slices": 10,
+        "replenish_interval": 5.0,
+        "size_jitter": 0.0
+    }
+}
+```
+
+详见 [docs/advanced-iceberg.md](docs/advanced-iceberg.md)。
+
+---
+
+## 一键发布 | One-command release
+
+```bash
+python scripts/release.py 2026.8          # 构建镜像 → 推送 Docker Hub → 打 tag → 创建 Release
+python scripts/release.py 2026.8 --dry-run  # 预览
+```
+
+---
 
 ## Freqtrade upstream
 
@@ -65,7 +135,6 @@ environment variables, image tags, security guidance, and common commands.
 Freqtrade is a free and open source crypto trading bot written in Python. It is designed to support all major exchanges and be controlled via Telegram or webUI. It contains backtesting, plotting and money management tools as well as strategy optimization by machine learning.
 
 ![freqtrade](https://raw.githubusercontent.com/freqtrade/freqtrade/develop/docs/assets/freqtrade-screenshot.png)
-
 ## Disclaimer
 
 This software is for educational purposes only. Do not risk money which
