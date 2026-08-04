@@ -1,18 +1,7 @@
 name: Binance Leverage tiers update
 
 on:
-  schedule:
-    - cron: "25 2 * * 4"
-  # on demand
   workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
-
 jobs:
   auto-update:
     name: "Auto Update Binance Leverage Tiers"
