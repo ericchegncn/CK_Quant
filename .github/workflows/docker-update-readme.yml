@@ -1,14 +1,6 @@
 name: Update Docker Hub Description
 on:
   workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: true
-
-# disable permissions for all of the available permissions
-permissions: {}
-
 jobs:
   dockerHubDescription:
     name: "Update Docker Hub Description"

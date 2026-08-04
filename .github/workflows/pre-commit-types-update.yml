@@ -1,15 +1,7 @@
 name: Pre-commit Types update
 
 on:
-  pull_request:
-    branches:
-      - "develop"
-
-concurrency:
-  group: "${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}"
-  cancel-in-progress: true
-permissions: {}
-
+  workflow_dispatch:
 jobs:
   mypy-version-update:
     name: "Pre-commit mypy type versions update"

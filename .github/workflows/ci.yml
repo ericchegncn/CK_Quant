@@ -1,23 +1,7 @@
 name: Freqtrade CI
 
 on:
-  push:
-    branches:
-      - stable
-      - develop
-      - ci/*
-    tags:
-  release:
-    types: [published]
-  pull_request:
-  schedule:
-    - cron:  '0 3 * * 4'
-
-concurrency:
-  group: "${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}"
-  cancel-in-progress: true
-permissions: {}
-
+  workflow_dispatch:
 jobs:
   tests:
     name: "Tests and Linting"

@@ -1,18 +1,7 @@
 name: Pre-commit auto-update
 
 on:
-  schedule:
-    - cron: "13 1 * * 2"
-  # on demand
   workflow_dispatch:
-
-permissions:
-  contents: read
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 jobs:
   auto-update:
     name: Auto-update pre-commit hooks
