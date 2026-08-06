@@ -13,7 +13,7 @@
 | 响应式半透明卡片式 CK Quant UI | a responsive, translucent card-based CK Quant UI |
 | 可复现的 CPU / FreqAI Docker 镜像 | reproducible CPU and FreqAI Docker image definitions |
 | **Tick 级回测引擎**（真实逐笔撮合，内存友好） | a memory-friendly **tick-level backtest engine** matching exits on real tick sequences instead of guessing OHLCV bar paths |
-| **精确回测**（钱包余额含未平仓浮盈） | accurate drawdown: backtest wallet balance includes unrealized P&L of open positions (true account equity) |
+| **精确回撤百分比**（钱包余额含未平仓浮盈） | accurate drawdown: backtest wallet balance includes unrealized P&L of open positions (true account equity) |
 
 > **策略保密**：真实策略、配置、模型、数据库、日志、凭据和服务器信息
 > **有意不包含**在本仓库中。
