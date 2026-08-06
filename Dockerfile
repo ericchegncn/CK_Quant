@@ -10,7 +10,7 @@ RUN pnpm build \
   && echo "CK Quant UI" > dist/.uiversion
 
 
-FROM python:3.14.6-slim-trixie AS base
+FROM python:3.15.0b3-slim-trixie AS base
 
 # Setup env
 ENV LANG=C.UTF-8
