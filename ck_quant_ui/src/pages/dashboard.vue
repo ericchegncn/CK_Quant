@@ -31,10 +31,25 @@ onBeforeUnmount(() => {
 });
 
 const gridLayoutData = computed((): GridItemData[] => {
-  if (isResizableLayout.value) {
-    return layoutStore.dashboardLayout;
-  }
-  return [...layoutStore.getDashboardLayoutSm];
+  // 一卡片一屏：固定顺序（左列卡片 → 右列图表卡片），
+  // 每张卡占满整行（w=12），y = 序号 × 视口高度（避免重叠）
+  const order = [
+    DashboardLayout.botComparison,
+    DashboardLayout.allOpenTrades,
+    DashboardLayout.allClosedTrades,
+    DashboardLayout.tradesLogChart,
+    DashboardLayout.dailyChart,
+    DashboardLayout.cumChartChart,
+    DashboardLayout.walletHistoryChart,
+    DashboardLayout.profitDistributionChart,
+  ];
+  return order.map((i, idx) => ({
+    i,
+    x: 0,
+    y: idx * viewportRows.value,
+    w: 12,
+    h: viewportRows.value,
+  }));
 });
 
 function layoutUpdatedEvent(newLayout) {
