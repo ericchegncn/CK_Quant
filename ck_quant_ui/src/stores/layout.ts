@@ -59,12 +59,13 @@ const DEFAULT_DASHBOARD_LAYOUT_SM: GridItemData[] = [
   { i: DashboardLayout.allClosedTrades, x: 0, y: 44, w: 12, h: 8 },
 ];
 
-const STORE_LAYOUTS = 'ftLayoutSettings';
+const STORE_LAYOUTS = 'ftLayoutSettings_v2';
 
 function migrateLayoutSettings() {
   const STORE_DASHBOARD_LAYOUT = 'ftDashboardLayout';
   const STORE_TRADING_LAYOUT = 'ftTradingLayout';
   const STORE_LAYOUT_LOCK = 'ftLayoutLocked';
+  const STORE_LAYOUTS_V1 = 'ftLayoutSettings';
 
   // If new does not exist
   if (localStorage.getItem(STORE_DASHBOARD_LAYOUT) !== null) {
@@ -83,6 +84,8 @@ function migrateLayoutSettings() {
   localStorage.removeItem(STORE_LAYOUT_LOCK);
   localStorage.removeItem(STORE_TRADING_LAYOUT);
   localStorage.removeItem(STORE_DASHBOARD_LAYOUT);
+  // Remove v1 layout cache so the new single-column default layout loads
+  localStorage.removeItem(STORE_LAYOUTS_V1);
 }
 migrateLayoutSettings();
 /**
