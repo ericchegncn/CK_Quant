@@ -38,14 +38,14 @@ const DEFAULT_TRADING_LAYOUT_SM: GridItemData[] = [
 ];
 
 const DEFAULT_DASHBOARD_LAYOUT: GridItemData[] = [
-  { i: DashboardLayout.botComparison, x: 0, y: 0, w: 8, h: 6 } /* Bot Comparison */,
-  { i: DashboardLayout.dailyChart, x: 8, y: 0, w: 4, h: 6 },
-  { i: DashboardLayout.allOpenTrades, x: 0, y: 6, w: 8, h: 6 },
-  { i: DashboardLayout.cumChartChart, x: 8, y: 6, w: 4, h: 6 },
-  { i: DashboardLayout.allClosedTrades, x: 0, y: 12, w: 8, h: 6 },
-  { i: DashboardLayout.walletHistoryChart, x: 8, y: 12, w: 4, h: 6 },
-  { i: DashboardLayout.tradesLogChart, x: 0, y: 18, w: 8, h: 6 },
-  { i: DashboardLayout.profitDistributionChart, x: 8, y: 18, w: 4, h: 6 },
+  { i: DashboardLayout.dailyChart, x: 0, y: 0, w: 12, h: 6 },
+  { i: DashboardLayout.botComparison, x: 0, y: 6, w: 12, h: 6 } /* Bot Comparison */,
+  { i: DashboardLayout.allOpenTrades, x: 0, y: 12, w: 12, h: 6 },
+  { i: DashboardLayout.cumChartChart, x: 0, y: 18, w: 12, h: 6 },
+  { i: DashboardLayout.allClosedTrades, x: 0, y: 24, w: 12, h: 6 },
+  { i: DashboardLayout.walletHistoryChart, x: 0, y: 30, w: 12, h: 6 },
+  { i: DashboardLayout.tradesLogChart, x: 0, y: 36, w: 12, h: 6 },
+  { i: DashboardLayout.profitDistributionChart, x: 0, y: 42, w: 12, h: 6 },
 ];
 
 const DEFAULT_DASHBOARD_LAYOUT_SM: GridItemData[] = [
