@@ -38,13 +38,15 @@ const DEFAULT_TRADING_LAYOUT_SM: GridItemData[] = [
 ];
 
 const DEFAULT_DASHBOARD_LAYOUT: GridItemData[] = [
-  { i: DashboardLayout.dailyChart, x: 0, y: 0, w: 12, h: 6 },
-  { i: DashboardLayout.botComparison, x: 0, y: 6, w: 12, h: 6 } /* Bot Comparison */,
-  { i: DashboardLayout.allOpenTrades, x: 0, y: 12, w: 12, h: 6 },
-  { i: DashboardLayout.cumChartChart, x: 0, y: 18, w: 12, h: 6 },
-  { i: DashboardLayout.allClosedTrades, x: 0, y: 24, w: 12, h: 6 },
-  { i: DashboardLayout.walletHistoryChart, x: 0, y: 30, w: 12, h: 6 },
-  { i: DashboardLayout.tradesLogChart, x: 0, y: 36, w: 12, h: 6 },
+  // 原左列（w:8）依次排下
+  { i: DashboardLayout.botComparison, x: 0, y: 0, w: 12, h: 6 } /* Bot Comparison */,
+  { i: DashboardLayout.allOpenTrades, x: 0, y: 6, w: 12, h: 6 },
+  { i: DashboardLayout.allClosedTrades, x: 0, y: 12, w: 12, h: 6 },
+  { i: DashboardLayout.tradesLogChart, x: 0, y: 18, w: 12, h: 6 },
+  // 原右列（w:4）接在左列下方
+  { i: DashboardLayout.dailyChart, x: 0, y: 24, w: 12, h: 6 },
+  { i: DashboardLayout.cumChartChart, x: 0, y: 30, w: 12, h: 6 },
+  { i: DashboardLayout.walletHistoryChart, x: 0, y: 36, w: 12, h: 6 },
   { i: DashboardLayout.profitDistributionChart, x: 0, y: 42, w: 12, h: 6 },
 ];
 
