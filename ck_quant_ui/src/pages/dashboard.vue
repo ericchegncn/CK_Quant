@@ -17,6 +17,19 @@ const isLayoutLocked = computed(() => {
   return layoutStore.layoutLocked || !isResizableLayout.value;
 });
 
+// 一卡片一屏：卡片高度 = 视口高度（- 导航栏），row-height=50 → 行数
+const ROW_HEIGHT = 50;
+const viewportRows = ref(Math.max(8, Math.floor((window.innerHeight - 80) / ROW_HEIGHT)));
+function updateViewportRows() {
+  viewportRows.value = Math.max(8, Math.floor((window.innerHeight - 80) / ROW_HEIGHT));
+}
+onMounted(() => {
+  window.addEventListener('resize', updateViewportRows);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateViewportRows);
+});
+
 const gridLayoutData = computed((): GridItemData[] => {
   if (isResizableLayout.value) {
     return layoutStore.dashboardLayout;
@@ -101,7 +114,7 @@ onMounted(async () => {
         :x="gridLayoutDaily.x"
         :y="gridLayoutDaily.y"
         :w="gridLayoutDaily.w"
-        :h="gridLayoutDaily.h"
+        :h="viewportRows"
         :min-w="3"
         :min-h="4"
         drag-allow-from=".drag-header"
@@ -116,7 +129,7 @@ onMounted(async () => {
         :x="gridLayoutBotComparison.x"
         :y="gridLayoutBotComparison.y"
         :w="gridLayoutBotComparison.w"
-        :h="gridLayoutBotComparison.h"
+        :h="viewportRows"
         :min-w="3"
         :min-h="4"
         drag-allow-from=".drag-header"
@@ -131,7 +144,7 @@ onMounted(async () => {
         :x="gridLayoutAllOpenTrades.x"
         :y="gridLayoutAllOpenTrades.y"
         :w="gridLayoutAllOpenTrades.w"
-        :h="gridLayoutAllOpenTrades.h"
+        :h="viewportRows"
         :min-w="3"
         :min-h="4"
         drag-allow-from=".drag-header"
@@ -149,7 +162,7 @@ onMounted(async () => {
         :x="gridLayoutCumChart.x"
         :y="gridLayoutCumChart.y"
         :w="gridLayoutCumChart.w"
-        :h="gridLayoutCumChart.h"
+        :h="viewportRows"
         :min-w="3"
         :min-h="4"
         drag-allow-from=".drag-header"
@@ -168,7 +181,7 @@ onMounted(async () => {
         :x="gridLayoutWalletHistory.x"
         :y="gridLayoutWalletHistory.y"
         :w="gridLayoutWalletHistory.w"
-        :h="gridLayoutWalletHistory.h"
+        :h="viewportRows"
         :min-w="3"
         :min-h="4"
         drag-allow-from=".drag-header"
@@ -183,7 +196,7 @@ onMounted(async () => {
         :x="gridLayoutAllClosedTrades.x"
         :y="gridLayoutAllClosedTrades.y"
         :w="gridLayoutAllClosedTrades.w"
-        :h="gridLayoutAllClosedTrades.h"
+        :h="viewportRows"
         :min-w="3"
         :min-h="4"
         drag-allow-from=".drag-header"
@@ -206,7 +219,7 @@ onMounted(async () => {
         :x="gridLayoutProfitDistribution.x"
         :y="gridLayoutProfitDistribution.y"
         :w="gridLayoutProfitDistribution.w"
-        :h="gridLayoutProfitDistribution.h"
+        :h="viewportRows"
         :min-w="3"
         :min-h="4"
         drag-allow-from=".drag-header"
@@ -221,7 +234,7 @@ onMounted(async () => {
         :x="gridLayoutTradesLogChart.x"
         :y="gridLayoutTradesLogChart.y"
         :w="gridLayoutTradesLogChart.w"
-        :h="gridLayoutTradesLogChart.h"
+        :h="viewportRows"
         :min-w="3"
         :min-h="4"
         drag-allow-from=".drag-header"
