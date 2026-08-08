@@ -19,14 +19,28 @@ const isLayoutLocked = computed(() => {
 
 // 一卡片一屏：卡片高度 = 视口高度（- 导航栏），row-height=50 → 行数
 const ROW_HEIGHT = 50;
-const viewportRows = ref(Math.max(8, Math.floor((window.innerHeight - 80) / ROW_HEIGHT)));
-// Bot Comparison 矮卡（内容少，约 3 行）；Cumulative Profit 占剩余空间完整显示曲线
-const botComparisonRows = computed(() => 3);
-const cumProfitRows = computed(() =>
-  Math.max(4, viewportRows.value - botComparisonRows.value - 1),
+const NAV_HEIGHT = 120; // 顶部导航 + 页头高度
+const MARGIN = 20;     // 卡片间距
+const viewportRows = ref(
+  Math.max(8, Math.floor((window.innerHeight - NAV_HEIGHT) / ROW_HEIGHT)),
 );
+// Bot Comparison 矮卡（内容少，约 3 行）；Cumulative Profit 占剩余空间完整显示曲线
+// 精确计算：卡片实际高度 = 行数×50 + (行数-1)×20(margin)，
+// CumProfit 底部必须 ≤ 视口高度-导航高度，保证首屏完整显示
+const botComparisonRows = computed(() => 3);
+function cardHeight(rows: number): number {
+  return rows * ROW_HEIGHT + Math.max(0, rows - 1) * MARGIN;
+}
+const cumProfitRows = computed(() => {
+  const available =
+    window.innerHeight - NAV_HEIGHT - cardHeight(botComparisonRows.value) - MARGIN;
+  return Math.max(4, Math.floor(available / ROW_HEIGHT));
+});
 function updateViewportRows() {
-  viewportRows.value = Math.max(8, Math.floor((window.innerHeight - 80) / ROW_HEIGHT));
+  viewportRows.value = Math.max(
+    8,
+    Math.floor((window.innerHeight - NAV_HEIGHT) / ROW_HEIGHT),
+  );
 }
 onMounted(() => {
   window.addEventListener('resize', updateViewportRows);
@@ -51,17 +65,16 @@ const gridLayoutData = computed((): GridItemData[] => {
     { i: DashboardLayout.walletHistoryChart, w: 12 },
     { i: DashboardLayout.profitDistributionChart, w: 12 },
   ];
-  // Bot Comparison 矮卡高度（约 3 行 = 150px）
-  const botRows = 3;
-  // Cumulative Profit 占剩余空间（视口 - 矮卡 - 间距 1 行）
-  const cumRows = Math.max(4, viewportRows.value - botRows - 1);
+  // 首屏两卡：Bot Comparison 矮卡 + Cumulative Profit 占剩余空间（精确计算）
+  const botRows = botComparisonRows.value;
+  const cumRows = cumProfitRows.value;
   return order.map((item, idx) => {
     if (idx === 0) {
       // 首屏上卡：矮卡
       return { i: item.i, x: 0, y: 0, w: item.w, h: botRows };
     }
     if (idx === 1) {
-      // 首屏下卡：占剩余空间，完整显示曲线
+      // 首屏下卡：占剩余空间，完整显示曲线（紧接矮卡 + 间距）
       return { i: item.i, x: 0, y: botRows + 1, w: item.w, h: cumRows };
     }
     // 后续卡片：每张一屏
