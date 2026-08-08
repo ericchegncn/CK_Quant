@@ -183,6 +183,11 @@
         "password": "SuperSecurePassword",
         "ws_token": "secret_ws_t0ken."
     },
+    "ck_quant_admin": {
+        "enabled": false,
+        "config_edit": false,
+        "strategy_edit": false
+    },
     "external_message_consumer": {
         "enabled": false,
         "producers": [

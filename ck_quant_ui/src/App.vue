@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { setLocale } from '@/i18n';
+
 const settingsStore = useSettingsStore();
 const colorStore = useColorStore();
 onMounted(() => {
@@ -11,6 +13,11 @@ watch(
     console.log('timezone changed', tz);
     setTimezone(tz);
   },
+);
+watch(
+  () => settingsStore.locale,
+  (locale) => setLocale(locale),
+  { immediate: true },
 );
 </script>
 
@@ -27,8 +34,14 @@ watch(
 <style scoped>
 #app {
   font-family:
-    Inter, ui-rounded, "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+    Inter,
+    ui-rounded,
+    'SF Pro Display',
+    'SF Pro Text',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-align: center;

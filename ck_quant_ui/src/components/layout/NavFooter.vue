@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 const botStore = useBotStore();
+const { t } = useI18n();
 </script>
 
 <template>
@@ -13,7 +16,7 @@ const botStore = useBotStore();
         active-class="underline"
         class="flex flex-col gap-1"
         to="/open_trades"
-        label="Trades"
+        :label="t('nav.trades')"
         icon="mdi:folder-open"
       />
       <UButton
@@ -23,7 +26,7 @@ const botStore = useBotStore();
         active-class="underline"
         class="flex flex-col gap-1"
         to="/trade_history"
-        label="History"
+        :label="t('nav.history')"
         icon="mdi:folder-lock"
       />
       <UButton
@@ -33,7 +36,7 @@ const botStore = useBotStore();
         class="flex flex-col gap-1"
         active-class="underline"
         to="/pairlist"
-        label="Pairlist"
+        :label="t('nav.pairlist')"
         icon="mdi:format-list-group"
       />
       <UButton
@@ -43,7 +46,7 @@ const botStore = useBotStore();
         active-class="underline"
         class="flex flex-col gap-1"
         to="/balance"
-        label="Balance"
+        :label="t('nav.balance')"
         icon="mdi:bank"
       />
       <UButton
@@ -53,7 +56,7 @@ const botStore = useBotStore();
         class="flex flex-col gap-1"
         active-class="underline"
         to="/dashboard"
-        label="Dashboard"
+        :label="t('nav.dashboard')"
         icon="mdi:view-dashboard-outline"
       />
     </div>

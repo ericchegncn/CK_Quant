@@ -13,6 +13,7 @@ site/
 .github
 .pylintrc
 .travis.yml
+ck_quant_ui/node_modules/
 CONTRIBUTING.md
 MANIFEST.in
 README.md
@@ -24,6 +25,9 @@ freqtrade.egg-info
 ck_quant_ui/node_modules/
 ck_quant_ui/dist/
 ck_quant_ui/.vite/
+ck_quant_ui/android/
+artifacts/
+*.apk
 
 *.yml
 *.yaml

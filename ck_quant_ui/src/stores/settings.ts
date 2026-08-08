@@ -2,6 +2,7 @@ import axios from 'axios';
 import { TimeSummaryCols, TimeSummaryOptions } from '@/types';
 import type { ThemeName, UiVersion } from '@/types';
 import { FtWsMessageTypes } from '@/types/wsMessageTypes';
+import { detectLocale, type SupportedLocale } from '@/i18n';
 
 export enum OpenTradeVizOptions {
   showPill = 'showPill',
@@ -23,6 +24,7 @@ export const useSettingsStore = defineStore(
     const timezone = ref('UTC');
     const backgroundSync = ref(true);
     const currentTheme = ref('dark' as ThemeName);
+    const locale = ref<SupportedLocale>(detectLocale());
     const useHeikinAshiCandles = ref(false);
     const showMarkArea = ref(true);
     const useReducedPairCalls = ref(true);
@@ -66,6 +68,7 @@ export const useSettingsStore = defineStore(
       timezone,
       backgroundSync,
       currentTheme,
+      locale,
       useHeikinAshiCandles,
       showMarkArea,
       useReducedPairCalls,
