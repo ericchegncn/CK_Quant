@@ -843,6 +843,17 @@ CONF_SCHEMA = {
                 "jwt_secret_key",
             ],
         },
+        "ck_quant_admin": {
+            "description": "Authenticated CK Quant remote configuration management.",
+            "type": "object",
+            "default": {},
+            "properties": {
+                "enabled": {"type": "boolean", "default": False},
+                "config_edit": {"type": "boolean", "default": False},
+                "strategy_edit": {"type": "boolean", "default": False},
+            },
+            "additionalProperties": False,
+        },
         # end of RPC section
         "db_url": {
             "description": "Database connection URL.",

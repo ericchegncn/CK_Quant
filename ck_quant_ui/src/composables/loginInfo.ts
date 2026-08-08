@@ -9,12 +9,24 @@ import type {
   AuthStorageMulti,
   BotDescriptor,
 } from '@/types';
+import { isNativeApp, persistNativeAuthStorage } from '@/services/nativeSecureStorage';
 
 const AUTH_LOGIN_INFO = 'ftAuthLoginInfo';
 const APIBASE = '/api/v1';
 
 // Global state for all login infos
-const allLoginInfos = useStorage<AuthStorageMulti>(AUTH_LOGIN_INFO, {});
+const authStorage = isNativeApp() ? sessionStorage : localStorage;
+const allLoginInfos = useStorage<AuthStorageMulti>(AUTH_LOGIN_INFO, {}, authStorage);
+
+if (isNativeApp()) {
+  watch(
+    allLoginInfos,
+    (value) => {
+      void persistNativeAuthStorage(JSON.stringify(value));
+    },
+    { deep: true },
+  );
+}
 
 /**
  * Get available bots with their descriptors
