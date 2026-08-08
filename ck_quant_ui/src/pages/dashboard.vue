@@ -31,23 +31,24 @@ onBeforeUnmount(() => {
 });
 
 const gridLayoutData = computed((): GridItemData[] => {
-  // 一卡片一屏：固定顺序（左列卡片 → 右列图表卡片），
-  // 每张卡占满整行（w=12），y = 序号 × 视口高度（避免重叠）
-  const order = [
-    DashboardLayout.botComparison,
-    DashboardLayout.allOpenTrades,
-    DashboardLayout.allClosedTrades,
-    DashboardLayout.tradesLogChart,
-    DashboardLayout.dailyChart,
-    DashboardLayout.cumChartChart,
-    DashboardLayout.walletHistoryChart,
-    DashboardLayout.profitDistributionChart,
+  // 布局规则：
+  // 首屏两张卡（Bot Comparison 左 + Cumulative Profit 右，各 w=6）
+  // 其余每张卡一屏（w=12），y = (序号-1) × 视口高度（避免重叠）
+  const order: { i: number; x: number; w: number }[] = [
+    { i: DashboardLayout.botComparison, x: 0, w: 6 },
+    { i: DashboardLayout.cumChartChart, x: 6, w: 6 },
+    { i: DashboardLayout.allOpenTrades, x: 0, w: 12 },
+    { i: DashboardLayout.allClosedTrades, x: 0, w: 12 },
+    { i: DashboardLayout.tradesLogChart, x: 0, w: 12 },
+    { i: DashboardLayout.dailyChart, x: 0, w: 12 },
+    { i: DashboardLayout.walletHistoryChart, x: 0, w: 12 },
+    { i: DashboardLayout.profitDistributionChart, x: 0, w: 12 },
   ];
-  return order.map((i, idx) => ({
-    i,
-    x: 0,
-    y: idx * viewportRows.value,
-    w: 12,
+  return order.map((item, idx) => ({
+    i: item.i,
+    x: item.x,
+    y: idx < 2 ? 0 : (idx - 1) * viewportRows.value,
+    w: item.w,
     h: viewportRows.value,
   }));
 });
@@ -107,7 +108,7 @@ onMounted(async () => {
 <template>
   <GridLayout
     class="h-full w-full"
-    style="padding: 1px"
+    style="width: 100%; padding: 1px"
     :row-height="50"
     :layout="gridLayoutData"
     :vertical-compact="false"
@@ -117,7 +118,7 @@ onMounted(async () => {
     :is-draggable="!isLayoutLocked"
     :responsive="true"
     :prevent-collision="true"
-    :cols="{ lg: 12, md: 12, sm: 12, xs: 4, xxs: 2 }"
+    :cols="{ lg: 12, md: 12, sm: 12, xs: 12, xxs: 12 }"
     :col-num="12"
     @layout-updated="layoutUpdatedEvent"
     @update:breakpoint="breakpointChanged"
