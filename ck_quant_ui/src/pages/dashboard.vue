@@ -20,7 +20,11 @@ const isLayoutLocked = computed(() => {
 // 一卡片一屏：卡片高度 = 视口高度（- 导航栏），row-height=50 → 行数
 const ROW_HEIGHT = 50;
 const viewportRows = ref(Math.max(8, Math.floor((window.innerHeight - 80) / ROW_HEIGHT)));
-const halfRows = computed(() => Math.floor(viewportRows.value / 2));
+// Bot Comparison 矮卡（内容少，约 3 行）；Cumulative Profit 占剩余空间完整显示曲线
+const botComparisonRows = computed(() => 3);
+const cumProfitRows = computed(() =>
+  Math.max(4, viewportRows.value - botComparisonRows.value - 1),
+);
 function updateViewportRows() {
   viewportRows.value = Math.max(8, Math.floor((window.innerHeight - 80) / ROW_HEIGHT));
 }
@@ -33,8 +37,9 @@ onBeforeUnmount(() => {
 
 const gridLayoutData = computed((): GridItemData[] => {
   // 布局规则：
-  // 首屏两张卡上下排列（Bot Comparison 上 + Cumulative Profit 下，
-  // 各 w=12 全宽，高度 = 半屏）
+  // 首屏两张卡上下排列：
+  //   Bot Comparison 上（内容少，矮卡 ~3行）
+  //   Cumulative Profit 下（利润曲线，占满剩余空间完整显示）
   // 其余每张卡一屏（w=12，高度 = 视口高度）
   const order: { i: number; w: number }[] = [
     { i: DashboardLayout.botComparison, w: 12 },
@@ -46,15 +51,18 @@ const gridLayoutData = computed((): GridItemData[] => {
     { i: DashboardLayout.walletHistoryChart, w: 12 },
     { i: DashboardLayout.profitDistributionChart, w: 12 },
   ];
-  const half = Math.floor(viewportRows.value / 2);
+  // Bot Comparison 矮卡高度（约 3 行 = 150px）
+  const botRows = 3;
+  // Cumulative Profit 占剩余空间（视口 - 矮卡 - 间距 1 行）
+  const cumRows = Math.max(4, viewportRows.value - botRows - 1);
   return order.map((item, idx) => {
     if (idx === 0) {
-      // 首屏上卡：半屏高
-      return { i: item.i, x: 0, y: 0, w: item.w, h: half };
+      // 首屏上卡：矮卡
+      return { i: item.i, x: 0, y: 0, w: item.w, h: botRows };
     }
     if (idx === 1) {
-      // 首屏下卡：紧接上卡下方，半屏高
-      return { i: item.i, x: 0, y: half, w: item.w, h: half };
+      // 首屏下卡：占剩余空间，完整显示曲线
+      return { i: item.i, x: 0, y: botRows + 1, w: item.w, h: cumRows };
     }
     // 后续卡片：每张一屏
     return {
@@ -159,7 +167,7 @@ onMounted(async () => {
         :x="gridLayoutBotComparison.x"
         :y="gridLayoutBotComparison.y"
         :w="gridLayoutBotComparison.w"
-        :h="halfRows"
+        :h="botComparisonRows"
         :min-w="3"
         :min-h="4"
         drag-allow-from=".drag-header"
@@ -192,7 +200,7 @@ onMounted(async () => {
         :x="gridLayoutCumChart.x"
         :y="gridLayoutCumChart.y"
         :w="gridLayoutCumChart.w"
-        :h="halfRows"
+        :h="cumProfitRows"
         :min-w="3"
         :min-h="4"
         drag-allow-from=".drag-header"
