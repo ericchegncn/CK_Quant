@@ -20,6 +20,7 @@ const isLayoutLocked = computed(() => {
 // 一卡片一屏：卡片高度 = 视口高度（- 导航栏），row-height=50 → 行数
 const ROW_HEIGHT = 50;
 const viewportRows = ref(Math.max(8, Math.floor((window.innerHeight - 80) / ROW_HEIGHT)));
+const halfRows = computed(() => Math.floor(viewportRows.value / 2));
 function updateViewportRows() {
   viewportRows.value = Math.max(8, Math.floor((window.innerHeight - 80) / ROW_HEIGHT));
 }
@@ -158,7 +159,7 @@ onMounted(async () => {
         :x="gridLayoutBotComparison.x"
         :y="gridLayoutBotComparison.y"
         :w="gridLayoutBotComparison.w"
-        :h="viewportRows"
+        :h="halfRows"
         :min-w="3"
         :min-h="4"
         drag-allow-from=".drag-header"
@@ -191,7 +192,7 @@ onMounted(async () => {
         :x="gridLayoutCumChart.x"
         :y="gridLayoutCumChart.y"
         :w="gridLayoutCumChart.w"
-        :h="viewportRows"
+        :h="halfRows"
         :min-w="3"
         :min-h="4"
         drag-allow-from=".drag-header"
