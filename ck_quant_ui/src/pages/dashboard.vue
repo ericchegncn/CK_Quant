@@ -17,31 +17,27 @@ const isLayoutLocked = computed(() => {
   return layoutStore.layoutLocked || !isResizableLayout.value;
 });
 
-// 一卡片一屏：卡片高度 = 视口高度（- 导航栏），row-height=50 → 行数
+// 一卡片一屏：卡片高度 = 视口高度（- 导航栏）
+// 关键：vue-grid-layout 每行实际占用 = ROW_HEIGHT + MARGIN = 70px
 const ROW_HEIGHT = 50;
 const NAV_HEIGHT = 120; // 顶部导航 + 页头高度
 const MARGIN = 20;     // 卡片间距
+const ROW_STEP = ROW_HEIGHT + MARGIN; // 每行实际占 70px
+// 可用视口高度对应的行数（每行 70px），保证大卡片底部在屏幕内
 const viewportRows = ref(
-  Math.max(8, Math.floor((window.innerHeight - NAV_HEIGHT) / ROW_HEIGHT)),
+  Math.max(6, Math.floor((window.innerHeight - NAV_HEIGHT) / ROW_STEP)),
 );
-// Bot Comparison 矮卡（内容少，约 3 行）；Cumulative Profit 高度适中
-// （占剩余空间减去 2 行余量，曲线完整且不顶满，视觉更舒适）
+// Bot Comparison 矮卡（约 3 行 = 190px）；Cumulative Profit 紧接其后（间距即 margin）
 const botComparisonRows = computed(() => 3);
-function cardHeight(rows: number): number {
-  return rows * ROW_HEIGHT + Math.max(0, rows - 1) * MARGIN;
-}
 const cumProfitRows = computed(() => {
-  const available =
-    window.innerHeight -
-    NAV_HEIGHT -
-    cardHeight(botComparisonRows.value) -
-    2 * MARGIN; // 减去首屏两卡间距（2 行）
-  return Math.max(4, Math.floor(available / ROW_HEIGHT) - 2); // 再留 2 行余量
+  const botPx = botComparisonRows.value * ROW_STEP; // 矮卡占的像素（含其行间距）
+  const available = window.innerHeight - NAV_HEIGHT - botPx;
+  return Math.max(3, Math.floor(available / ROW_STEP));
 });
 function updateViewportRows() {
   viewportRows.value = Math.max(
-    8,
-    Math.floor((window.innerHeight - NAV_HEIGHT) / ROW_HEIGHT),
+    6,
+    Math.floor((window.innerHeight - NAV_HEIGHT) / ROW_STEP),
   );
 }
 onMounted(() => {
@@ -76,8 +72,8 @@ const gridLayoutData = computed((): GridItemData[] => {
       return { i: item.i, x: 0, y: 0, w: item.w, h: botRows };
     }
     if (idx === 1) {
-      // 首屏下卡：紧接矮卡下方，间距 2 行（更宽的间隔）
-      return { i: item.i, x: 0, y: botRows + 2, w: item.w, h: cumRows };
+      // 首屏下卡：紧接矮卡下方（y=botRows，间距即 margin 20px）
+      return { i: item.i, x: 0, y: botRows, w: item.w, h: cumRows };
     }
     // 后续卡片：每张一屏
     return {
