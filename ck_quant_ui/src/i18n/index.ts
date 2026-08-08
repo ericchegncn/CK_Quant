@@ -11,6 +11,18 @@ import zhTW from './locales/zh-TW';
 export const supportedLocales = ['zh-CN', 'zh-TW', 'en', 'de', 'ja', 'fr', 'ko'] as const;
 export type SupportedLocale = (typeof supportedLocales)[number];
 
+// Language pickers should always use each language's native name. Translating
+// these labels into the active locale makes the target language harder to find.
+export const nativeLocaleNames: Readonly<Record<SupportedLocale, string>> = {
+  'zh-CN': '简体中文',
+  'zh-TW': '繁體中文',
+  en: 'English',
+  de: 'Deutsch',
+  ja: '日本語',
+  fr: 'Français',
+  ko: '한국어',
+};
+
 const messages = { 'zh-CN': zhCN, 'zh-TW': zhTW, en, de, ja, fr, ko };
 
 export function normalizeLocale(locale?: string | null): SupportedLocale {
