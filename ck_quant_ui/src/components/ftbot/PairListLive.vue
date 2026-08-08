@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 const newblacklistpair = ref('');
 const blacklistSelect = ref<number[]>([]);
 const botStore = useBotStore();
+const { t } = useI18n();
 
 function initBlacklist() {
   if (botStore.activeBot.whitelist.length === 0) {
@@ -49,7 +52,7 @@ onMounted(() => {
 <template>
   <div>
     <div>
-      <h3 class="text-xl">Whitelist Methods</h3>
+      <h3 class="text-xl">{{ t('workspace.whitelistMethods') }}</h3>
 
       <ul v-if="botStore.activeBot.pairlistMethods.length" class="list wide">
         <li
@@ -63,7 +66,7 @@ onMounted(() => {
     </div>
     <!-- Show Whitelist -->
     <h3 class="text-lg font-bold" :title="`${botStore.activeBot.whitelist.length} pairs`">
-      Whitelist
+      {{ t('workspace.whitelist') }}
     </h3>
     <ul v-if="botStore.activeBot.whitelist.length" class="list">
       <li
@@ -74,17 +77,14 @@ onMounted(() => {
         {{ pair }}
       </li>
     </ul>
-    <p v-else>List Unavailable. Please Login and make sure server is running.</p>
+    <p v-else>{{ t('workspace.listUnavailable') }}</p>
     <USeparator />
 
     <!-- Blacklsit -->
     <div>
       <div class="flex flex-row justify-center mb-1">
-        <label
-          class="text-lg font-bold mb-2 w-full"
-          title="Blacklist - Select (followed by a click on '-') to remove pairs"
-        >
-          Blacklist
+        <label class="text-lg font-bold mb-2 w-full" :title="t('workspace.blacklistHint')">
+          {{ t('workspace.blacklist') }}
         </label>
         <div class="flex flex-cols items-center gap-1 pe-1">
           <UPopover>
@@ -92,11 +92,13 @@ onMounted(() => {
             <template #content>
               <form ref="form" @submit.prevent="addBlacklistPair" class="py-2 px-3">
                 <div class="space-y-1">
-                  <h4 class="font-bold mb-2">Add Pair to Blacklist</h4>
-                  <UFormField label="Pair" class="space-x-2" required>
+                  <h4 class="font-bold mb-2">{{ t('workspace.addPairToBlacklist') }}</h4>
+                  <UFormField :label="t('workspace.pair')" class="space-x-2" required>
                     <UInput v-model="newblacklistpair" required autofocus></UInput>
                   </UFormField>
-                  <UButton id="blacklist-submit" class="ms-auto mb-2" type="submit"> Add </UButton>
+                  <UButton id="blacklist-submit" class="ms-auto mb-2" type="submit">{{
+                    t('workspace.add')
+                  }}</UButton>
                 </div>
               </form>
             </template>
@@ -104,7 +106,7 @@ onMounted(() => {
           <UButton
             v-if="botStore.activeBot.botFeatures.botBlacklistModify"
             color="neutral"
-            title="Select pairs to delete pairs from your blacklist."
+            :title="t('workspace.deleteSelectedPairs')"
             :disabled="blacklistSelect.length === 0"
             icon="mdi:delete"
             @click="deletePairs"
@@ -125,9 +127,7 @@ onMounted(() => {
       </li>
     </ul>
     <p v-else>
-      No Blacklist Available. <br />
-      If you expect to have pairs in your blacklist, please login and make sure the server is
-      running.
+      {{ t('workspace.noBlacklist') }}
     </p>
   </div>
 </template>

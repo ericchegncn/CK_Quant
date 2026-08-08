@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import type { ComparisonTableItems } from '@/types';
 import type { TableColumn } from '@nuxt/ui';
 
 const botStore = useBotStore();
+const { t } = useI18n();
 
 const allToggled = computed<boolean>({
   get: () => Object.values(botStore.botStores).every((i) => i.isSelected),
@@ -17,7 +19,7 @@ const tableItems = computed<ComparisonTableItems[]>(() => {
   const val: ComparisonTableItems[] = [];
   const summary: ComparisonTableItems = {
     botId: undefined,
-    botName: 'Summary',
+    botName: t('workspace.summary'),
     profitClosed: 0,
     profitClosedRatio: undefined,
     profitOpen: 0,
@@ -67,7 +69,7 @@ const tableItems = computed<ComparisonTableItems[]>(() => {
       isDryRun: botStore.allBotState[k]?.dry_run,
       isLoggedIn: botStore.botStores[k]?.isBotLoggedIn,
       isOnline: botStore.botStores[k]?.isBotOnline ?? false,
-      balanceAppendix: botStore.allBotState[k]?.dry_run ? '(dry)' : '',
+      balanceAppendix: botStore.allBotState[k]?.dry_run ? ` (${t('workspace.dry')})` : '',
     });
     if (v?.profit_closed_coin !== undefined) {
       if (thisBotStore.isSelected) {
@@ -81,9 +83,11 @@ const tableItems = computed<ComparisonTableItems[]>(() => {
             botStore.allBalance[k]?.total_bot ?? botStore.allBalance[k]?.total ?? 0;
           summary.stakeCurrencyDecimals = botStore.allBotState[k]?.stake_currency_decimals || 3;
           if (botStore.allSelectedBotsSameState) {
-            summary.balanceAppendix = botStore.allBotState[k]?.dry_run ? '(dry)' : '(live)';
+            summary.balanceAppendix = botStore.allBotState[k]?.dry_run
+              ? ` (${t('workspace.dry')})`
+              : ` (${t('workspace.live')})`;
           } else {
-            summary.balanceAppendix = '(mixed dry and live)';
+            summary.balanceAppendix = ` (${t('workspace.dry')} / ${t('workspace.live')})`;
           }
         }
         // summary.decimals = this.allBotState[k]?.stake_currency_decimals || summary.decimals;
@@ -97,27 +101,27 @@ const tableItems = computed<ComparisonTableItems[]>(() => {
   return val;
 });
 
-const columns: TableColumn<ComparisonTableItems>[] = [
+const columns = computed<TableColumn<ComparisonTableItems>[]>(() => [
   { accessorKey: 'botName' },
-  { accessorKey: 'trades', header: 'Trades' },
-  { id: 'profitOpen', header: 'Open Profit' },
-  { id: 'profitClosed', header: 'Closed Profit' },
-  { accessorKey: 'balance', header: 'Balance' },
+  { accessorKey: 'trades', header: t('workspace.trades') },
+  { id: 'profitOpen', header: t('workspace.openProfit') },
+  { id: 'profitClosed', header: t('workspace.closedProfit') },
+  { accessorKey: 'balance', header: t('workspace.balance') },
   { id: 'winVsLoss', header: 'W/L' },
-];
+]);
 </script>
 
 <template>
   <UTable :data="tableItems" :columns="columns">
     <template #botName-header>
       <div class="flex justify-between flex-row w-full">
-        <b>Bot Name</b
+        <b>{{ t('workspace.botName') }}</b
         ><UBadge
           class="items-center text-slate-200 bg-slate-800 cursor-pointer"
           color="neutral"
-          title="Click to select all bots"
+          :title="t('workspace.selectAllBots')"
           @click="botStore.toggleBotsByState('all')"
-          >All</UBadge
+          >{{ t('workspace.all') }}</UBadge
         >
       </div>
     </template>
@@ -130,13 +134,13 @@ const columns: TableColumn<ComparisonTableItems>[] = [
               botStore.botStores[(row.original as unknown as ComparisonTableItems).botId!]!
                 .isSelected
             "
-            title="Show this bot in Dashboard"
+            :title="t('workspace.showBotOnDashboard')"
             >{{ row.original.botName }}</BaseCheckbox
           >
           <BaseCheckbox
             v-if="!row.original.botId && botStore.botCount > 1"
             v-model="allToggled"
-            title="Toggle all bots"
+            :title="t('workspace.toggleAllBots')"
             class="font-bold"
             >{{ row.original.botName }}</BaseCheckbox
           >
@@ -146,30 +150,30 @@ const columns: TableColumn<ComparisonTableItems>[] = [
           v-if="row.original.isLoggedIn === false"
           class="items-center"
           color="error"
-          label="Needs login"
+          :label="t('workspace.needsLogin')"
         />
         <UBadge
           v-else-if="row.original.isLoggedIn && row.original.isOnline === false"
           class="items-center"
           color="neutral"
-          label="Offline"
+          :label="t('workspace.offline')"
         />
         <template v-else>
           <UBadge
             v-if="row.original.isOnline && row.original.isDryRun"
             class="items-center bg-green-800 text-slate-200 cursor-pointer"
             color="success"
-            title="Click to select all dry run bots"
+            :title="t('workspace.selectDryBots')"
             @click="botStore.toggleBotsByState('dry')"
-            label="Dry"
+            :label="t('workspace.dry')"
           />
           <UBadge
             v-if="row.original.isOnline && !row.original.isDryRun"
             class="items-center cursor-pointer"
             color="warning"
-            title="Click to select all live bots"
+            :title="t('workspace.selectLiveBots')"
             @click="botStore.toggleBotsByState('live')"
-            label="Live"
+            :label="t('workspace.live')"
           />
         </template>
       </div>
@@ -179,9 +183,11 @@ const columns: TableColumn<ComparisonTableItems>[] = [
         v-if="row.original.profitOpen && row.original.botId !== 'Summary'"
         :profit-ratio="row.original.profitOpenRatio"
         :profit-abs="row.original.profitOpen"
-        :profit-desc="`Total Profit (Open and realized) ${formatPercent(
-          row.original.profitOpenRatio ?? 0.0,
-        )}`"
+        :profit-desc="
+          t('workspace.totalOpenProfit', {
+            profit: formatPercent(row.original.profitOpenRatio ?? 0.0),
+          })
+        "
         :stake-currency="row.original.stakeCurrency"
       />
     </template>

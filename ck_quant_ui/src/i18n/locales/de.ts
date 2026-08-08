@@ -1,4 +1,7 @@
+import { workspaceMessages } from './workspace';
+
 export default {
+  workspace: workspaceMessages.de,
   language: {
     label: 'Sprache',
     auto: 'Systemsprache',
