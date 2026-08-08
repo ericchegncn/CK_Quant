@@ -24,17 +24,19 @@ const MARGIN = 20;     // 卡片间距
 const viewportRows = ref(
   Math.max(8, Math.floor((window.innerHeight - NAV_HEIGHT) / ROW_HEIGHT)),
 );
-// Bot Comparison 矮卡（内容少，约 3 行）；Cumulative Profit 占剩余空间完整显示曲线
-// 精确计算：卡片实际高度 = 行数×50 + (行数-1)×20(margin)，
-// CumProfit 底部必须 ≤ 视口高度-导航高度，保证首屏完整显示
+// Bot Comparison 矮卡（内容少，约 3 行）；Cumulative Profit 高度适中
+// （占剩余空间减去 2 行余量，曲线完整且不顶满，视觉更舒适）
 const botComparisonRows = computed(() => 3);
 function cardHeight(rows: number): number {
   return rows * ROW_HEIGHT + Math.max(0, rows - 1) * MARGIN;
 }
 const cumProfitRows = computed(() => {
   const available =
-    window.innerHeight - NAV_HEIGHT - cardHeight(botComparisonRows.value) - MARGIN;
-  return Math.max(4, Math.floor(available / ROW_HEIGHT));
+    window.innerHeight -
+    NAV_HEIGHT -
+    cardHeight(botComparisonRows.value) -
+    2 * MARGIN; // 减去首屏两卡间距（2 行）
+  return Math.max(4, Math.floor(available / ROW_HEIGHT) - 2); // 再留 2 行余量
 });
 function updateViewportRows() {
   viewportRows.value = Math.max(
@@ -74,8 +76,8 @@ const gridLayoutData = computed((): GridItemData[] => {
       return { i: item.i, x: 0, y: 0, w: item.w, h: botRows };
     }
     if (idx === 1) {
-      // 首屏下卡：占剩余空间，完整显示曲线（紧接矮卡 + 间距）
-      return { i: item.i, x: 0, y: botRows + 1, w: item.w, h: cumRows };
+      // 首屏下卡：紧接矮卡下方，间距 2 行（更宽的间隔）
+      return { i: item.i, x: 0, y: botRows + 2, w: item.w, h: cumRows };
     }
     // 后续卡片：每张一屏
     return {
