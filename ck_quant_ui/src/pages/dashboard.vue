@@ -32,25 +32,38 @@ onBeforeUnmount(() => {
 
 const gridLayoutData = computed((): GridItemData[] => {
   // 布局规则：
-  // 首屏两张卡（Bot Comparison 左 + Cumulative Profit 右，各 w=6）
-  // 其余每张卡一屏（w=12），y = (序号-1) × 视口高度（避免重叠）
-  const order: { i: number; x: number; w: number }[] = [
-    { i: DashboardLayout.botComparison, x: 0, w: 6 },
-    { i: DashboardLayout.cumChartChart, x: 6, w: 6 },
-    { i: DashboardLayout.allOpenTrades, x: 0, w: 12 },
-    { i: DashboardLayout.allClosedTrades, x: 0, w: 12 },
-    { i: DashboardLayout.tradesLogChart, x: 0, w: 12 },
-    { i: DashboardLayout.dailyChart, x: 0, w: 12 },
-    { i: DashboardLayout.walletHistoryChart, x: 0, w: 12 },
-    { i: DashboardLayout.profitDistributionChart, x: 0, w: 12 },
+  // 首屏两张卡上下排列（Bot Comparison 上 + Cumulative Profit 下，
+  // 各 w=12 全宽，高度 = 半屏）
+  // 其余每张卡一屏（w=12，高度 = 视口高度）
+  const order: { i: number; w: number }[] = [
+    { i: DashboardLayout.botComparison, w: 12 },
+    { i: DashboardLayout.cumChartChart, w: 12 },
+    { i: DashboardLayout.allOpenTrades, w: 12 },
+    { i: DashboardLayout.allClosedTrades, w: 12 },
+    { i: DashboardLayout.tradesLogChart, w: 12 },
+    { i: DashboardLayout.dailyChart, w: 12 },
+    { i: DashboardLayout.walletHistoryChart, w: 12 },
+    { i: DashboardLayout.profitDistributionChart, w: 12 },
   ];
-  return order.map((item, idx) => ({
-    i: item.i,
-    x: item.x,
-    y: idx < 2 ? 0 : (idx - 1) * viewportRows.value,
-    w: item.w,
-    h: viewportRows.value,
-  }));
+  const half = Math.floor(viewportRows.value / 2);
+  return order.map((item, idx) => {
+    if (idx === 0) {
+      // 首屏上卡：半屏高
+      return { i: item.i, x: 0, y: 0, w: item.w, h: half };
+    }
+    if (idx === 1) {
+      // 首屏下卡：紧接上卡下方，半屏高
+      return { i: item.i, x: 0, y: half, w: item.w, h: half };
+    }
+    // 后续卡片：每张一屏
+    return {
+      i: item.i,
+      x: 0,
+      y: viewportRows.value + (idx - 2) * viewportRows.value,
+      w: item.w,
+      h: viewportRows.value,
+    };
+  });
 });
 
 function layoutUpdatedEvent(newLayout) {
