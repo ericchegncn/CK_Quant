@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizeLocale, supportedLocales } from '@/i18n';
+import { nativeLocaleNames, normalizeLocale, supportedLocales } from '@/i18n';
 import de from '@/i18n/locales/de';
 import en from '@/i18n/locales/en';
 import fr from '@/i18n/locales/fr';
@@ -31,5 +31,17 @@ describe('internationalization', () => {
     expect(normalizeLocale('ja-JP')).toBe('ja');
     expect(normalizeLocale('es-ES')).toBe('en');
     expect(supportedLocales).toHaveLength(7);
+  });
+
+  it('uses stable native names in the language picker', () => {
+    expect(supportedLocales.map((locale) => nativeLocaleNames[locale])).toEqual([
+      '简体中文',
+      '繁體中文',
+      'English',
+      'Deutsch',
+      '日本語',
+      'Français',
+      '한국어',
+    ]);
   });
 });
