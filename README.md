@@ -1,6 +1,11 @@
 # CK Quant
 
-**隐私优先的 Freqtrade 二次发行版** | Privacy-first Freqtrade distribution
+**隐私优先、支持网页与 Android 远程管理的 Freqtrade 二次发行版**<br>
+**A privacy-first Freqtrade distribution with Web and Android remote management**
+
+[![GitHub Release](https://img.shields.io/github/v/release/ericchegncn/CK_Quant?display_name=tag)](https://github.com/ericchegncn/CK_Quant/releases/latest)
+[![Docker Hub](https://img.shields.io/docker/v/ericchenghz/ck-quant?label=Docker%20Hub&sort=semver)](https://hub.docker.com/r/ericchenghz/ck-quant/tags)
+[![Android APK](https://img.shields.io/badge/Android-APK-3DDC84?logo=android&logoColor=white)](https://github.com/ericchegncn/CK_Quant/releases/latest)
 
 ---
 
@@ -11,6 +16,9 @@
 | 崩溃安全的订单恢复（应对快速反手交易） | crash-safe exchange-order recovery for rapid stop-and-reverse trading |
 | 可选合成冰山单（入场/出场拆分隐藏意图） | optional synthetic iceberg execution for entries and regular exits |
 | 响应式半透明卡片式 CK Quant UI | a responsive, translucent card-based CK Quant UI |
+| WebUI 支持简体中文、繁体中文、英语、德语、日语、法语和韩语 | WebUI localization for Simplified Chinese, Traditional Chinese, English, German, Japanese, French, and Korean |
+| 经鉴权的配置与策略在线编辑、校验、自动备份及重载 | authenticated config/strategy editing with validation, automatic backups, and reload |
+| Android App 登录量化服务器、管理机器人及操作订单 | Android app for connecting to a CK Quant server, managing bots, and operating trades |
 | 可复现的 CPU / FreqAI Docker 镜像 | reproducible CPU and FreqAI Docker image definitions |
 | **Tick 级回测引擎**（真实逐笔撮合，内存友好） | a memory-friendly **tick-level backtest engine** matching exits on real tick sequences instead of guessing OHLCV bar paths |
 | **精确回撤百分比**（钱包余额含未平仓浮盈） | accurate drawdown: backtest wallet balance includes unrealized P&L of open positions (true account equity) |
@@ -24,6 +32,42 @@
 本项目源自 Freqtrade，保持 GPL-3.0 许可。上游项目、归属、文档和安全声明见下文。
 This project is derived from Freqtrade and remains GPL-3.0 licensed. The
 upstream project, attribution, documentation, and safety notice follow below.
+
+---
+
+## 多语言 WebUI 与 Android App | Multilingual WebUI & Android app
+
+CK Quant WebUI 现在提供七种语言，并新增管理员页面，可在浏览器或 Android App 中：
+
+- 修改常用或完整配置参数，并在保存前进行服务端校验；
+- 修改策略参数或在线编辑策略文件；
+- 自动创建配置/策略备份，保存后安全重载或重启机器人；
+- 查看运行状态，并通过原有 Freqtrade API 管理订单和持仓；
+- 查看管理员操作审计记录。
+
+CK Quant WebUI now supports seven languages. Its authenticated admin workspace can
+edit and validate configuration or strategy files, create automatic backups, apply
+changes, manage the bot and trades through the existing Freqtrade API, and retain an
+administrative audit trail.
+
+管理员功能默认关闭。先在 `config.json` 中显式启用所需权限：
+
+```json
+"ck_quant_admin": {
+  "enabled": true,
+  "config_edit": true,
+  "strategy_edit": true
+}
+```
+
+Android APK 可从 [GitHub Releases](https://github.com/ericchegncn/CK_Quant/releases/latest)
+下载。安装后输入服务器地址以及 `api_server` 用户名和密码即可连接。
+完整配置、反向代理和安全说明见
+[移动管理指南](docs/ck_quant_mobile_admin.md)。
+
+> **安全提示 / Security:** 不要将管理端口裸露到公网。远程使用时请配置
+> HTTPS 反向代理或可信 VPN，并使用高强度独立密码和 JWT 密钥。建议先连接
+> `dry_run` 实例完成验证。
 
 ---
 
