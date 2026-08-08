@@ -1,4 +1,7 @@
+import { workspaceMessages } from './workspace';
+
 export default {
+  workspace: workspaceMessages['zh-TW'],
   language: {
     label: '語言',
     auto: '系統語言',

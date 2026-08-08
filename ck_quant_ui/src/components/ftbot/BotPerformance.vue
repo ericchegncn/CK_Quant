@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 const botStore = useBotStore();
+const { t } = useI18n();
 enum PerformanceOptions {
   performance = 'performance',
   entryStats = 'entryStats',
@@ -24,32 +26,32 @@ const performanceTable = computed<
 >(() => {
   const textLength = 17;
   const initialCol = {
-    [PerformanceOptions.performance]: { key: 'pair', label: 'Pair' },
+    [PerformanceOptions.performance]: { key: 'pair', label: t('workspace.pair') },
     [PerformanceOptions.entryStats]: {
       key: 'enter_tag',
-      label: 'Enter tag',
+      label: t('workspace.entryTag'),
       formatter: (v: unknown) => formatTextLen(v as string, textLength),
     },
     [PerformanceOptions.exitStats]: {
       key: 'exit_reason',
-      label: 'Exit Reason',
+      label: t('workspace.exitReason'),
       formatter: (v: unknown) => formatTextLen(v as string, textLength),
     },
     [PerformanceOptions.mixTagStats]: {
       key: 'mix_tag',
-      label: 'Mix Tag',
+      label: t('workspace.mixTag'),
       formatter: (v: unknown) => formatTextLen(v as string, textLength),
     },
   };
   return [
     initialCol[selectedOption.value],
-    { key: 'profit', label: 'Profit %' },
+    { key: 'profit', label: t('workspace.profitPercent') },
     {
       key: 'profit_abs',
-      label: `Profit ${botStore.activeBot.botState?.stake_currency}`,
+      label: `${t('workspace.profit')} ${botStore.activeBot.botState?.stake_currency}`,
       formatter: (v: unknown) => formatPrice(v as number, 5),
     },
-    { key: 'count', label: 'Count' },
+    { key: 'count', label: t('workspace.count') },
   ];
 });
 
@@ -69,12 +71,12 @@ const performanceData = computed(() => {
   return [];
 });
 
-const options = [
-  { value: PerformanceOptions.performance, text: 'Performance' },
-  { value: PerformanceOptions.entryStats, text: 'Entries' },
-  { value: PerformanceOptions.exitStats, text: 'Exits' },
-  { value: PerformanceOptions.mixTagStats, text: 'Mix Tag' },
-];
+const options = computed(() => [
+  { value: PerformanceOptions.performance, text: t('workspace.performance') },
+  { value: PerformanceOptions.entryStats, text: t('workspace.entries') },
+  { value: PerformanceOptions.exitStats, text: t('workspace.exits') },
+  { value: PerformanceOptions.mixTagStats, text: t('workspace.mixTag') },
+]);
 
 function refreshSummary() {
   if (selectedOption.value === PerformanceOptions.performance) {
@@ -111,8 +113,14 @@ watch(selectedOption, () => {
 <template>
   <div>
     <div class="mb-2">
-      <h3 class="me-auto text-2xl inline">Performance</h3>
-      <UButton class="float-end" color="neutral" icon="mdi:refresh" @click="refreshSummary" />
+      <h3 class="me-auto text-2xl inline">{{ t('workspace.performance') }}</h3>
+      <UButton
+        :title="t('workspace.refresh')"
+        class="float-end"
+        color="neutral"
+        icon="mdi:refresh"
+        @click="refreshSummary"
+      />
     </div>
     <USegmentedControl
       v-if="botStore.activeBot.botFeatures.hasAdvancedStats"

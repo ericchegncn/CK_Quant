@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import ECharts from 'vue-echarts';
 // import { EChartsOption } from 'echarts';
 import { format as echartsFormat } from 'echarts';
@@ -45,13 +46,12 @@ const props = withDefaults(
   },
 );
 
-// Define Column labels here to avoid typos
-const CHART_PROFIT = computed(() =>
-  props.profitCol === 'abs_profit' ? 'Absolute profit' : 'Relative profit',
-);
-const CHART_TRADE_COUNT = 'Trade Count';
-
 const settingsStore = useSettingsStore();
+const { t } = useI18n();
+const chartProfit = computed(() =>
+  props.profitCol === 'abs_profit' ? t('workspace.absoluteProfit') : t('workspace.relativeProfit'),
+);
+const chartTradeCount = computed(() => t('workspace.tradeCountLabel'));
 const colorStore = useColorStore();
 
 const dailyChart = ref(null);
@@ -101,7 +101,7 @@ const colorStops: LinearGradientObject = {
 const dailyChartOptions: ComputedRef<EChartsOption> = computed(() => {
   return {
     title: {
-      text: 'Daily profit',
+      text: t('workspace.dailyProfit'),
       show: props.showTitle,
     },
     backgroundColor: 'rgba(0, 0, 0, 0)',
@@ -147,11 +147,11 @@ const dailyChartOptions: ComputedRef<EChartsOption> = computed(() => {
           ${echartsFormat.encodeHTML(date)}<br/>
           <div style=">
             <div style="display: flex; justify-content: space-between;">
-              <span>${params[0].marker} Profit:</span> <span style="margin-left: 2em">
+              <span>${params[0].marker} ${t('workspace.profit')}:</span> <span style="margin-left: 2em">
               <strong>${echartsFormat.encodeHTML(absProfit)} (${echartsFormat.encodeHTML(relProfit)})</strong></span>
             </div>
             <div style="display: flex; justify-content: space-between;">
-              <span>${params[1].marker} Trade count:</span>
+              <span>${params[1].marker} ${t('workspace.tradeCountLabel')}:</span>
               <span style="margin-left: 2em"><strong>${echartsFormat.encodeHTML(tradeCount)}</strong></span>
             </div>
           </div>
@@ -161,7 +161,7 @@ const dailyChartOptions: ComputedRef<EChartsOption> = computed(() => {
     legend: {
       data: [
         {
-          name: CHART_PROFIT.value,
+          name: chartProfit.value,
           lineStyle: {
             color: colorStops,
           },
@@ -169,7 +169,7 @@ const dailyChartOptions: ComputedRef<EChartsOption> = computed(() => {
             color: colorStops,
           },
         },
-        { name: CHART_TRADE_COUNT },
+        { name: chartTradeCount.value },
       ],
       top: 0,
       right: '5%',
@@ -201,7 +201,7 @@ const dailyChartOptions: ComputedRef<EChartsOption> = computed(() => {
     yAxis: [
       {
         type: 'value',
-        name: CHART_PROFIT.value,
+        name: chartProfit.value,
         splitLine: {
           show: false,
         },
@@ -216,7 +216,7 @@ const dailyChartOptions: ComputedRef<EChartsOption> = computed(() => {
       },
       {
         type: 'value',
-        name: CHART_TRADE_COUNT,
+        name: chartTradeCount.value,
         nameRotate: 90,
         nameLocation: 'middle',
         nameGap: 30,
@@ -230,7 +230,7 @@ const dailyChartOptions: ComputedRef<EChartsOption> = computed(() => {
     series: [
       {
         type: 'line',
-        name: CHART_PROFIT.value,
+        name: chartProfit.value,
         // Color is induced by visualMap
         datasetIndex: 1,
         encode: {
@@ -240,7 +240,7 @@ const dailyChartOptions: ComputedRef<EChartsOption> = computed(() => {
       },
       {
         type: 'bar',
-        name: CHART_TRADE_COUNT,
+        name: chartTradeCount.value,
         itemStyle: {
           color: 'rgba(150,150,150,0.3)',
         },

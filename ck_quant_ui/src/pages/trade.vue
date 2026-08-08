@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import type { GridItemData } from '@/types';
 import type { TabsItem } from '@nuxt/ui';
 
 const botStore = useBotStore();
+const { t } = useI18n();
 const layoutStore = useLayoutStore();
 const settingsStore = useSettingsStore();
 const currentBreakpoint = ref('');
@@ -64,43 +66,43 @@ const tradingTabItems = computed<TabsItem[]>(() => {
     {
       slot: 'pairs',
       value: 'pairs',
-      label: showText ? 'Pairs combined' : undefined,
+      label: showText ? t('workspace.pairsCombined') : undefined,
       icon: 'i-mdi-view-list',
     },
     {
       slot: 'general',
       value: 'general',
-      label: showText ? 'General' : undefined,
+      label: showText ? t('workspace.general') : undefined,
       icon: 'i-mdi-information',
     },
     {
       slot: 'performance',
       value: 'performance',
-      label: showText ? 'Performance' : undefined,
+      label: showText ? t('workspace.performance') : undefined,
       icon: 'i-mdi-chart-line',
     },
     {
       slot: 'balance',
       value: 'balance',
-      label: showText ? 'Balance' : undefined,
+      label: showText ? t('workspace.balance') : undefined,
       icon: 'i-mdi-bank',
     },
     {
       slot: 'time-breakdown',
       value: 'time-breakdown',
-      label: showText ? 'Time Breakdown' : undefined,
+      label: showText ? t('workspace.timeBreakdown') : undefined,
       icon: 'i-mdi-folder-clock',
     },
     {
       slot: 'pairlist',
       value: 'pairlist',
-      label: showText ? 'Pairlist' : undefined,
+      label: showText ? t('workspace.pairlist') : undefined,
       icon: 'i-mdi-format-list-group',
     },
     {
       slot: 'pair-locks',
       value: 'pair-locks',
-      label: showText ? 'Pair Locks' : undefined,
+      label: showText ? t('workspace.pairLocks') : undefined,
       icon: 'i-mdi-lock-alert',
     },
   ];
@@ -134,7 +136,7 @@ const tradingTabItems = computed<TabsItem[]>(() => {
         :h="gridLayoutMultiPane.h"
         drag-allow-from=".drag-header"
       >
-        <DraggableContainer header="Multi Pane">
+        <DraggableContainer :header="t('workspace.multiPane')">
           <div class="mt-1 flex justify-center">
             <BotControls class="mt-1 mb-2" />
           </div>
@@ -177,13 +179,13 @@ const tradingTabItems = computed<TabsItem[]>(() => {
         :h="gridLayoutOpenTrades.h"
         drag-allow-from=".drag-header"
       >
-        <DraggableContainer header="Open Trades">
+        <DraggableContainer :header="t('workspace.openTrades')">
           <TradeList
             class="open-trades"
             :trades="botStore.activeBot.openTrades"
-            title="Open trades"
+            :title="t('workspace.openTrades')"
             :active-trades="true"
-            empty-text="Currently no open trades."
+            :empty-text="t('workspace.noOpenTrades')"
           />
         </DraggableContainer>
       </GridItem>
@@ -197,13 +199,13 @@ const tradingTabItems = computed<TabsItem[]>(() => {
         :h="gridLayoutTradeHistory.h"
         drag-allow-from=".drag-header"
       >
-        <DraggableContainer header="Closed Trades">
+        <DraggableContainer :header="t('workspace.closedTrades')">
           <TradeList
             class="trade-history"
             :trades="botStore.activeBot.closedTrades"
-            title="Trade history"
+            :title="t('workspace.tradeHistory')"
             :show-filter="true"
-            empty-text="No closed trades so far."
+            :empty-text="t('workspace.noClosedTrades')"
           />
         </DraggableContainer>
       </GridItem>
@@ -222,7 +224,7 @@ const tradingTabItems = computed<TabsItem[]>(() => {
         :min-h="4"
         drag-allow-from=".drag-header"
       >
-        <DraggableContainer header="Trade Detail">
+        <DraggableContainer :header="t('workspace.tradeDetail')">
           <TradeDetail
             :trade="botStore.activeBot.tradeDetail"
             :stake-currency="botStore.activeBot.stakeCurrency"
@@ -240,7 +242,7 @@ const tradingTabItems = computed<TabsItem[]>(() => {
         :min-h="6"
         drag-allow-from=".drag-header"
       >
-        <DraggableContainer header="Chart">
+        <DraggableContainer :header="t('workspace.chart')">
           <CandleChartContainer
             :available-pairs="botStore.activeBot.whitelist"
             :historic-view="!!false"
