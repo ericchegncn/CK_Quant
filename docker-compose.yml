@@ -1,17 +1,17 @@
 ---
 services:
   ck-quant:
-    image: ${CK_QUANT_IMAGE:-ericchenghz/ck-quant:stable}
+    image: ${CK_QUANT_IMAGE:-ericchenghz/ck-quant:latest}
     container_name: ${CK_QUANT_CONTAINER_NAME:-CK_Quant}
     restart: unless-stopped
     volumes:
-      - "./user_data:/freqtrade/user_data"
+      - "./user_data:/CK_Quant/user_data"
     ports:
-      - "${CK_QUANT_WEBUI_BIND:-127.0.0.1}:${CK_QUANT_WEBUI_PORT:-8080}:8080"
+      - "${CK_QUANT_WEBUI_BIND:-0.0.0.0}:${CK_QUANT_WEBUI_PORT:-8080}:8080"
     command: >
       trade
-      --userdir /freqtrade/user_data
-      --logfile /freqtrade/user_data/logs/${CK_QUANT_LOGFILE:-ck-quant.log}
-      --db-url sqlite:////freqtrade/user_data/${CK_QUANT_DATABASE:-tradesv3.sqlite}
-      --config /freqtrade/user_data/${CK_QUANT_CONFIG:-config.json}
-      --strategy ${CK_QUANT_STRATEGY:-SampleStrategy}
+      --userdir /CK_Quant/user_data
+      --logfile /CK_Quant/user_data/logs/${CK_QUANT_LOGFILE:-ck-quant.log}
+      --db-url sqlite:////CK_Quant/user_data/${CK_QUANT_DATABASE:-tradesv3.sqlite}
+      --config /CK_Quant/user_data/${CK_QUANT_CONFIG:-config.json}
+      --strategy ${CK_QUANT_STRATEGY:-CK_Trend_5m}

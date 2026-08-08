@@ -1,5 +1,9 @@
 import type {
   AllProfitStats,
+  AdminBackupInfo,
+  AdminCapabilities,
+  AdminDocumentKind,
+  AdminValidationResult,
   AvailablePairPayload,
   AvailablePairResult,
   BackgroundTaskStatus,
@@ -52,6 +56,9 @@ import type {
   ProfitStats,
   RecursiveAnalysis,
   RecursiveAnalysisPayload,
+  RestoreAdminBackupPayload,
+  SaveAdminDocumentPayload,
+  SaveAdminDocumentResult,
   StatusResponse,
   StrategyListResult,
   StrategyResult,
@@ -61,6 +68,7 @@ import type {
   Trade,
   TradeCustomData,
   TradeResponse,
+  EditableAdminDocument,
   WalletHistory,
   WalletHistoryPerBot,
   WhitelistResponse,
@@ -1013,6 +1021,45 @@ export function createBotSubStore(botId: string, botName: string) {
       }
     }
 
+    async function getAdminCapabilities() {
+      const { data } = await api.get<AdminCapabilities>('/admin/capabilities');
+      return data;
+    }
+
+    async function getAdminDocument(kind: AdminDocumentKind) {
+      const { data } = await api.get<EditableAdminDocument>(`/admin/${kind}`);
+      return data;
+    }
+
+    async function validateAdminDocument(kind: AdminDocumentKind, source: string) {
+      const { data } = await api.post<{ source: string }, AxiosResponse<AdminValidationResult>>(
+        `/admin/${kind}/validate`,
+        { source },
+      );
+      return data;
+    }
+
+    async function saveAdminDocument(kind: AdminDocumentKind, payload: SaveAdminDocumentPayload) {
+      const { data } = await api.put<
+        SaveAdminDocumentPayload,
+        AxiosResponse<SaveAdminDocumentResult>
+      >(`/admin/${kind}`, payload);
+      return data;
+    }
+
+    async function getAdminBackups() {
+      const { data } = await api.get<AdminBackupInfo[]>('/admin/backups');
+      return data;
+    }
+
+    async function restoreAdminBackup(kind: AdminDocumentKind, payload: RestoreAdminBackupPayload) {
+      const { data } = await api.post<
+        RestoreAdminBackupPayload,
+        AxiosResponse<SaveAdminDocumentResult>
+      >(`/admin/${kind}/restore`, payload);
+      return data;
+    }
+
     async function deleteTrade(tradeid: string) {
       try {
         const res = await api.delete<DeleteTradeResponse>(`/trades/${tradeid}`);
@@ -1633,6 +1680,12 @@ export function createBotSubStore(botId: string, botName: string) {
       stopBot,
       stopBuy,
       reloadConfig,
+      getAdminCapabilities,
+      getAdminDocument,
+      validateAdminDocument,
+      saveAdminDocument,
+      getAdminBackups,
+      restoreAdminBackup,
       deleteTrade,
       cancelOpenOrder,
       reloadTrade,
