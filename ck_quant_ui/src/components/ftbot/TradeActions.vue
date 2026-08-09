@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import type { Trade, BotFeatures } from '@/types';
 
 withDefaults(
@@ -20,7 +19,6 @@ defineEmits<{
   deleteTrade: [trade: Trade];
   forceEntry: [trade: Trade];
 }>();
-const { t } = useI18n();
 </script>
 
 <template>
@@ -29,8 +27,8 @@ const { t } = useI18n();
       v-if="!botFeatures.forceExitParams"
       class="justify-start!"
       color="neutral"
-      :title="t('workspace.forceExit')"
-      :label="t('workspace.forceExit')"
+      title="Forceexit"
+      label="Forceexit"
       icon="mdi:close-box"
       @click="$emit('forceExit', trade)"
     />
@@ -38,8 +36,8 @@ const { t } = useI18n();
       v-if="botFeatures.forceExitParams"
       class="justify-start!"
       color="neutral"
-      :title="t('workspace.forceExitLimit')"
-      :label="t('workspace.forceExitLimit')"
+      title="Forceexit limit"
+      label="Forceexit limit"
       icon="mdi:close-box"
       @click="$emit('forceExit', trade, 'limit')"
     />
@@ -47,8 +45,8 @@ const { t } = useI18n();
       v-if="botFeatures.forceExitParams"
       class="justify-start!"
       color="neutral"
-      :title="t('workspace.forceExitMarket')"
-      :label="t('workspace.forceExitMarket')"
+      title="Forceexit market"
+      label="Forceexit market"
       icon="mdi:close-box"
       @click="$emit('forceExit', trade, 'market')"
     />
@@ -56,8 +54,8 @@ const { t } = useI18n();
       v-if="botFeatures.forceEntryTag"
       class="justify-start!"
       color="neutral"
-      :title="t('workspace.forceExitPartial')"
-      :label="t('workspace.forceExitPartial')"
+      title="Forceexit partial"
+      label="Forceexit partial"
       icon="mdi:close-box-multiple"
       @click="$emit('forceExitPartial', trade)"
     />
@@ -65,8 +63,8 @@ const { t } = useI18n();
       v-if="botFeatures.cancelOpenOrders && (trade.open_order_id || trade.has_open_orders)"
       class="justify-start!"
       color="neutral"
-      :title="t('workspace.cancelOpenOrders')"
-      :label="t('workspace.cancelOpenOrders')"
+      title="Cancel open orders"
+      label="Cancel open orders"
       icon="mdi:cancel"
       @click="$emit('cancelOpenOrder', trade)"
     />
@@ -74,8 +72,8 @@ const { t } = useI18n();
       v-if="enableForceEntry"
       class="justify-start!"
       color="neutral"
-      :title="t('workspace.increasePosition')"
-      :label="t('workspace.increasePosition')"
+      title="Increase position"
+      label="Increase position"
       icon="mdi:plus-box-multiple-outline"
       @click="$emit('forceEntry', trade)"
     />
@@ -83,16 +81,16 @@ const { t } = useI18n();
       v-if="botFeatures.reloadTrade"
       class="justify-start!"
       color="neutral"
-      :title="t('workspace.reload')"
-      :label="t('workspace.reload')"
+      title="Reload"
+      label="Reload"
       icon="mdi:reload-alert"
       @click="$emit('reloadTrade', trade)"
     />
     <UButton
       class="justify-start!"
       color="neutral"
-      :title="t('workspace.deleteTrade')"
-      :label="t('workspace.deleteTrade')"
+      title="Delete trade"
+      label="Delete trade"
       icon="mdi:delete"
       @click="$emit('deleteTrade', trade)"
     />

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import ECharts from 'vue-echarts';
 import type { EChartsOption } from 'echarts';
 
@@ -34,6 +33,8 @@ use([
   VisualMapPiecewiseComponent,
 ]);
 
+// Define Column labels here to avoid typos
+const CHART_PROFIT = 'Profit %';
 const CHART_COLOR = '#9be0a8';
 
 const props = withDefaults(
@@ -46,8 +47,6 @@ const props = withDefaults(
   },
 );
 const settingsStore = useSettingsStore();
-const { t } = useI18n();
-const chartProfit = computed(() => t('workspace.profitPercent'));
 const colorStore = useColorStore();
 const chartData = computed(() => {
   const res: (number | string)[][] = [];
@@ -63,9 +62,7 @@ const chartData = computed(() => {
         trade.pair,
         trade.botName,
         timestampms(trade.close_timestamp),
-        trade.is_short === undefined || !trade.is_short
-          ? t('workspace.long')
-          : t('workspace.short'),
+        trade.is_short === undefined || !trade.is_short ? 'Long' : 'Short',
       ];
       res.push(entry);
     }
@@ -79,7 +76,7 @@ const chartOptions = computed((): EChartsOption => {
   const datazoomStart = chartData.value.length > 0 ? (1 - 50 / chartData.value.length) * 100 : 100;
   return {
     title: {
-      text: t('workspace.tradesLog'),
+      text: 'Trades log',
       left: 'center',
       show: props.showTitle,
     },
@@ -96,7 +93,7 @@ const chartOptions = computed((): EChartsOption => {
         | ${echartsFormat.encodeHTML(params[0].data[5])} ${echartsFormat.encodeHTML(botName)}
         <br />
         ${echartsFormat.encodeHTML(params[0].data[4])}<br/>
-        ${t('workspace.profit')} ${echartsFormat.encodeHTML(params[0].data[1])} %`;
+        Profit ${echartsFormat.encodeHTML(params[0].data[1])} %`;
       },
       axisPointer: {
         type: 'line',
@@ -112,7 +109,7 @@ const chartOptions = computed((): EChartsOption => {
     yAxis: [
       {
         type: 'value',
-        name: chartProfit.value,
+        name: CHART_PROFIT,
         splitLine: {
           show: false,
         },
@@ -157,7 +154,7 @@ const chartOptions = computed((): EChartsOption => {
     series: [
       {
         type: 'bar',
-        name: chartProfit.value,
+        name: CHART_PROFIT,
         barCategoryGap: '0%',
         animation: false,
         label: {

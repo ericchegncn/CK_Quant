@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import type { Lock, Trade } from '@/types';
 
 interface CombinedPairList {
@@ -30,7 +29,6 @@ const props = withDefaults(
   },
 );
 const botStore = useBotStore();
-const { t } = useI18n();
 
 const filterText = ref('');
 const combinedPairList = computed(() => {
@@ -61,10 +59,10 @@ const combinedPairList = computed(() => {
     const tradeCount = trades.length;
     const trade = tradeCount ? trades[0] : undefined;
     if (trades.length > 0) {
-      profitString = t('workspace.currentProfit', { profit: formatPercent(profit) });
+      profitString = `Current profit: ${formatPercent(profit)}`;
     }
     if (trade) {
-      profitString += `\n${t('workspace.openSince', { date: timestampms(trade.open_timestamp) })}`;
+      profitString += `\nOpen since: ${timestampms(trade.open_timestamp)}`;
     }
     if (
       filterText.value === '' ||
@@ -119,7 +117,7 @@ const combinedPairList = computed(() => {
         id="trade-filter"
         v-model="filterText"
         type="text"
-        :placeholder="t('workspace.filter')"
+        placeholder="Filter"
         class="w-full"
       />
     </div>
@@ -135,7 +133,7 @@ const combinedPairList = computed(() => {
           'bg-primary dark:bg-primary-700 dark:border-primary text-white':
             comb.pair === botStore.activeBot.selectedPair,
         }"
-        :title="`${formatPriceCurrency(comb.profitAbs, botStore.activeBot.stakeCurrency, botStore.activeBot.stakeCurrencyDecimals)} - ${comb.pair} - ${t('workspace.tradeCount', { count: comb.tradeCount })}`"
+        :title="`${formatPriceCurrency(comb.profitAbs, botStore.activeBot.stakeCurrency, botStore.activeBot.stakeCurrencyDecimals)} - ${comb.pair} - ${comb.tradeCount} trades`"
         @click="botStore.activeBot.selectedPair = comb.pair"
       >
         <div class="flex items-center gap-2">

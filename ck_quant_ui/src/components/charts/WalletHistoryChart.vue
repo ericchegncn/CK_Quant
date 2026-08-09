@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import ECharts from 'vue-echarts';
 
 import { use } from 'echarts/core';
@@ -36,7 +35,8 @@ use([
 ]);
 
 const colorStore = useColorStore();
-const { t } = useI18n();
+// Define Column labels here to avoid typos
+const CHART_WALLET_HISTORY = 'Wallet history';
 const SERIES_COLORS = ['#1d4ed8', '#d931e5', '#059669', '#b45309', '#be123c', '#7c3aed', '#0f766e'];
 
 const props = withDefaults(
@@ -125,18 +125,18 @@ const walletHistoryOptions: ComputedRef<EChartsOption> = computed(() => {
 
     const markLineData: MarkLineComponentOption['data'] = [
       {
-        name: t('workspace.startingBalance'),
+        name: 'Starting balance',
         yAxis: startingValue,
         emphasis: { disabled: true },
         label: {
           show: true,
           position: 'insideStartTop',
-          formatter: `${t('workspace.startingBalance')} ${botName}`,
+          formatter: `Starting balance ${botName}`,
           color: captureLineColor,
         },
       },
       {
-        name: t('workspace.zero'),
+        name: 'Zero',
         label: {
           show: false,
         },
@@ -150,13 +150,13 @@ const walletHistoryOptions: ComputedRef<EChartsOption> = computed(() => {
 
     if (shouldShowCaptureLine) {
       markLineData.push({
-        name: t('workspace.captureStart'),
+        name: 'Capture start',
         xAxis: captureStartTs,
         emphasis: { disabled: true },
         label: {
           show: true,
           position: 'insideEndTop',
-          formatter: `${t('workspace.captureStart')} ${botName}`,
+          formatter: `Capture start ${botName}`,
           color: captureLineColor,
         },
         lineStyle: {
@@ -238,7 +238,7 @@ const walletHistoryOptions: ComputedRef<EChartsOption> = computed(() => {
 
   const option: EChartsOption = {
     title: {
-      text: t('workspace.walletHistory'),
+      text: 'Wallet Balance',
       left: 'center',
       show: props.showTitle,
     },
@@ -300,7 +300,7 @@ const walletHistoryOptions: ComputedRef<EChartsOption> = computed(() => {
     yAxis: [
       {
         type: 'value',
-        name: t('workspace.walletHistory'),
+        name: CHART_WALLET_HISTORY,
         splitLine: {
           show: false,
         },
@@ -346,9 +346,9 @@ const walletHistoryOptions: ComputedRef<EChartsOption> = computed(() => {
     autoresize
   />
   <div v-else class="flex flex-col items-center justify-center h-full gap-2">
-    <p class="text-gray-500">{{ t('workspace.noWalletHistory') }}</p>
+    <p class="text-gray-500">No historic wallet data available.</p>
     <p class="text-gray-500 text-sm">
-      {{ t('workspace.walletHistoryUpgradeHint') }}
+      You may need to update your freqtrade version to have historic wallet balance data available.
     </p>
   </div>
 </template>

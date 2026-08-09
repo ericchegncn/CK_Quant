@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import type { ChartSliderPosition, PairHistory, Trade } from '@/types';
 
 const props = withDefaults(
@@ -27,7 +26,6 @@ const emit = defineEmits<{
 }>();
 
 const settingsStore = useSettingsStore();
-const { t } = useI18n();
 const botStore = useBotStore();
 const plotStore = usePlotConfigStore();
 
@@ -153,7 +151,7 @@ const singlePairSelection = computed({
             v-model="botStore.activeBot.plotMultiPairs"
             class="md:w-80 w-full"
             :items="availablePairs"
-            :placeholder="t('workspace.selectPairs')"
+            placeholder="Select pairs to plot"
             virtualize
             size="md"
           />
@@ -167,7 +165,7 @@ const singlePairSelection = computed({
             @input="refresh"
           />
           <UButton
-            :title="t('workspace.refreshChart')"
+            title="Refresh chart"
             color="neutral"
             :disabled="botStore.activeBot.plotMultiPairs.length === 0"
             icon="mdi:refresh"
@@ -175,21 +173,21 @@ const singlePairSelection = computed({
           />
         </div>
         <BaseCheckbox v-model="settingsStore.multiPairSelection">
-          <span class="text-nowrap">{{ t('workspace.multiPair') }}</span>
+          <span class="text-nowrap">Multi pair</span>
         </BaseCheckbox>
         <div class="ms-auto flex flex-wrap items-center gap-2">
           <BaseCheckbox v-model="settingsStore.showMarkArea">
-            <span class="text-nowrap">{{ t('workspace.showChartAreas') }}</span>
+            <span class="text-nowrap">Show Chart Areas</span>
           </BaseCheckbox>
           <BaseCheckbox v-model="settingsStore.useHeikinAshiCandles">
-            <span class="text-nowrap">{{ t('workspace.heikinAshi') }}</span>
+            <span class="text-nowrap">Heikin Ashi</span>
           </BaseCheckbox>
 
           <div class="me-0 md:me-1 flex grow">
             <PlotConfigSelect class="grow min-w-40"></PlotConfigSelect>
 
             <UButton
-              :title="t('workspace.plotConfigurator')"
+              title="Plot configurator"
               color="neutral"
               icon="mdi:cog"
               @click="showConfigurator"
@@ -219,14 +217,14 @@ const singlePairSelection = computed({
         </SingleCandleChartContainer>
       </div>
       <div v-else class="flex flex-col items-center justify-center h-full w-full">
-        <span class="text-2xl font-semibold">{{ t('workspace.noPairSelected') }}</span>
+        <span class="text-2xl font-semibold">No pair selected</span>
       </div>
     </div>
     <DraggableModal
       v-model:open="showPlotConfigModal"
-      :title="t('workspace.plotConfigurator')"
+      title="Plot Configurator"
       class="max-w-xl"
-      :description="t('workspace.plotConfiguratorHint')"
+      description="Configure chart plot indicators and subplots"
       :overlay="false"
       :modal="false"
       :dismissible="false"
