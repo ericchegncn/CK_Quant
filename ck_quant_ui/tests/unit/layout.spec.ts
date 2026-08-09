@@ -1,7 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { TradeLayout, useLayoutStore } from '@/stores/layout';
+import { DashboardLayout, TradeLayout, useLayoutStore } from '@/stores/layout';
 
 describe('mobile trading layout', () => {
   beforeEach(() => {
@@ -33,4 +33,26 @@ describe('mobile trading layout', () => {
     }
   });
 });
-
+
+describe('dashboard overview layout', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    setActivePinia(createPinia());
+  });
+
+  it('uses one merged overview card instead of a separate cumulative-profit card', () => {
+    const layout = useLayoutStore().getDashboardLayoutSm;
+
+    expect(layout[0]?.i).toBe(DashboardLayout.botComparison);
+    expect(layout[0]?.h).toBeGreaterThanOrEqual(22);
+    expect(layout.some((item) => item.i === DashboardLayout.cumChartChart)).toBe(false);
+  });
+
+  it('stacks the merged overview and remaining dashboard cards without overlap', () => {
+    const layout = [...useLayoutStore().getDashboardLayoutSm].sort((a, b) => a.y - b.y);
+
+    for (let index = 1; index < layout.length; index += 1) {
+      expect(layout[index]!.y).toBeGreaterThanOrEqual(layout[index - 1]!.y + layout[index - 1]!.h);
+    }
+  });
+});

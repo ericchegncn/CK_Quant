@@ -47,6 +47,8 @@ export interface ProfitStats {
   max_drawdown_start_timestamp?: number;
   max_drawdown_end?: string;
   max_drawdown_end_timestamp?: number;
+  drawdown_high?: number;
+  drawdown_low?: number;
   /** Current drawdown we're in */
   current_drawdown?: number;
   current_drawdown_abs?: number;

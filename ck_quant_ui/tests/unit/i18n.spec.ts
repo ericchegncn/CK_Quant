@@ -44,4 +44,32 @@ describe('internationalization', () => {
       '한국어',
     ]);
   });
+
+  it('keeps workspace interpolation variables intact in every locale', () => {
+    const catalogs = [zhCN, zhTW, de, ja, fr, ko];
+    const placeholders = (value: string) => value.match(/\{[A-Za-z][A-Za-z0-9]*\}/g)?.sort() ?? [];
+
+    for (const catalog of catalogs) {
+      for (const key of Object.keys(en.workspace) as (keyof typeof en.workspace)[]) {
+        expect(placeholders(catalog.workspace[key]), `${key} placeholders`).toEqual(
+          placeholders(en.workspace[key]),
+        );
+      }
+    }
+  });
+
+  it('localizes representative dashboard, trade, and chart labels', () => {
+    for (const catalog of [zhCN, zhTW, de, ja, fr, ko]) {
+      for (const key of [
+        'openTrades',
+        'botComparison',
+        'dashboardOverview',
+        'forceExitingTrade',
+        'tradeDurations',
+        'plotConfigName',
+      ] as const) {
+        expect(catalog.workspace[key]).not.toBe(en.workspace[key]);
+      }
+    }
+  });
 });
