@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
-
-const { t } = useI18n();
 const visible = defineModel<boolean>('visible');
 defineProps<{
   columns: string[];
@@ -48,7 +45,7 @@ const showIndicatorMapping = ref(false);
 
 <template>
   <div v-if="visible" class="pt-1">
-    <UFormField v-if="!showIndicatorMapping" :label="t('workspace.selectTemplate')" class="text-md">
+    <UFormField v-if="!showIndicatorMapping" label="Select Template" class="text-md">
       <UListbox
         id="selectTemplate"
         class="rounded ring ring-accented"
@@ -64,7 +61,7 @@ const showIndicatorMapping = ref(false);
       </UListbox>
     </UFormField>
     <div v-else>
-      <h5 class="mt-1 text-center text-md mb-1">{{ t('workspace.remapIndicators') }}</h5>
+      <h5 class="mt-1 text-center text-md mb-1">Re-map indicators</h5>
       <div
         v-for="indicator in Object.keys(indicatorMap)"
         :key="indicator"
@@ -81,17 +78,12 @@ const showIndicatorMapping = ref(false);
       </div>
     </div>
     <div class="mt-2 flex gap-1 justify-end">
-      <UButton
-        :title="t('workspace.abort')"
-        color="neutral"
-        icon="mdi:close"
-        @click="visible = false"
-      />
+      <UButton title="Abort" color="neutral" icon="mdi:close" @click="visible = false" />
       <UButton
         v-if="!showIndicatorMapping"
         :disabled="!selTemplateName"
-        :title="t('workspace.useTemplate')"
-        :label="t('workspace.useTemplate')"
+        title="Use template"
+        label=" Use Template"
         class="w-40"
         variant="solid"
         icon="mdi:check"
@@ -100,12 +92,12 @@ const showIndicatorMapping = ref(false);
       <UButton
         v-if="showIndicatorMapping"
         :disabled="!selTemplateName"
-        :title="t('workspace.applyTemplate')"
+        title="Apply template"
         class="w-40"
         variant="solid"
         icon="mdi:check"
         @click="fromTemplateApply"
-        :label="t('workspace.applyTemplate')"
+        label="Apply Template"
       />
     </div>
   </div>

@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import type { GridItemData } from '@/types';
 
 const botStore = useBotStore();
-const { t } = useI18n();
 
 const layoutStore = useLayoutStore();
 const currentBreakpoint = ref('');
@@ -23,10 +21,12 @@ const isLayoutLocked = computed(() => {
 // 关键：vue-grid-layout 每行实际占用 = ROW_HEIGHT + MARGIN = 70px
 const ROW_HEIGHT = 50;
 const NAV_HEIGHT = 120; // 顶部导航 + 页头高度
-const MARGIN = 20; // 卡片间距
+const MARGIN = 20;     // 卡片间距
 const ROW_STEP = ROW_HEIGHT + MARGIN; // 每行实际占 70px
 // 可用视口高度对应的行数（每行 70px），保证大卡片底部在屏幕内
-const viewportRows = ref(Math.max(6, Math.floor((window.innerHeight - NAV_HEIGHT) / ROW_STEP)));
+const viewportRows = ref(
+  Math.max(6, Math.floor((window.innerHeight - NAV_HEIGHT) / ROW_STEP)),
+);
 // Bot Comparison 矮卡（约 3 行 = 190px）；Cumulative Profit 紧接其后（间距即 margin）
 const botComparisonRows = computed(() => 3);
 const cumProfitRows = computed(() => {
@@ -35,7 +35,10 @@ const cumProfitRows = computed(() => {
   return Math.max(3, Math.floor(available / ROW_STEP));
 });
 function updateViewportRows() {
-  viewportRows.value = Math.max(6, Math.floor((window.innerHeight - NAV_HEIGHT) / ROW_STEP));
+  viewportRows.value = Math.max(
+    6,
+    Math.floor((window.innerHeight - NAV_HEIGHT) / ROW_STEP),
+  );
 }
 onMounted(() => {
   window.addEventListener('resize', updateViewportRows);
@@ -165,11 +168,7 @@ onMounted(async () => {
         :min-h="4"
         drag-allow-from=".drag-header"
       >
-        <DraggableContainer
-          :header="
-            `${t('workspace.profitOverTime')} ${botStore.botCount > 1 ? t('workspace.combined') : ''}`.trim()
-          "
-        >
+        <DraggableContainer :header="`Profit over time ${botStore.botCount > 1 ? 'combined' : ''}`">
           <PeriodBreakdown multi-bot-view />
         </DraggableContainer>
       </GridItem>
@@ -184,7 +183,7 @@ onMounted(async () => {
         :min-h="4"
         drag-allow-from=".drag-header"
       >
-        <DraggableContainer :header="t('workspace.botComparison')">
+        <DraggableContainer header="Bot comparison">
           <BotComparisonList />
         </DraggableContainer>
       </GridItem>
@@ -200,8 +199,8 @@ onMounted(async () => {
         drag-allow-from=".drag-header"
       >
         <DraggableContainer
-          :header="t('workspace.openTrades')"
-          :info-text="t('workspace.openTradesInfo')"
+          header="Open Trades"
+          info-text="Open trades of all selected bots. Click on a trade to go to the trade page for that trade/bot."
         >
           <TradeList active-trades :trades="botStore.allOpenTradesSelectedBots" multi-bot-view />
         </DraggableContainer>
@@ -217,7 +216,7 @@ onMounted(async () => {
         :min-h="4"
         drag-allow-from=".drag-header"
       >
-        <DraggableContainer :header="t('workspace.cumulativeProfit')">
+        <DraggableContainer header="Cumulative Profit">
           <CumProfitChart
             :trades="botStore.allTradesSelectedBots"
             :open-trades="botStore.allOpenTradesSelectedBots"
@@ -236,7 +235,7 @@ onMounted(async () => {
         :min-h="4"
         drag-allow-from=".drag-header"
       >
-        <DraggableContainer :header="t('workspace.walletHistory')">
+        <DraggableContainer header="Wallet History">
           <WalletHistoryChart :wallet-data="botStore.allBalanceHistory" :show-title="false" />
         </DraggableContainer>
       </GridItem>
@@ -252,8 +251,8 @@ onMounted(async () => {
         drag-allow-from=".drag-header"
       >
         <DraggableContainer
-          :header="t('workspace.closedTrades')"
-          :info-text="t('workspace.closedTradesInfo')"
+          header="Closed Trades"
+          info-text="Closed trades for all selected bots. Click on a trade to go to the trade page for that trade/bot."
         >
           <TradeList
             :active-trades="false"
@@ -274,7 +273,7 @@ onMounted(async () => {
         :min-h="4"
         drag-allow-from=".drag-header"
       >
-        <DraggableContainer :header="t('workspace.profitDistribution')">
+        <DraggableContainer header="Profit Distribution">
           <ProfitDistributionChart :trades="botStore.allTradesSelectedBots" :show-title="false" />
         </DraggableContainer>
       </GridItem>
@@ -289,7 +288,7 @@ onMounted(async () => {
         :min-h="4"
         drag-allow-from=".drag-header"
       >
-        <DraggableContainer :header="t('workspace.tradesLog')">
+        <DraggableContainer header="Trades Log">
           <TradesLogChart :trades="botStore.allTradesSelectedBots" :show-title="false" />
         </DraggableContainer>
       </GridItem>

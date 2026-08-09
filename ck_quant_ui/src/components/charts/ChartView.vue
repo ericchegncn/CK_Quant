@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import { MarginMode, TradingMode } from '@/types';
 import type { ExchangeSelection, Markets, MarketsPayload, PairHistoryPayload } from '@/types';
 
 const botStore = useBotStore();
 const chartStore = useChartConfigStore();
-const { t } = useI18n();
 
 const finalTimeframe = computed<string>(() => {
   return botStore.activeBot.isWebserverMode
@@ -111,19 +109,19 @@ watch(
     <div v-if="botStore.activeBot.isWebserverMode" class="md:mx-3 mt-2 px-1">
       <UCard :ui="{ body: 'p-3 sm:p-3' }">
         <div class="flex items-center gap-2 mb-1">
-          <span class="text-xl font-bold">{{ t('workspace.settings') }}</span>
-          <InfoBox :hint="t('workspace.chartSettingsHint')" />
+          <span class="text-xl font-bold">Settings</span>
+          <InfoBox
+            hint="These settings only apply to the chart view and do not affect the bot's actual configuration or behavior."
+          />
         </div>
         <div
           class="mb-2 border dark:border-neutral-700 border-neutral-300 rounded-md p-2 text-start"
         >
           <UCollapsible v-model:open="exchange.customExchange">
             <div class="flex flex-row gap-5 items-center">
-              <BaseCheckbox v-model="exchange.customExchange">{{
-                t('workspace.customExchange')
-              }}</BaseCheckbox>
+              <BaseCheckbox v-model="exchange.customExchange">Custom Exchange</BaseCheckbox>
               <span v-show="!exchange.customExchange" class="text-sm">
-                {{ t('workspace.currentExchange') }}:
+                Current Exchange:
                 {{ botStore.activeBot.botState.exchange }}
                 {{ botStore.activeBot.botState.trading_mode }}
               </span>
@@ -136,19 +134,19 @@ watch(
         </div>
         <div class="grid grid-cols-3 md:grid-cols-5 mx-1 gap-1 md:gap-2">
           <div class="text-start md:me-1 col-span-2">
-            <span>{{ t('workspace.strategy') }}</span>
+            <span>Strategy</span>
             <StrategySelect v-model="chartStore.strategy" class="mt-1 mb-1"></StrategySelect>
             <BaseCheckbox
               v-if="botStore.activeBot.botFeatures.chartLiveData"
               v-model="chartStore.useLiveData"
               class="align-self-center"
-              :title="t('workspace.useLiveDataHint')"
+              title="Use live data from the exchange. Only use if you don't have data downloaded locally."
             >
-              {{ t('workspace.useLiveData') }}
+              Use Live Data
             </BaseCheckbox>
           </div>
           <div class="flex flex-col text-start">
-            <span>{{ t('workspace.timeframe') }}</span>
+            <span>Timeframe</span>
             <TimeframeSelect v-model="chartStore.selectedTimeframe" class="mt-1" />
           </div>
           <TimeRangeSelect

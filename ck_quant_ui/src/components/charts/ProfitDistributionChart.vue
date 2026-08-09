@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import ECharts from 'vue-echarts';
 import type { EChartsOption } from 'echarts';
 
@@ -28,6 +27,9 @@ use([
   TooltipComponent,
 ]);
 
+// Define Column labels here to avoid typos
+const CHART_PROFIT = 'Trade count';
+
 const props = withDefaults(
   defineProps<{
     trades: ClosedTrade[];
@@ -38,8 +40,6 @@ const props = withDefaults(
   },
 );
 const settingsStore = useSettingsStore();
-const { t } = useI18n();
-const chartTradeCount = computed(() => t('workspace.tradeCountLabel'));
 // registerTransform(ecStat.transform.histogram);
 // console.log(profits);
 // const data = [[]];
@@ -61,7 +61,7 @@ const data = computed(() => {
 const chartOptions = computed((): EChartsOption => {
   const chartOptionsLoc: EChartsOption = {
     title: {
-      text: t('workspace.profitDistribution'),
+      text: 'Profit distribution',
       left: 'center',
       show: props.showTitle,
     },
@@ -79,21 +79,21 @@ const chartOptions = computed((): EChartsOption => {
       },
     },
     legend: {
-      data: [chartTradeCount.value],
+      data: [CHART_PROFIT],
       right: '5%',
       top: 0,
       selectedMode: false,
     },
     xAxis: {
       type: 'category',
-      name: t('workspace.profitPercent'),
+      name: 'Profit %',
       nameLocation: 'middle',
       nameGap: 25,
     },
     yAxis: [
       {
         type: 'value',
-        name: chartTradeCount.value,
+        name: CHART_PROFIT,
         splitLine: {
           show: false,
         },
@@ -111,7 +111,7 @@ const chartOptions = computed((): EChartsOption => {
     series: [
       {
         type: 'bar',
-        name: chartTradeCount.value,
+        name: CHART_PROFIT,
         animation: true,
         encode: {
           x: 'x0',
@@ -135,7 +135,7 @@ const chartOptions = computed((): EChartsOption => {
       class="z-2 absolute fixed-top flex items-center gap-10 ms-2 mt-1"
       :class="{ 'mx-auto': showTitle }"
       label-for="input-bins"
-      :label="t('workspace.bins')"
+      label="Bins"
       orientation="horizontal"
     >
       <USelect

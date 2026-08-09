@@ -1,7 +1,4 @@
-import { workspaceMessages } from './workspace';
-
 export default {
-  workspace: workspaceMessages.ko,
   language: {
     label: '언어',
     auto: '시스템 언어',

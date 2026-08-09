@@ -232,7 +232,7 @@ const tradingTabItems = computed<TabsItem[]>(() => {
         </DraggableContainer>
       </GridItem>
       <GridItem
-        v-if="gridLayoutTradeDetail.h !== 0"
+        v-if="gridLayoutChartView.h !== 0"
         v-bind="gridItemProps"
         :i="gridLayoutChartView.i"
         :x="gridLayoutChartView.x"
@@ -256,3 +256,4 @@ const tradingTabItems = computed<TabsItem[]>(() => {
     </template>
   </GridLayout>
 </template>
+

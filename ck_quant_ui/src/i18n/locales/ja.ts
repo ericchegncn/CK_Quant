@@ -1,7 +1,4 @@
-import { workspaceMessages } from './workspace';
-
 export default {
-  workspace: workspaceMessages.ja,
   language: {
     label: '言語',
     auto: 'システム言語',

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import type { ForceEnterPayload } from '@/types';
 import { OrderSides } from '@/types';
 
@@ -18,7 +17,6 @@ const emit = defineEmits<{
 }>();
 
 const botStore = useBotStore();
-const { t } = useI18n();
 
 const form = ref<HTMLFormElement>();
 const selectedPair = ref('');
@@ -30,14 +28,14 @@ const ordertype = ref('');
 const orderSide = ref<OrderSides>(OrderSides.long);
 const enterTag = ref('force_entry');
 
-const orderTypeOptions = computed(() => [
-  { value: 'market', text: t('workspace.market') },
-  { value: 'limit', text: t('workspace.limit') },
-]);
-const orderSideOptions = computed(() => [
-  { value: 'long', text: t('workspace.long') },
-  { value: 'short', text: t('workspace.short') },
-]);
+const orderTypeOptions = [
+  { value: 'market', text: 'Market' },
+  { value: 'limit', text: 'Limit' },
+];
+const orderSideOptions = [
+  { value: 'long', text: 'Long' },
+  { value: 'short', text: 'Short' },
+];
 
 function checkFormValidity() {
   const valid = form.value?.checkValidity();
@@ -93,20 +91,14 @@ resetForm();
 
 <template>
   <UModal
-    :title="
-      positionIncrease
-        ? t('workspace.increasingPositionFor', { pair })
-        : t('workspace.forceEnteringTrade')
-    "
-    :description="
-      positionIncrease ? t('workspace.increaseExistingPosition') : t('workspace.manuallyEnterTrade')
-    "
+    :title="positionIncrease ? `Increasing position for ${pair}` : 'Force entering a trade'"
+    :description="positionIncrease ? 'Increase an existing position' : 'Manually enter a new trade'"
   >
     <template #body>
       <form ref="form" class="space-y-4" @submit.prevent="handleEntry">
         <UFormField
           v-if="botStore.activeBot.botFeatures.forceEnterShort && botStore.activeBot.shortAllowed"
-          :label="t('workspace.orderDirection')"
+          label="Order direction (Long or Short)"
         >
           <USegmentedControl
             v-model="orderSide"
@@ -118,7 +110,7 @@ resetForm();
           />
         </UFormField>
 
-        <UFormField :label="t('workspace.pair')" required>
+        <UFormField label="Pair" required>
           <UInput
             v-model="selectedPair"
             :disabled="positionIncrease"
@@ -129,7 +121,7 @@ resetForm();
           />
         </UFormField>
 
-        <UFormField :label="t('workspace.priceOptional')">
+        <UFormField label="Price [optional]">
           <UInputNumber
             v-model="price"
             show-buttons
@@ -144,11 +136,7 @@ resetForm();
           />
         </UFormField>
 
-        <UFormField
-          :label="
-            t('workspace.stakeAmountOptional', { currency: botStore.activeBot.stakeCurrency })
-          "
-        >
+        <UFormField :label="`Stake-amount in ${botStore.activeBot.stakeCurrency} [optional]`">
           <UInputNumber
             v-model="stakeAmount"
             show-buttons
@@ -164,7 +152,7 @@ resetForm();
 
         <UFormField
           v-if="botStore.activeBot.botFeatures.forceEnterShort && botStore.activeBot.shortAllowed"
-          :label="t('workspace.leverageOptional')"
+          label="Leverage to apply [optional]"
         >
           <UInputNumber
             id="leverage-input"
@@ -178,7 +166,7 @@ resetForm();
           />
         </UFormField>
 
-        <UFormField :label="t('workspace.orderType')">
+        <UFormField label="OrderType">
           <USegmentedControl
             v-model="ordertype"
             :items="orderTypeOptions"
@@ -191,7 +179,7 @@ resetForm();
 
         <UFormField
           v-if="botStore.activeBot.botFeatures.forceEntryTag"
-          :label="t('workspace.customEntryTagOptional')"
+          label="* Custom entry tag [optional]"
         >
           <UInput id="enterTag-input" v-model="enterTag" class="w-full" />
         </UFormField>
@@ -199,10 +187,8 @@ resetForm();
     </template>
     <template #footer>
       <div class="ms-auto flex justify-end gap-2">
-        <UButton color="neutral" @click="$emit('close', false)" icon="mdi:close">{{
-          t('workspace.cancel')
-        }}</UButton>
-        <UButton @click="handleEntry" icon="mdi:check">{{ t('workspace.enterPosition') }}</UButton>
+        <UButton color="neutral" @click="$emit('close', false)" icon="mdi:close"> Cancel </UButton>
+        <UButton @click="handleEntry" icon="mdi:check"> Enter Position </UButton>
       </div>
     </template>
   </UModal>

@@ -28,13 +28,13 @@ const DEFAULT_TRADING_LAYOUT: GridItemData[] = [
   { i: TradeLayout.tradeHistory, x: 3, y: 25, w: 9, h: 10 },
 ];
 
-// Currently only multiPane is visible
+// Mobile layout: keep the main trading cards visible in a single scrollable column.
 const DEFAULT_TRADING_LAYOUT_SM: GridItemData[] = [
   { i: TradeLayout.multiPane, x: 0, y: 0, w: 12, h: 10 },
-  { i: TradeLayout.chartView, x: 0, y: 10, w: 12, h: 0 },
-  { i: TradeLayout.tradeDetail, x: 0, y: 19, w: 12, h: 0 },
-  { i: TradeLayout.openTrades, x: 0, y: 8, w: 12, h: 0 },
-  { i: TradeLayout.tradeHistory, x: 0, y: 25, w: 12, h: 0 },
+  { i: TradeLayout.chartView, x: 0, y: 10, w: 12, h: 12 },
+  { i: TradeLayout.openTrades, x: 0, y: 22, w: 12, h: 6 },
+  { i: TradeLayout.tradeHistory, x: 0, y: 28, w: 12, h: 10 },
+  { i: TradeLayout.tradeDetail, x: 0, y: 38, w: 12, h: 6 },
 ];
 
 const DEFAULT_DASHBOARD_LAYOUT: GridItemData[] = [
@@ -162,3 +162,4 @@ export const useLayoutStore = defineStore(
 if (import.meta.hot) {
   import.meta.hot.accept(acceptHMRUpdate(useLayoutStore, import.meta.hot));
 }
+

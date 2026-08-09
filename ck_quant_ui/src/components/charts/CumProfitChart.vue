@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import type { EChartsOption } from 'echarts';
 import ECharts from 'vue-echarts';
 
@@ -39,6 +38,9 @@ use([
   TooltipComponent,
 ]);
 
+// Define Column labels here to avoid typos
+const CHART_PROFIT = 'Profit';
+
 const props = withDefaults(
   defineProps<{
     trades: ClosedTrade[];
@@ -53,8 +55,6 @@ const props = withDefaults(
   },
 );
 const settingsStore = useSettingsStore();
-const { t, locale } = useI18n();
-const chartProfit = computed(() => t('workspace.profit'));
 const colorStore = useColorStore();
 // const botList = ref<string[]>([]);
 
@@ -169,7 +169,7 @@ function generateChart(initial = false) {
       },
       {
         type: 'line',
-        name: chartProfit.value,
+        name: CHART_PROFIT,
         animation: initial,
         step: 'end',
         lineStyle: {
@@ -206,11 +206,11 @@ function generateChart(initial = false) {
 }
 
 const cumProfitChartOptions: ComputedRefWithControl<EChartsOption> = computedWithControl(
-  () => [props.trades, locale.value],
+  () => props.trades,
   () => {
     const chartOptionsLoc: EChartsOption = {
       title: {
-        text: t('workspace.cumulativeProfit'),
+        text: 'Cumulative Profit',
         left: 'center',
         show: props.showTitle,
       },
@@ -221,8 +221,8 @@ const cumProfitChartOptions: ComputedRefWithControl<EChartsOption> = computedWit
           const profit = params[0].data.profit;
           const currentProfit = params[0].data['currentProfit'];
           const profitText = currentProfit
-            ? t('workspace.projectedProfit', { profit: formatPrice(currentProfit, 3) })
-            : `${t('workspace.profit')}: ${formatPrice(profit, 3)}`;
+            ? `Projected profit (incl. unrealized): ${formatPrice(currentProfit, 3)}`
+            : `Profit: ${formatPrice(profit, 3)}`;
           return `${echartsFormat.encodeHTML(timestampToDateString(params[1].data.date))}<br />${
             params[1].marker
           }${profitText}`;
@@ -235,7 +235,7 @@ const cumProfitChartOptions: ComputedRefWithControl<EChartsOption> = computedWit
         },
       },
       legend: {
-        data: [chartProfit.value],
+        data: [CHART_PROFIT],
         right: '5%',
         top: 0,
         selectedMode: false,
@@ -247,7 +247,7 @@ const cumProfitChartOptions: ComputedRefWithControl<EChartsOption> = computedWit
       yAxis: [
         {
           type: 'value',
-          name: chartProfit.value,
+          name: CHART_PROFIT,
           splitLine: {
             show: false,
           },

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import type { ForceExitPayload, Trade } from '@/types';
 import { refDebounced } from '@vueuse/core';
 
@@ -14,7 +13,6 @@ const emit = defineEmits<{
 }>();
 
 const botStore = useBotStore();
-const { t } = useI18n();
 
 const form = ref<HTMLFormElement>();
 const amount = ref<number | undefined>(undefined);
@@ -61,38 +59,30 @@ const amountDebounced = refDebounced(amount, 250, { maxWait: 500 });
 
 const amountInBase = computed<string>(() => {
   return amountDebounced.value && props.trade.current_rate
-    ? `~${formatPriceCurrency(amountDebounced.value * props.trade.current_rate, props.trade.quote_currency || '', props.stakeCurrencyDecimals)} (${t('workspace.estimatedValue')}) `
+    ? `~${formatPriceCurrency(amountDebounced.value * props.trade.current_rate, props.trade.quote_currency || '', props.stakeCurrencyDecimals)} (Estimated value) `
     : '';
 });
-const orderTypeOptions = computed(() => [
-  { value: 'market', text: t('workspace.market') },
-  { value: 'limit', text: t('workspace.limit') },
-]);
+const orderTypeOptions = [
+  { value: 'market', text: 'Market' },
+  { value: 'limit', text: 'Limit' },
+];
 resetForm();
 </script>
 
 <template>
-  <UModal
-    :title="t('workspace.forceExitingTrade')"
-    :description="t('workspace.forceExitDescription')"
-  >
+  <UModal :title="`Force exiting a trade`" description="Configure and confirm a forced trade exit">
     <template #body>
       <form ref="form" class="space-y-4" @submit.prevent="handleExit">
         <div class="mb-4">
           <p class="mb-2">
-            <span>{{ t('workspace.exitingTrade', { id: trade.trade_id, pair: trade.pair }) }}</span>
+            <span>Exiting Trade #{{ trade.trade_id }} {{ trade.pair }}.</span>
             <br />
-            <span>{{
-              t('workspace.currentlyOwning', {
-                amount: trade.amount,
-                currency: trade.base_currency,
-              })
-            }}</span>
+            <span>Currently owning {{ trade.amount }} {{ trade.base_currency }}</span>
           </p>
         </div>
 
         <UFormField
-          :label="t('workspace.amountOptional', { currency: trade.base_currency })"
+          :label="`Amount in ${trade.base_currency} [optional]`"
           :description="amountInBase"
         >
           <div class="space-y-2">
@@ -116,9 +106,9 @@ resetForm();
           </div>
         </UFormField>
         <UFormField
-          :label="t('workspace.price')"
+          label="Price"
           v-if="botStore.activeBot.botFeatures.forceExitWithPrice"
-          :description="t('workspace.limitOrdersOnly')"
+          description="Only available with limit orders"
         >
           <UInputNumber
             id="price-input"
@@ -134,7 +124,7 @@ resetForm();
           />
         </UFormField>
 
-        <UFormField :label="t('workspace.orderType')" required>
+        <UFormField label="OrderType" required>
           <USegmentedControl
             v-model="ordertype"
             :items="orderTypeOptions"
@@ -146,12 +136,10 @@ resetForm();
       </form>
     </template>
     <template #footer>
-      <UButton class="ms-auto" icon="mdi:close" color="neutral" @click="$emit('close', false)">{{
-        t('workspace.cancel')
-      }}</UButton>
-      <UButton icon="mdi:exit-to-app" @click="handleExit">{{
-        t('workspace.exitPosition')
-      }}</UButton>
+      <UButton class="ms-auto" icon="mdi:close" color="neutral" @click="$emit('close', false)"
+        >Cancel</UButton
+      >
+      <UButton icon="mdi:exit-to-app" @click="handleExit">Exit Position</UButton>
     </template>
   </UModal>
 </template>

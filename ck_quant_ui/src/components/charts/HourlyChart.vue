@@ -1,7 +1,6 @@
 <script setup lang="ts">
 // TODO: is this component used?!?
 import ECharts from 'vue-echarts';
-import { useI18n } from 'vue-i18n';
 
 import type { Trade } from '@/types';
 import type { EChartsOption } from 'echarts';
@@ -32,6 +31,9 @@ use([
 ]);
 
 // Define Column labels here to avoid typos
+const CHART_PROFIT = 'Profit %';
+const CHART_TRADE_COUNT = 'Trade Count';
+
 const props = withDefaults(
   defineProps<{
     trades: Trade[];
@@ -43,7 +45,6 @@ const props = withDefaults(
 );
 const settingsStore = useSettingsStore();
 const colorStore = useColorStore();
-const { t } = useI18n();
 
 const hourlyData = computed(() => {
   const res = new Array(24);
@@ -63,11 +64,9 @@ const hourlyData = computed(() => {
   return res;
 });
 const hourlyChartOptions = computed((): EChartsOption => {
-  const chartProfit = t('workspace.profitPercent');
-  const chartTradeCount = t('workspace.tradeCountLabel');
   return {
     title: {
-      text: t('workspace.hourlyProfit'),
+      text: 'Hourly Profit',
       show: props.showTitle,
     },
     backgroundColor: 'rgba(0, 0, 0, 0)',
@@ -85,7 +84,7 @@ const hourlyChartOptions = computed((): EChartsOption => {
       },
     },
     legend: {
-      data: [chartProfit, chartTradeCount],
+      data: [CHART_PROFIT, CHART_TRADE_COUNT],
       right: '5%',
       top: 0,
     },
@@ -95,7 +94,7 @@ const hourlyChartOptions = computed((): EChartsOption => {
     yAxis: [
       {
         type: 'value',
-        name: chartProfit,
+        name: CHART_PROFIT,
         splitLine: {
           show: false,
         },
@@ -105,7 +104,7 @@ const hourlyChartOptions = computed((): EChartsOption => {
       },
       {
         type: 'value',
-        name: chartTradeCount,
+        name: CHART_TRADE_COUNT,
         nameRotate: 90,
         nameLocation: 'middle',
         nameGap: 30,
@@ -133,13 +132,13 @@ const hourlyChartOptions = computed((): EChartsOption => {
     series: [
       {
         type: 'line',
-        name: chartProfit,
+        name: CHART_PROFIT,
         animation: false,
         // symbol: 'none',
       },
       {
         type: 'bar',
-        name: chartTradeCount,
+        name: CHART_TRADE_COUNT,
         animation: false,
         itemStyle: {
           color: 'rgba(150,150,150,0.3)',

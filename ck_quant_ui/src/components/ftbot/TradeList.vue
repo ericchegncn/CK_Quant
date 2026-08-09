@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import { getPaginationRowModel } from '@tanstack/vue-table';
 import type { TableColumn, TableRow } from '@nuxt/ui';
 import type { MultiDeletePayload, MultiForceExitPayload, Trade } from '@/types';
@@ -27,7 +26,6 @@ const props = withDefaults(
 );
 
 const botStore = useBotStore();
-const { t } = useI18n();
 const router = useRouter();
 const settingsStore = useSettingsStore();
 const tradesTable = useTemplateRef('tradesTable');
@@ -41,36 +39,37 @@ function formatPriceWithDecimals(price: number) {
   return formatPrice(price, botStore.activeBot.stakeCurrencyDecimals);
 }
 
-const tableFields = computed(() => {
-  const fields = [
-    { field: 'trade_id', header: t('workspace.id') },
-    { field: 'pair', header: t('workspace.pair') },
-    { field: 'amount', header: t('workspace.amount') },
-    props.activeTrades
-      ? { field: 'stake_amount', header: t('workspace.stakeAmount') }
-      : { field: 'max_stake_amount', header: t('workspace.totalStakeAmount') },
-    { field: 'open_rate', header: t('workspace.openRate') },
-    {
-      field: props.activeTrades ? 'current_rate' : 'close_rate',
-      header: props.activeTrades ? t('workspace.currentRate') : t('workspace.closeRate'),
-    },
-    {
-      field: 'profit',
-      header: props.activeTrades
-        ? t('workspace.currentProfitPercent')
-        : t('workspace.profitPercent'),
-    },
-    { field: 'open_timestamp', header: t('workspace.openDate') },
-    ...(props.activeTrades
-      ? [{ field: 'actions', header: '' }]
-      : [
-          { field: 'close_timestamp', header: t('workspace.closeDate') },
-          { field: 'exit_reason', header: t('workspace.closeReason') },
-        ]),
-  ];
-  if (props.multiBotView) fields.unshift({ field: 'botName', header: t('workspace.bot') });
-  return fields;
-});
+const tableFields = ref([
+  { field: 'trade_id', header: 'ID' },
+  { field: 'pair', header: 'Pair' },
+  { field: 'amount', header: 'Amount' },
+  props.activeTrades
+    ? { field: 'stake_amount', header: 'Stake amount' }
+    : { field: 'max_stake_amount', header: 'Total stake amount' },
+  {
+    field: 'open_rate',
+    header: 'Open rate',
+  },
+  {
+    field: props.activeTrades ? 'current_rate' : 'close_rate',
+    header: props.activeTrades ? 'Current rate' : 'Close rate',
+  },
+  {
+    field: 'profit',
+    header: props.activeTrades ? 'Current profit %' : 'Profit %',
+  },
+  { field: 'open_timestamp', header: 'Open date' },
+  ...(props.activeTrades
+    ? [{ field: 'actions', header: '' }]
+    : [
+        { field: 'close_timestamp', header: 'Close date' },
+        { field: 'exit_reason', header: 'Close Reason' },
+      ]),
+]);
+
+if (props.multiBotView) {
+  tableFields.value.unshift({ field: 'botName', header: 'Bot' });
+}
 
 const tableColumns = computed<TableColumn<Trade>[]>(() =>
   tableFields.value.map((f) => ({ accessorKey: f.field, header: f.header })),
@@ -90,19 +89,15 @@ const filteredTrades = computed(() => {
 
 async function forceExitHandler(item: Trade, ordertype: string | undefined = undefined) {
   const message = ordertype
-    ? t('workspace.confirmExitOrder', {
-        id: item.trade_id,
-        pair: item.pair,
-        orderType: ordertype,
-      })
-    : t('workspace.confirmExit', { id: item.trade_id, pair: item.pair });
+    ? `Really exit trade ${item.trade_id} (Pair ${item.pair}) using a ${ordertype} order?`
+    : `Really exit trade ${item.trade_id} (Pair ${item.pair})?`;
   if (
     settingsStore.confirmDialog !== true ||
     (await confirm({
-      title: t('workspace.forceExit'),
-      description: t('workspace.irreversible'),
+      title: 'Force exit trade',
+      description: 'This action cannot be undone.',
       message,
-      confirmText: t('workspace.confirm'),
+      confirmText: 'Confirm',
     }))
   ) {
     const payload: MultiForceExitPayload = {
@@ -122,10 +117,10 @@ async function forceExitHandler(item: Trade, ordertype: string | undefined = und
 async function removeTradeHandler(item: Trade) {
   if (
     await confirm({
-      title: t('workspace.deleteTrade'),
-      description: t('workspace.irreversible'),
-      message: t('workspace.confirmDelete', { id: item.trade_id, pair: item.pair }),
-      confirmText: t('workspace.confirm'),
+      title: 'Delete trade',
+      description: 'This action cannot be undone.',
+      message: `Really delete trade ${item.trade_id} (Pair ${item.pair})?`,
+      confirmText: 'Confirm',
     })
   ) {
     const payload: MultiDeletePayload = {
@@ -146,10 +141,10 @@ function forceExitPartialHandler(item: Trade) {
 async function cancelOpenOrderHandler(item: Trade) {
   if (
     await confirm({
-      title: t('workspace.cancelOpenOrder'),
-      description: t('workspace.irreversible'),
-      message: t('workspace.confirmCancelOrder', { id: item.trade_id, pair: item.pair }),
-      confirmText: t('workspace.confirm'),
+      title: 'Cancel open order',
+      description: 'This action cannot be undone.',
+      message: `Really cancel open order for trade ${item.trade_id} (Pair ${item.pair})?`,
+      confirmText: 'Confirm',
     })
   ) {
     const payload: MultiDeletePayload = {
@@ -226,8 +221,7 @@ const rowSelection = computed({
         {{ row.original.trade_id }}
         {{
           botStore.activeBot.botFeatures.futures && row.original.trading_mode !== 'spot'
-            ? (row.original.trade_id ? '| ' : '') +
-              (row.original.is_short ? t('workspace.short') : t('workspace.long'))
+            ? (row.original.trade_id ? '| ' : '') + (row.original.is_short ? 'Short' : 'Long')
             : ''
         }}
       </template>
@@ -278,7 +272,7 @@ const rowSelection = computed({
     </UTable>
 
     <div v-if="showFilter" class="flex justify-end gap-2 p-2">
-      <UInput v-model="filterText" :placeholder="t('workspace.filter')" class="w-64" />
+      <UInput v-model="filterText" placeholder="Filter" class="w-64" />
     </div>
     <div v-if="!activeTrades" class="flex justify-end border-t border-default pt-2">
       <UPagination

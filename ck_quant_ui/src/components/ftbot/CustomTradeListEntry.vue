@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import type { Trade } from '@/types';
 import TradeProfit from './TradeProfit.vue';
 
@@ -14,7 +13,6 @@ withDefaults(
   },
 );
 const classLabel = 'w-6/12 text-neutral-700 dark:text-neutral-400 text-sm';
-const { t } = useI18n();
 </script>
 
 <template>
@@ -24,27 +22,23 @@ const { t } = useI18n();
         <span class="me-1 font-bold">{{ trade.pair }}</span>
         <small class="text-neutral-700 dark:text-neutral-400">(#{{ trade.trade_id }})</small>
       </span>
-      <ValuePair :description="t('workspace.amount')" :class-label="classLabel">
+      <ValuePair description="Amount" :class-label="classLabel">
         {{ trade.amount }}
       </ValuePair>
-      <ValuePair :description="t('workspace.openRate')" :class-label="classLabel">
+      <ValuePair description="Open Rate" :class-label="classLabel">
         {{ formatPrice(trade.open_rate) }}
       </ValuePair>
       <ValuePair
         v-if="trade.is_open && trade.current_rate"
-        :description="t('workspace.currentRate')"
+        description="Current Rate"
         :class-label="classLabel"
       >
         {{ formatPrice(trade.current_rate) }}
       </ValuePair>
-      <ValuePair :description="t('workspace.openDate')" :class-label="classLabel">
+      <ValuePair description="Open date" :class-label="classLabel">
         <DateTimeTZ :date="trade.open_timestamp" :date-only="true" />
       </ValuePair>
-      <ValuePair
-        v-if="trade.close_timestamp"
-        :description="t('workspace.closeDate')"
-        :class-label="classLabel"
-      >
+      <ValuePair v-if="trade.close_timestamp" description="Close date" :class-label="classLabel">
         <DateTimeTZ :date="trade.close_timestamp" :date-only="true" />
       </ValuePair>
     </div>

@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import type { ForceExitPayload } from '@/types';
 
 const botStore = useBotStore();
-const { t } = useI18n();
 const { confirm } = useConfirmBox();
 
 const { forceEntryDialog } = useForceTrade();
@@ -14,8 +12,8 @@ const isRunning = computed((): boolean => {
 
 async function handleStopBot() {
   const result = await confirm({
-    title: t('workspace.stopBotTitle'),
-    message: t('workspace.stopBotQuestion'),
+    title: 'Stop Bot',
+    message: 'Stop the bot loop from running?',
   });
   if (result) {
     botStore.activeBot.stopBot();
@@ -25,8 +23,9 @@ async function handleStopBot() {
 async function handleStopBuy() {
   if (
     await confirm({
-      title: t('workspace.pauseTitle'),
-      message: t('workspace.pauseQuestion'),
+      title: 'Pause - Stop Entering',
+      message:
+        'Freqtrade will continue to handle open trades, but will not enter new trades or increase position sizes. \nReally stop entering?',
     })
   ) {
     botStore.activeBot.stopBuy();
@@ -36,8 +35,8 @@ async function handleStopBuy() {
 async function handleReloadConfig() {
   if (
     await confirm({
-      title: t('workspace.reloadConfig'),
-      message: t('workspace.reloadConfigQuestion'),
+      title: 'Reload Config',
+      message: 'Reload configuration (including strategy)?',
     })
   ) {
     botStore.activeBot.reloadConfig();
@@ -47,8 +46,8 @@ async function handleReloadConfig() {
 async function handleForceExit() {
   if (
     await confirm({
-      title: t('workspace.forceExitAll'),
-      message: t('workspace.forceExitAllQuestion'),
+      title: 'ForceExit all',
+      message: 'Really forceexit ALL trades?',
     })
   ) {
     const payload: ForceExitPayload = {
@@ -72,7 +71,7 @@ async function handleForceEntry() {
       size="xl"
       color="neutral"
       :disabled="!botStore.activeBot.isTrading || isRunning"
-      :title="t('workspace.startTrading')"
+      title="Start Trading"
       icon="mdi:play"
       @click="botStore.activeBot.startBot()"
     />
@@ -80,7 +79,7 @@ async function handleForceEntry() {
       size="xl"
       color="neutral"
       :disabled="!botStore.activeBot.isTrading || !isRunning"
-      :title="t('workspace.stopTradingHint')"
+      title="Stop Trading - Also stops handling open trades."
       icon="mdi:stop"
       @click="handleStopBot()"
     />
@@ -88,7 +87,7 @@ async function handleForceEntry() {
       size="xl"
       color="neutral"
       :disabled="!botStore.activeBot.isTrading || !isRunning"
-      :title="t('workspace.pauseTradingHint')"
+      title="Pause (StopBuy) - Freqtrade will continue to handle open trades, but will not enter new trades or increase position sizes."
       icon="mdi:pause"
       @click="handleStopBuy()"
     />
@@ -96,7 +95,7 @@ async function handleForceEntry() {
       size="xl"
       color="neutral"
       :disabled="!botStore.activeBot.isTrading"
-      :title="t('workspace.reloadConfigHint')"
+      title="Reload Config - reloads configuration including strategy, resetting all settings changed on the fly."
       icon="mdi:reload"
       @click="handleReloadConfig()"
     />
@@ -104,7 +103,7 @@ async function handleForceEntry() {
       color="neutral"
       size="xl"
       :disabled="!botStore.activeBot.isTrading"
-      :title="t('workspace.forceExitAll')"
+      title="Force exit all"
       icon="mdi:close-box-multiple"
       @click="handleForceExit()"
     />
@@ -113,7 +112,7 @@ async function handleForceEntry() {
       size="xl"
       color="neutral"
       :disabled="!botStore.activeBot.isTrading || !isRunning"
-      :title="t('workspace.forceEntryHint')"
+      title="Force enter - Immediately enter a trade at an optional price. Exits are then handled according to strategy rules."
       icon="mdi:plus-box-multiple-outline"
       @click="handleForceEntry"
     />
@@ -122,7 +121,7 @@ async function handleForceEntry() {
       size="xl"
       color="neutral"
       :disabled="botStore.activeBot.isTrading"
-      :title="t('workspace.startTradingMode')"
+      title="Start Trading mode"
       icon="mdi:play"
       @click="botStore.activeBot.startTrade()"
     />
