@@ -72,10 +72,17 @@ jobs:
           checksum="$(cat "$APK_NAME.sha256")"
           cp docs/releases/2026.8.3.md release-notes.md
           printf '\n\n## APK SHA-256\n\n`%s`\n' "$checksum" >> release-notes.md
-          gh release create "$RELEASE_TAG" "$APK_NAME" "$APK_NAME.sha256" \
-            --target "$GITHUB_SHA" \
-            --title "CK Quant $RELEASE_TAG" \
-            --notes-file release-notes.md
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$APK_NAME" "$APK_NAME.sha256" --clobber
+            gh release edit "$RELEASE_TAG" \
+              --title "CK Quant $RELEASE_TAG" \
+              --notes-file release-notes.md
+          else
+            gh release create "$RELEASE_TAG" "$APK_NAME" "$APK_NAME.sha256" \
+              --target "$GITHUB_SHA" \
+              --title "CK Quant $RELEASE_TAG" \
+              --notes-file release-notes.md
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
