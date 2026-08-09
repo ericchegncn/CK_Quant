@@ -65,6 +65,18 @@ jobs:
           cp ck_quant_ui/android/app/build/outputs/apk/debug/app-debug.apk "$APK_NAME"
           sha256sum "$APK_NAME" | tee "$APK_NAME.sha256"
 
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          checksum="$(cat "$APK_NAME.sha256")"
+          cp docs/releases/2026.8.3.md release-notes.md
+          printf '\n\n## APK SHA-256\n\n`%s`\n' "$checksum" >> release-notes.md
+          gh release create "$RELEASE_TAG" "$APK_NAME" "$APK_NAME.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "CK Quant $RELEASE_TAG" \
+            --notes-file release-notes.md
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
 
@@ -91,16 +103,4 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Publish GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          checksum="$(cat "$APK_NAME.sha256")"
-          cp docs/releases/2026.8.3.md release-notes.md
-          printf '\n\n## APK SHA-256\n\n`%s`\n' "$checksum" >> release-notes.md
-          gh release create "$RELEASE_TAG" "$APK_NAME" "$APK_NAME.sha256" \
-            --target "$GITHUB_SHA" \
-            --title "CK Quant $RELEASE_TAG" \
-            --notes-file release-notes.md
 
