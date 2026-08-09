@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
-
-const { t } = useI18n();
 defineProps<{
   history?: boolean;
 }>();
@@ -13,7 +10,7 @@ const botStore = useBotStore();
     <!-- <TradeList
       class="open-trades"
       :trades="openTrades"
-      :title="t('workspace.openTrades')"
+      title="Open trades"
       :active-trades="true"
       empty-text="Currently no open trades."
     /> -->
@@ -23,14 +20,14 @@ const botStore = useBotStore();
       title="Open trades"
       :active-trades="true"
       :stake-currency-decimals="botStore.activeBot.stakeCurrencyDecimals"
-      :empty-text="t('workspace.noOpenTrades')"
+      empty-text="No open Trades."
     />
     <CustomTradeList
       v-if="history && !botStore.activeBot.detailTradeId"
       :trades="botStore.activeBot.closedTrades"
-      :title="t('workspace.tradeHistory')"
+      title="Trade history"
       :stake-currency-decimals="botStore.activeBot.stakeCurrencyDecimals"
-      :empty-text="t('workspace.noClosedTrades')"
+      empty-text="No closed trades so far."
     />
     <div
       v-if="botStore.activeBot.detailTradeId && botStore.activeBot.tradeDetail"
@@ -40,7 +37,7 @@ const botStore = useBotStore();
         color="neutral"
         class="self-start my-1 ms-1"
         @click="botStore.activeBot.setDetailTrade(null)"
-        :label="t('workspace.back')"
+        label="Back"
         icon="mdi:arrow-left"
       />
       <TradeDetail

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import type { IndicatorConfig, PlotConfig } from '@/types';
 
 const props = withDefaults(
@@ -14,7 +13,6 @@ const props = withDefaults(
 
 const plotStore = usePlotConfigStore();
 const botStore = useBotStore();
-const { t } = useI18n();
 
 const plotConfigNameLoc = ref('default');
 const selIndicatorName = ref('');
@@ -267,30 +265,24 @@ const markAreaZIndex = computed({
 
 <template>
   <div v-if="columns">
-    <UFormField :label="t('workspace.plotConfigName')" class="text-md">
+    <UFormField label="Plot config name" class="text-md">
       <PlotConfigSelect allow-edit></PlotConfigSelect>
     </UFormField>
     <USeparator class="my-2" />
-    <BaseCheckbox v-model="showTagsInTooltips" class="mb-1">{{
-      t('workspace.showTagsInTooltips')
-    }}</BaseCheckbox>
+    <BaseCheckbox v-model="showTagsInTooltips" class="mb-1">Show Tags in Tooltips</BaseCheckbox>
     <div class="grid grid-cols-2 items-center gap-2 w-full">
-      <label
-        >{{ t('workspace.markAreaZIndex') }} <br /><small>{{
-          t('workspace.markAreaZIndexHint')
-        }}</small></label
-      >
+      <label>Mark Area Z-Index <br /><small>(defaults to 1 - Candlechart is at Z=2)</small></label>
 
       <UInputNumber v-model="markAreaZIndex" class="mb-1" />
     </div>
     <USeparator class="my-2" />
 
-    <UFormField :label="t('workspace.targetPlot')" class="text-md">
+    <UFormField label="Target Plot" class="text-md">
       <EditValue
         v-model="selSubPlot"
         :allow-edit="!isMainPlot"
         allow-add
-        :editable-name="t('workspace.plotConfiguration')"
+        editable-name="plot configuration"
         align-vertical
         @new="addSubplot"
         @delete="deleteSubplot"
@@ -311,35 +303,35 @@ const markAreaZIndex = computed({
       </EditValue>
     </UFormField>
     <USeparator class="my-2" />
-    <UFormField :label="t('workspace.indicatorsInPlot')" class="text-md">
+    <UFormField label="Indicators in this plot" class="text-md">
       <UListbox v-model="selIndicatorName" value-key="value" :items="usedColumns"> </UListbox>
     </UFormField>
     <div class="flex flex-row mt-1 gap-1">
       <UButton
         color="neutral"
-        :title="t('workspace.removeIndicator')"
+        title="Remove indicator to plot"
         :disabled="!selIndicatorName"
         class="col"
         @click="removeIndicator"
-        :label="t('workspace.removeIndicator')"
+        label="Remove indicator"
         icon="mdi:minus-box-outline"
       />
 
       <UButton
         color="neutral"
-        :title="t('workspace.fromTemplate')"
+        title="Load indicator config from template"
         @click="fromPlotTemplateVisible = !fromPlotTemplateVisible"
-        :label="t('workspace.fromTemplate')"
+        label="From template"
         icon="mdi:folder-arrow-down-outline"
       />
 
       <UButton
-        :title="t('workspace.addIndicator')"
+        title="Add indicator to plot"
         icon="mdi:plus-box-outline"
         class="col"
         :disabled="addNewIndicator"
         @click="clickAddNewIndicator"
-        :label="t('workspace.addIndicator')"
+        label="Add indicator"
       />
     </div>
 
@@ -347,7 +339,7 @@ const markAreaZIndex = computed({
       v-if="addNewIndicator"
       :columns="columns"
       class="mt-1"
-      :label="t('workspace.selectIndicatorToAdd')"
+      label="Select indicator to add"
       @indicator-selected="addNewIndicatorSelected"
     />
 
@@ -365,9 +357,9 @@ const markAreaZIndex = computed({
       <UButton
         color="neutral"
         :disabled="addNewIndicator"
-        :title="t('workspace.reset')"
+        title="Reset to last saved configuration"
         @click="loadPlotConfig"
-        :label="t('workspace.reset')"
+        label="Reset"
         icon="mdi:restore"
       />
 
@@ -389,7 +381,7 @@ const markAreaZIndex = computed({
           addNewIndicator
         "
         color="neutral"
-        :label="t('workspace.fromStrategy')"
+        label="From strategy"
         icon="mdi:download"
         @click="loadPlotConfigFromStrategy"
       />
@@ -398,18 +390,18 @@ const markAreaZIndex = computed({
         id="showButton"
         color="neutral"
         :disabled="addNewIndicator"
-        :title="t('workspace.show')"
+        title="Show configuration for easy transfer to a strategy"
         @click="showConfig = !showConfig"
         :icon="showConfig ? 'mdi:eye-off' : 'mdi:eye'"
-        :label="showConfig ? t('workspace.hide') : t('workspace.show')"
+        :label="showConfig ? 'Hide' : 'Show'"
       />
 
       <UButton
         data-toggle="tooltip"
         :disabled="addNewIndicator"
-        :title="t('workspace.save')"
+        title="Save configuration"
         @click="savePlotConfig"
-        :label="t('workspace.save')"
+        label="Save"
         variant="solid"
         icon="mdi:content-save"
       />
@@ -419,10 +411,10 @@ const markAreaZIndex = computed({
       class="mt-1"
       color="neutral"
       size="sm"
-      :title="t('workspace.loadFromText')"
+      title="Load configuration from text box below"
       @click="loadConfigFromString"
       icon="mdi:upload"
-      >{{ t('workspace.loadFromText') }}</UButton
+      >Load from string below</UButton
     >
     <div v-if="showConfig" class="w-full ms-1 mt-2">
       <UTextarea

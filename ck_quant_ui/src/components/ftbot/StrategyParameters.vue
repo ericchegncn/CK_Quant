@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import type { StrategyResult } from '@/types';
-
-const { t } = useI18n();
 
 const props = defineProps<{
   strategy: StrategyResult;
@@ -43,6 +40,6 @@ const sortedParamsBySpace = computed<Record<string, typeof props.strategy.params
     </div>
   </div>
   <div v-else class="p-4">
-    <p>{{ t('workspace.noStrategyParameters') }}</p>
+    <p>This strategy has no parameters.</p>
   </div>
 </template>
