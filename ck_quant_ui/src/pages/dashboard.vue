@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import type { GridItemData } from '@/types';
 
 const botStore = useBotStore();
+const { t } = useI18n();
 
 const layoutStore = useLayoutStore();
 const currentBreakpoint = ref('');
@@ -21,24 +23,18 @@ const isLayoutLocked = computed(() => {
 // 关键：vue-grid-layout 每行实际占用 = ROW_HEIGHT + MARGIN = 70px
 const ROW_HEIGHT = 50;
 const NAV_HEIGHT = 120; // 顶部导航 + 页头高度
-const MARGIN = 20;     // 卡片间距
+const MARGIN = 20; // 卡片间距
 const ROW_STEP = ROW_HEIGHT + MARGIN; // 每行实际占 70px
 // 可用视口高度对应的行数（每行 70px），保证大卡片底部在屏幕内
-const viewportRows = ref(
-  Math.max(6, Math.floor((window.innerHeight - NAV_HEIGHT) / ROW_STEP)),
+const viewportRows = ref(Math.max(6, Math.floor((window.innerHeight - NAV_HEIGHT) / ROW_STEP)));
+const viewportWidth = ref(window.innerWidth);
+// The merged overview stays compact on desktop and becomes a scroll-friendly single card on mobile.
+const overviewRows = computed(() =>
+  Math.max(viewportRows.value, viewportWidth.value < 768 ? 22 : 10),
 );
-// Bot Comparison 矮卡（约 3 行 = 190px）；Cumulative Profit 紧接其后（间距即 margin）
-const botComparisonRows = computed(() => 3);
-const cumProfitRows = computed(() => {
-  const botPx = botComparisonRows.value * ROW_STEP; // 矮卡占的像素（含其行间距）
-  const available = window.innerHeight - NAV_HEIGHT - botPx;
-  return Math.max(3, Math.floor(available / ROW_STEP));
-});
 function updateViewportRows() {
-  viewportRows.value = Math.max(
-    6,
-    Math.floor((window.innerHeight - NAV_HEIGHT) / ROW_STEP),
-  );
+  viewportRows.value = Math.max(6, Math.floor((window.innerHeight - NAV_HEIGHT) / ROW_STEP));
+  viewportWidth.value = window.innerWidth;
 }
 onMounted(() => {
   window.addEventListener('resize', updateViewportRows);
@@ -48,14 +44,10 @@ onBeforeUnmount(() => {
 });
 
 const gridLayoutData = computed((): GridItemData[] => {
-  // 布局规则：
-  // 首屏两张卡上下排列：
-  //   Bot Comparison 上（内容少，矮卡 ~3行）
-  //   Cumulative Profit 下（利润曲线，占满剩余空间完整显示）
-  // 其余每张卡一屏（w=12，高度 = 视口高度）
+  // The first card combines bot comparison, /profit metrics and the cumulative profit curve.
+  // Remaining cards keep the one-card-per-viewport layout.
   const order: { i: number; w: number }[] = [
     { i: DashboardLayout.botComparison, w: 12 },
-    { i: DashboardLayout.cumChartChart, w: 12 },
     { i: DashboardLayout.allOpenTrades, w: 12 },
     { i: DashboardLayout.allClosedTrades, w: 12 },
     { i: DashboardLayout.tradesLogChart, w: 12 },
@@ -63,23 +55,14 @@ const gridLayoutData = computed((): GridItemData[] => {
     { i: DashboardLayout.walletHistoryChart, w: 12 },
     { i: DashboardLayout.profitDistributionChart, w: 12 },
   ];
-  // 首屏两卡：Bot Comparison 矮卡 + Cumulative Profit 占剩余空间（精确计算）
-  const botRows = botComparisonRows.value;
-  const cumRows = cumProfitRows.value;
   return order.map((item, idx) => {
     if (idx === 0) {
-      // 首屏上卡：矮卡
-      return { i: item.i, x: 0, y: 0, w: item.w, h: botRows };
+      return { i: item.i, x: 0, y: 0, w: item.w, h: overviewRows.value };
     }
-    if (idx === 1) {
-      // 首屏下卡：紧接矮卡下方（y=botRows，间距即 margin 20px）
-      return { i: item.i, x: 0, y: botRows, w: item.w, h: cumRows };
-    }
-    // 后续卡片：每张一屏
     return {
       i: item.i,
       x: 0,
-      y: viewportRows.value + (idx - 2) * viewportRows.value,
+      y: overviewRows.value + (idx - 1) * viewportRows.value,
       w: item.w,
       h: viewportRows.value,
     };
@@ -109,10 +92,6 @@ const gridLayoutAllClosedTrades = computed((): GridItemData => {
   return findGridLayout(gridLayoutData.value, DashboardLayout.allClosedTrades);
 });
 
-const gridLayoutCumChart = computed((): GridItemData => {
-  return findGridLayout(gridLayoutData.value, DashboardLayout.cumChartChart);
-});
-
 const gridLayoutWalletHistory = computed((): GridItemData => {
   return findGridLayout(gridLayoutData.value, DashboardLayout.walletHistoryChart);
 });
@@ -126,7 +105,7 @@ const gridLayoutTradesLogChart = computed((): GridItemData => {
 
 const responsiveGridLayouts = computed(() => {
   return {
-    sm: layoutStore.getDashboardLayoutSm,
+    sm: gridLayoutData.value,
   };
 });
 
@@ -168,7 +147,11 @@ onMounted(async () => {
         :min-h="4"
         drag-allow-from=".drag-header"
       >
-        <DraggableContainer :header="`Profit over time ${botStore.botCount > 1 ? 'combined' : ''}`">
+        <DraggableContainer
+          :header="
+            `${t('workspace.profitOverTime')} ${botStore.botCount > 1 ? t('workspace.combined') : ''}`.trim()
+          "
+        >
           <PeriodBreakdown multi-bot-view />
         </DraggableContainer>
       </GridItem>
@@ -178,13 +161,13 @@ onMounted(async () => {
         :x="gridLayoutBotComparison.x"
         :y="gridLayoutBotComparison.y"
         :w="gridLayoutBotComparison.w"
-        :h="botComparisonRows"
+        :h="overviewRows"
         :min-w="3"
         :min-h="4"
         drag-allow-from=".drag-header"
       >
-        <DraggableContainer header="Bot comparison">
-          <BotComparisonList />
+        <DraggableContainer :header="t('workspace.dashboardOverview')">
+          <BotDashboardOverview />
         </DraggableContainer>
       </GridItem>
       <GridItem
@@ -199,29 +182,10 @@ onMounted(async () => {
         drag-allow-from=".drag-header"
       >
         <DraggableContainer
-          header="Open Trades"
-          info-text="Open trades of all selected bots. Click on a trade to go to the trade page for that trade/bot."
+          :header="t('workspace.openTrades')"
+          :info-text="t('workspace.openTradesInfo')"
         >
           <TradeList active-trades :trades="botStore.allOpenTradesSelectedBots" multi-bot-view />
-        </DraggableContainer>
-      </GridItem>
-      <GridItem
-        v-bind="gridItemProps"
-        :i="gridLayoutCumChart.i"
-        :x="gridLayoutCumChart.x"
-        :y="gridLayoutCumChart.y"
-        :w="gridLayoutCumChart.w"
-        :h="cumProfitRows"
-        :min-w="3"
-        :min-h="4"
-        drag-allow-from=".drag-header"
-      >
-        <DraggableContainer header="Cumulative Profit">
-          <CumProfitChart
-            :trades="botStore.allTradesSelectedBots"
-            :open-trades="botStore.allOpenTradesSelectedBots"
-            :show-title="false"
-          />
         </DraggableContainer>
       </GridItem>
       <GridItem
@@ -235,7 +199,7 @@ onMounted(async () => {
         :min-h="4"
         drag-allow-from=".drag-header"
       >
-        <DraggableContainer header="Wallet History">
+        <DraggableContainer :header="t('workspace.walletHistory')">
           <WalletHistoryChart :wallet-data="botStore.allBalanceHistory" :show-title="false" />
         </DraggableContainer>
       </GridItem>
@@ -251,8 +215,8 @@ onMounted(async () => {
         drag-allow-from=".drag-header"
       >
         <DraggableContainer
-          header="Closed Trades"
-          info-text="Closed trades for all selected bots. Click on a trade to go to the trade page for that trade/bot."
+          :header="t('workspace.closedTrades')"
+          :info-text="t('workspace.closedTradesInfo')"
         >
           <TradeList
             :active-trades="false"
@@ -273,7 +237,7 @@ onMounted(async () => {
         :min-h="4"
         drag-allow-from=".drag-header"
       >
-        <DraggableContainer header="Profit Distribution">
+        <DraggableContainer :header="t('workspace.profitDistribution')">
           <ProfitDistributionChart :trades="botStore.allTradesSelectedBots" :show-title="false" />
         </DraggableContainer>
       </GridItem>
@@ -288,7 +252,7 @@ onMounted(async () => {
         :min-h="4"
         drag-allow-from=".drag-header"
       >
-        <DraggableContainer header="Trades Log">
+        <DraggableContainer :header="t('workspace.tradesLog')">
           <TradesLogChart :trades="botStore.allTradesSelectedBots" :show-title="false" />
         </DraggableContainer>
       </GridItem>

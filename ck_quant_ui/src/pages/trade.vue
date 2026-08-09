@@ -256,4 +256,3 @@ const tradingTabItems = computed<TabsItem[]>(() => {
     </template>
   </GridLayout>
 </template>
-

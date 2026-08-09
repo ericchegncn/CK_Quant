@@ -38,27 +38,23 @@ const DEFAULT_TRADING_LAYOUT_SM: GridItemData[] = [
 ];
 
 const DEFAULT_DASHBOARD_LAYOUT: GridItemData[] = [
-  // 原左列（w:8）依次排下
-  { i: DashboardLayout.botComparison, x: 0, y: 0, w: 12, h: 6 } /* Bot Comparison */,
-  { i: DashboardLayout.allOpenTrades, x: 0, y: 6, w: 12, h: 6 },
-  { i: DashboardLayout.allClosedTrades, x: 0, y: 12, w: 12, h: 6 },
-  { i: DashboardLayout.tradesLogChart, x: 0, y: 18, w: 12, h: 6 },
-  // 原右列（w:4）接在左列下方
-  { i: DashboardLayout.dailyChart, x: 0, y: 24, w: 12, h: 6 },
-  { i: DashboardLayout.cumChartChart, x: 0, y: 30, w: 12, h: 6 },
-  { i: DashboardLayout.walletHistoryChart, x: 0, y: 36, w: 12, h: 6 },
-  { i: DashboardLayout.profitDistributionChart, x: 0, y: 42, w: 12, h: 6 },
+  { i: DashboardLayout.botComparison, x: 0, y: 0, w: 12, h: 10 },
+  { i: DashboardLayout.allOpenTrades, x: 0, y: 10, w: 12, h: 6 },
+  { i: DashboardLayout.allClosedTrades, x: 0, y: 16, w: 12, h: 6 },
+  { i: DashboardLayout.tradesLogChart, x: 0, y: 22, w: 12, h: 6 },
+  { i: DashboardLayout.dailyChart, x: 0, y: 28, w: 12, h: 6 },
+  { i: DashboardLayout.walletHistoryChart, x: 0, y: 34, w: 12, h: 6 },
+  { i: DashboardLayout.profitDistributionChart, x: 0, y: 40, w: 12, h: 6 },
 ];
 
 const DEFAULT_DASHBOARD_LAYOUT_SM: GridItemData[] = [
-  { i: DashboardLayout.botComparison, x: 0, y: 0, w: 12, h: 6 } /* Bot Comparison */,
-  { i: DashboardLayout.allOpenTrades, x: 0, y: 6, w: 12, h: 8 },
-  { i: DashboardLayout.dailyChart, x: 0, y: 14, w: 12, h: 6 },
-  { i: DashboardLayout.cumChartChart, x: 0, y: 20, w: 12, h: 6 },
-  { i: DashboardLayout.walletHistoryChart, x: 0, y: 26, w: 12, h: 6 },
-  { i: DashboardLayout.profitDistributionChart, x: 0, y: 32, w: 12, h: 6 },
-  { i: DashboardLayout.tradesLogChart, x: 0, y: 38, w: 12, h: 6 },
-  { i: DashboardLayout.allClosedTrades, x: 0, y: 44, w: 12, h: 8 },
+  { i: DashboardLayout.botComparison, x: 0, y: 0, w: 12, h: 22 },
+  { i: DashboardLayout.allOpenTrades, x: 0, y: 22, w: 12, h: 8 },
+  { i: DashboardLayout.dailyChart, x: 0, y: 30, w: 12, h: 6 },
+  { i: DashboardLayout.walletHistoryChart, x: 0, y: 36, w: 12, h: 6 },
+  { i: DashboardLayout.profitDistributionChart, x: 0, y: 42, w: 12, h: 6 },
+  { i: DashboardLayout.tradesLogChart, x: 0, y: 48, w: 12, h: 6 },
+  { i: DashboardLayout.allClosedTrades, x: 0, y: 54, w: 12, h: 8 },
 ];
 
 const STORE_LAYOUTS = 'ftLayoutSettings_v2';
@@ -162,4 +158,3 @@ export const useLayoutStore = defineStore(
 if (import.meta.hot) {
   import.meta.hot.accept(acceptHMRUpdate(useLayoutStore, import.meta.hot));
 }
-

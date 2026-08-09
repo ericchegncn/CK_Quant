@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ECharts from 'vue-echarts';
+import { useI18n } from 'vue-i18n';
 import type { ClosedTrade } from '@/types';
 import type { EChartsOption } from 'echarts';
 import { format as echartsFormat } from 'echarts';
@@ -29,6 +30,7 @@ const props = withDefaults(
 );
 
 const settingsStore = useSettingsStore();
+const { t } = useI18n();
 
 use([
   DatasetComponent,
@@ -68,9 +70,12 @@ const losingTrades = computed(() => {
 });
 
 const chartOptions = computed((): EChartsOption => {
+  const allTradesLabel = t('workspace.allTrades');
+  const winningTradesLabel = t('workspace.winningTrades');
+  const losingTradesLabel = t('workspace.losingTrades');
   return {
     title: {
-      text: 'Trades durations',
+      text: t('workspace.tradeDurations'),
       left: 'center',
       show: props.showTitle,
     },
@@ -89,11 +94,11 @@ const chartOptions = computed((): EChartsOption => {
           config: {
             itemNameFormatter: (params) => {
               if (params.value === 0) {
-                return 'All trades';
+                return allTradesLabel;
               } else if (params.value === 1) {
-                return 'Winning trades';
+                return winningTradesLabel;
               } else if (params.value === 2) {
-                return 'Losing trades';
+                return losingTradesLabel;
               }
             },
           },
@@ -113,7 +118,7 @@ const chartOptions = computed((): EChartsOption => {
     yAxis: [
       {
         type: 'value',
-        name: 'Trade duration',
+        name: t('workspace.tradeDuration'),
         splitArea: {
           show: true,
         },
@@ -128,11 +133,11 @@ const chartOptions = computed((): EChartsOption => {
           const statistics = params.data;
           return `
             <div>${echartsFormat.encodeHTML(params.name)}</div>
-            <div>Min: ${echartsFormat.encodeHTML(formatDuration(statistics[1]))}</div>
+            <div>${t('workspace.minimum')}: ${echartsFormat.encodeHTML(formatDuration(statistics[1]))}</div>
             <div>Q1: ${echartsFormat.encodeHTML(formatDuration(statistics[2]))}</div>
-            <div>Median: ${echartsFormat.encodeHTML(formatDuration(statistics[3]))}</div>
+            <div>${t('workspace.median')}: ${echartsFormat.encodeHTML(formatDuration(statistics[3]))}</div>
             <div>Q3: ${echartsFormat.encodeHTML(formatDuration(statistics[4]))}</div>
-            <div>Max: ${echartsFormat.encodeHTML(formatDuration(statistics[5]))}</div>
+            <div>${t('workspace.maximum')}: ${echartsFormat.encodeHTML(formatDuration(statistics[5]))}</div>
           `;
         }
         return '';
@@ -147,19 +152,19 @@ const chartOptions = computed((): EChartsOption => {
           {
             min: 0,
             max: 0,
-            label: 'All Trades',
+            label: allTradesLabel,
             color: '#5470c6',
           },
           {
             min: 1,
             max: 1,
-            label: 'Winning Trades',
+            label: winningTradesLabel,
             color: '#12bb7b',
           },
           {
             min: 2,
             max: 2,
-            label: 'Losing Trades',
+            label: losingTradesLabel,
             color: '#ef5350',
           },
         ],
@@ -167,7 +172,7 @@ const chartOptions = computed((): EChartsOption => {
     ],
     series: [
       {
-        name: 'Trade durations',
+        name: t('workspace.tradeDurations'),
         type: 'boxplot',
         datasetId: 'allTradesBoxplot',
         colorBy: 'data',
@@ -176,7 +181,7 @@ const chartOptions = computed((): EChartsOption => {
         // },
       },
       {
-        name: 'outlier',
+        name: t('workspace.outlier'),
         type: 'scatter',
         datasetId: 'outlier',
       },

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { EChartsOption } from 'echarts';
 import ECharts from 'vue-echarts';
+import { useI18n } from 'vue-i18n';
 
 import { PieChart } from 'echarts/charts';
 import {
@@ -38,11 +39,12 @@ const props = withDefaults(
   },
 );
 const settingsStore = useSettingsStore();
+const { t } = useI18n();
 
 const balanceChartOptions = computed((): EChartsOption => {
   return {
     title: {
-      text: 'Balance',
+      text: t('workspace.balance'),
       show: props.showTitle,
     },
     center: ['50%', '50%'],
