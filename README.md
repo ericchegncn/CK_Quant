@@ -39,6 +39,8 @@ upstream project, attribution, documentation, and safety notice follow below.
 
 CK Quant WebUI 现在提供七种语言，并新增管理员页面，可在浏览器或 Android App 中：
 
+交易、仪表盘和图表工作区的卡片标题、表格字段、图例、操作按钮、确认弹窗与空状态均会随所选语言切换。
+
 - 修改常用或完整配置参数，并在保存前进行服务端校验；
 - 修改策略参数或在线编辑策略文件；
 - 自动创建配置/策略备份，保存后安全重载或重启机器人；
@@ -46,9 +48,17 @@ CK Quant WebUI 现在提供七种语言，并新增管理员页面，可在浏�
 - 查看管理员操作审计记录。
 
 CK Quant WebUI now supports seven languages. Its authenticated admin workspace can
+localize the complete trading, dashboard, and chart surfaces, including card titles,
+table fields, legends, actions, confirmation dialogs, and empty states. It can also
 edit and validate configuration or strategy files, create automatic backups, apply
 changes, manage the bot and trades through the existing Freqtrade API, and retain an
 administrative audit trail.
+
+The dashboard now combines bot comparison, the essential `/profit` metrics, and
+the cumulative-profit chart in one responsive overview card. Desktop screens use
+a readable side-by-side layout, while portrait phones stack the smooth profit
+curve below the bot statistics. Larger metric typography and a clear vertical
+scale make profit quality and drawdown easier to assess at a glance.
 
 管理员功能默认关闭。先在 `config.json` 中显式启用所需权限：
 

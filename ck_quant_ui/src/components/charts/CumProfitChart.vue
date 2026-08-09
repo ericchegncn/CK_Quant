@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import type { EChartsOption } from 'echarts';
 import ECharts from 'vue-echarts';
 
@@ -38,9 +39,6 @@ use([
   TooltipComponent,
 ]);
 
-// Define Column labels here to avoid typos
-const CHART_PROFIT = 'Profit';
-
 const props = withDefaults(
   defineProps<{
     trades: ClosedTrade[];
@@ -55,6 +53,8 @@ const props = withDefaults(
   },
 );
 const settingsStore = useSettingsStore();
+const { t, locale } = useI18n();
+const chartProfit = computed(() => t('workspace.profit'));
 const colorStore = useColorStore();
 // const botList = ref<string[]>([]);
 
@@ -141,6 +141,11 @@ const cumulativeData = computed<CumProfitChartData[]>(() => {
 
 function generateChart(initial = false) {
   const { colorProfit, colorLoss } = colorStore;
+  const lastRealizedPoint = cumulativeData.value
+    .slice()
+    .reverse()
+    .find((point) => typeof point.profit === 'number');
+  const realizedColor = (lastRealizedPoint?.profit ?? 0) >= 0 ? colorProfit : colorLoss;
   const chartOptionsLoc: EChartsOption = {
     dataset: {
       dimensions: ['date', 'profit', 'currentProfit'],
@@ -155,9 +160,14 @@ function generateChart(initial = false) {
 
         animation: initial,
 
+        smooth: 0.35,
+        smoothMonotone: 'x',
+        showSymbol: false,
+
         lineStyle: {
           color: openProfit.value > 0 ? colorProfit : colorLoss,
           type: 'dotted',
+          width: 2,
         },
         itemStyle: {
           color: openProfit.value > 0 ? colorProfit : colorLoss,
@@ -169,14 +179,24 @@ function generateChart(initial = false) {
       },
       {
         type: 'line',
-        name: CHART_PROFIT,
+        name: chartProfit.value,
         animation: initial,
-        step: 'end',
+        smooth: 0.38,
+        smoothMonotone: 'x',
+        showSymbol: false,
+        symbol: 'circle',
         lineStyle: {
-          color: settingsStore.chartTheme === 'dark' ? '#c2c2c2' : 'black',
+          color: realizedColor,
+          width: 3,
+          cap: 'round',
+          join: 'round',
         },
         itemStyle: {
-          color: settingsStore.chartTheme === 'dark' ? '#c2c2c2' : 'black',
+          color: realizedColor,
+        },
+        areaStyle: {
+          color: realizedColor,
+          opacity: settingsStore.chartTheme === 'dark' ? 0.16 : 0.1,
         },
         encode: {
           x: 'date',
@@ -206,11 +226,11 @@ function generateChart(initial = false) {
 }
 
 const cumProfitChartOptions: ComputedRefWithControl<EChartsOption> = computedWithControl(
-  () => props.trades,
+  () => [props.trades, locale.value],
   () => {
     const chartOptionsLoc: EChartsOption = {
       title: {
-        text: 'Cumulative Profit',
+        text: t('workspace.cumulativeProfit'),
         left: 'center',
         show: props.showTitle,
       },
@@ -221,8 +241,8 @@ const cumProfitChartOptions: ComputedRefWithControl<EChartsOption> = computedWit
           const profit = params[0].data.profit;
           const currentProfit = params[0].data['currentProfit'];
           const profitText = currentProfit
-            ? `Projected profit (incl. unrealized): ${formatPrice(currentProfit, 3)}`
-            : `Profit: ${formatPrice(profit, 3)}`;
+            ? t('workspace.projectedProfit', { profit: formatPrice(currentProfit, 3) })
+            : `${t('workspace.profit')}: ${formatPrice(profit, 3)}`;
           return `${echartsFormat.encodeHTML(timestampToDateString(params[1].data.date))}<br />${
             params[1].marker
           }${profitText}`;
@@ -235,7 +255,7 @@ const cumProfitChartOptions: ComputedRefWithControl<EChartsOption> = computedWit
         },
       },
       legend: {
-        data: [CHART_PROFIT],
+        data: [chartProfit.value],
         right: '5%',
         top: 0,
         selectedMode: false,
@@ -243,13 +263,16 @@ const cumProfitChartOptions: ComputedRefWithControl<EChartsOption> = computedWit
       useUTC: false,
       xAxis: {
         type: 'time',
+        axisLine: { lineStyle: { color: '#64748b', opacity: 0.35 } },
+        axisTick: { show: false },
       },
       yAxis: [
         {
           type: 'value',
-          name: CHART_PROFIT,
+          name: chartProfit.value,
           splitLine: {
-            show: false,
+            show: true,
+            lineStyle: { type: 'dashed', opacity: 0.15 },
           },
           nameRotate: 90,
           nameLocation: 'middle',
@@ -265,13 +288,6 @@ const cumProfitChartOptions: ComputedRefWithControl<EChartsOption> = computedWit
           // xAxisIndex: [0],
           start: 0,
           end: 100,
-        },
-        {
-          // xAxisIndex: [0],
-          bottom: 10,
-          start: 0,
-          end: 100,
-          ...dataZoomPartial,
         },
       ],
     };
