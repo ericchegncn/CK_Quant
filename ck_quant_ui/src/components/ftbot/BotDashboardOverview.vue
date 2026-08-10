@@ -145,13 +145,13 @@ const metricItems = computed(() => {
             <p class="text-xs font-medium uppercase tracking-wide text-muted">{{ item.label }}</p>
             <div class="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
               <strong
-                class="text-lg tabular-nums"
+                class="text-xl tabular-nums"
                 :class="item.positive ? 'text-profit' : 'text-loss'"
                 >{{ item.value }}</strong
               >
               <span class="text-xs tabular-nums text-muted">{{ item.sum }}</span>
             </div>
-            <p class="mt-1 text-sm tabular-nums text-muted">{{ item.fiat }}</p>
+            <p class="mt-1 text-base tabular-nums text-muted">{{ item.fiat }}</p>
           </article>
         </div>
 
