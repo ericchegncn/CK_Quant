@@ -48,3 +48,19 @@ export interface RestoreAdminBackupPayload {
   revision: string;
   apply: boolean;
 }
+
+export interface AdminMarketSummary {
+  pair: string;
+  base: string;
+  quote: string;
+  last: number | null;
+  quote_volume: number | null;
+  percentage: number | null;
+}
+
+export interface AdminMarketsResponse {
+  exchange: string;
+  stake_currency: string;
+  updated_at: string;
+  markets: AdminMarketSummary[];
+}
