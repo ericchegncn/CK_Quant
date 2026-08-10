@@ -435,7 +435,9 @@ export const useBotStore = defineStore('ftbot-wrapper', (): BotStoreSetup => {
     }
     if (!refreshIntervalSlow.value) {
       refreshIntervalSlow.value = window.setInterval(() => {
-        allRefreshSlow(false);
+        // forceUpdate=true：每个周期都重新拉取 profit/balance 等慢数据，
+        // 保证收益率卡片始终实时（不只依赖交易变化触发）
+        allRefreshSlow(true);
       }, 60000);
     }
   }
