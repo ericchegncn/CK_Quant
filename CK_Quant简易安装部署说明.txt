@@ -1,0 +1,50 @@
+
+1. 购买服务器
+先到阿里云或其它云厂商那里购买服务器，选择香港或是日本的2核心2G内存配置的轻量云服务器即可
+用户名：root
+密码：Id#HqL5flyGiin6yzUf7
+2. 申请交易所API，并把服务器IP添加到允许列表
+3. 开放8080端口
+如果需要webUI监控后台，可以开启，实盘建议不要开启
+
+  # 部署CK_Quant
+  # 项目地址：https://github.com/ericchegncn/CK_Quant
+
+1. 修改主机名
+hostnamectl set-hostname CK-Binance
+
+2. 更新系统
+apt update -y && apt upgrade -y
+
+3. 安装Docker
+Docker一键安装脚本
+bash <(curl -sSL https://cdn.jsdelivr.net/gh/SuperManito/LinuxMirrors@main/DockerInstallation.sh)
+
+4. 创建目录
+mkdir CK_Quant
+
+5. 进入目录
+mkdir CK_Quant
+
+6. 下载yml文件  或上传yml文件
+curl -L https://raw.githubusercontent.com/ericchegncn/CK_Quant/main/docker-compose.yml -o docker-compose.yml
+
+7. 拉取镜像
+docker compose pull
+
+8. 创建用户数据user_data目录
+docker compose run --rm ck-quant create-userdir --userdir user_data
+
+9. 新建配置文件或上传config.json配置文件
+docker compose run --rm ck-quant new-config --config user_data/config.json
+
+10. 上传策略文件到user_data\strategies目录
+
+11. 修改yml文件中的config配置文件名称和策略类名
+启动docker或关闭docker
+起动docker
+docker compose up -d
+
+关闭docker
+docker compose down
+

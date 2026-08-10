@@ -4,6 +4,7 @@ import ast
 import hashlib
 import json
 import logging
+import math
 import os
 import tempfile
 from copy import deepcopy
@@ -20,7 +21,7 @@ from freqtrade.configuration.load_config import CONFIG_PARSE_MODE
 from freqtrade.constants import Config
 from freqtrade.exceptions import ConfigurationError
 from freqtrade.misc import deep_merge_dicts
-from freqtrade.rpc.api_server.deps import get_config, get_rpc_optional
+from freqtrade.rpc.api_server.deps import get_config, get_exchange, get_rpc_optional
 from freqtrade.rpc.rpc import RPC
 
 
@@ -104,8 +105,56 @@ class RestoreBackupRequest(BaseModel):
     apply: bool = True
 
 
+class AdminMarketSummary(BaseModel):
+    pair: str
+    base: str
+    quote: str
+    last: float | None = None
+    quote_volume: float | None = None
+    percentage: float | None = None
+
+
+class AdminMarketsResponse(BaseModel):
+    exchange: str
+    stake_currency: str
+    updated_at: datetime
+    markets: list[AdminMarketSummary]
+
+
 def _settings(config: Config) -> dict[str, Any]:
     return config.get("ck_quant_admin", {})
+
+
+def _optional_number(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _admin_market_rows(exchange: Any, config: Config) -> list[AdminMarketSummary]:
+    stake_currency = str(config.get("stake_currency", ""))
+    markets = exchange.get_markets(
+        quote_currencies=[stake_currency] if stake_currency else None,
+        tradable_only=True,
+        active_only=True,
+    )
+    tickers = exchange.get_tickers(cached=True)
+    rows = []
+    for pair, market in markets.items():
+        ticker = tickers.get(pair, {})
+        rows.append(
+            AdminMarketSummary(
+                pair=pair,
+                base=str(market.get("base", "")),
+                quote=str(market.get("quote", "")),
+                last=_optional_number(ticker.get("last")),
+                quote_volume=_optional_number(ticker.get("quoteVolume")),
+                percentage=_optional_number(ticker.get("percentage")),
+            )
+        )
+    return sorted(rows, key=lambda row: (-(row.quote_volume or 0.0), row.pair))
 
 
 def _require_enabled(config: Config = Depends(get_config)) -> Config:
@@ -370,6 +419,26 @@ def get_admin_config(config: Config = Depends(_require_enabled)):
         revision=_revision(source),
         redacted=True,
         updated_at=datetime.fromtimestamp(path.stat().st_mtime, UTC),
+    )
+
+
+@router.get("/admin/markets", response_model=AdminMarketsResponse, tags=["CK Quant Admin"])
+def get_admin_markets(
+    config: Config = Depends(_require_enabled),
+    rpc: RPC | None = Depends(get_rpc_optional),
+):
+    _require_permission(config, "config_edit")
+    exchange = rpc._freqtrade.exchange if rpc else get_exchange(config)
+    try:
+        markets = _admin_market_rows(exchange, config)
+    except Exception as exc:
+        logger.exception("Unable to load exchange markets for CK Quant admin")
+        raise HTTPException(status_code=502, detail="Unable to load exchange markets") from exc
+    return AdminMarketsResponse(
+        exchange=str(exchange.id),
+        stake_currency=str(config.get("stake_currency", "")),
+        updated_at=datetime.now(UTC),
+        markets=markets,
     )
 
 

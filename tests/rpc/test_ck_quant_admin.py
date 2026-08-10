@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from freqtrade.rpc.api_server.api_ck_quant_admin import (
     REDACTED,
+    _admin_market_rows,
     _atomic_write,
     _redact_config,
     _restore_secrets,
@@ -45,6 +46,48 @@ def test_redaction_and_secret_restore() -> None:
     assert restored["exchange"]["key"] == "exchange-key"
     assert restored["api_server"]["password"] == "password"
     assert restored["max_open_trades"] == 20
+
+
+def test_admin_market_rows_filters_normalizes_and_sorts() -> None:
+    exchange = MagicMock()
+    exchange.get_markets.return_value = {
+        "ETH/USDT:USDT": {"base": "ETH", "quote": "USDT"},
+        "BTC/USDT:USDT": {"base": "BTC", "quote": "USDT"},
+        "NEW/USDT:USDT": {"base": "NEW", "quote": "USDT"},
+    }
+    exchange.get_tickers.return_value = {
+        "BTC/USDT:USDT": {
+            "last": 60000,
+            "quoteVolume": "2500000000",
+            "percentage": 1.25,
+        },
+        "ETH/USDT:USDT": {
+            "last": "3000.5",
+            "quoteVolume": 1200000000,
+            "percentage": "-2.5",
+        },
+        "NEW/USDT:USDT": {
+            "last": None,
+            "quoteVolume": float("nan"),
+            "percentage": None,
+        },
+    }
+
+    rows = _admin_market_rows(exchange, {"stake_currency": "USDT"})
+
+    assert [row.pair for row in rows] == [
+        "BTC/USDT:USDT",
+        "ETH/USDT:USDT",
+        "NEW/USDT:USDT",
+    ]
+    assert rows[0].quote_volume == 2500000000
+    assert rows[1].last == 3000.5
+    assert rows[1].percentage == -2.5
+    assert rows[2].quote_volume is None
+    exchange.get_markets.assert_called_once_with(
+        quote_currencies=["USDT"], tradable_only=True, active_only=True
+    )
+    exchange.get_tickers.assert_called_once_with(cached=True)
 
 
 def test_atomic_write_preserves_permissions(tmp_path: Path) -> None:
