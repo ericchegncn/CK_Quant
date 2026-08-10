@@ -1,16 +1,14 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
 
-const botStore = useBotStore();
 const { t } = useI18n();
 </script>
 
 <template>
   <footer class="md:hidden ckq-bottom-nav">
-    <!-- Only visible on xs (phone) viewport! -->
+    <!-- 浮动底部导航：始终显示（手机视口） -->
     <div class="flex gap-2 justify-between px-2">
       <UButton
-        v-if="!botStore.canRunBacktest"
         icon-pos="top"
         variant="link"
         active-class="underline"
@@ -20,7 +18,6 @@ const { t } = useI18n();
         icon="mdi:folder-open"
       />
       <UButton
-        v-if="!botStore.canRunBacktest"
         icon-pos="top"
         variant="link"
         active-class="underline"
@@ -30,7 +27,6 @@ const { t } = useI18n();
         icon="mdi:folder-lock"
       />
       <UButton
-        v-if="!botStore.canRunBacktest"
         icon-pos="top"
         variant="link"
         class="flex flex-col gap-1"
@@ -40,7 +36,6 @@ const { t } = useI18n();
         icon="mdi:format-list-group"
       />
       <UButton
-        v-if="!botStore.canRunBacktest"
         icon-pos="top"
         variant="link"
         active-class="underline"
@@ -50,7 +45,6 @@ const { t } = useI18n();
         icon="mdi:bank"
       />
       <UButton
-        v-if="!botStore.canRunBacktest"
         icon-pos="top"
         variant="link"
         class="flex flex-col gap-1"
