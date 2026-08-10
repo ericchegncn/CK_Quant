@@ -3,6 +3,7 @@ import type {
   AdminBackupInfo,
   AdminCapabilities,
   AdminDocumentKind,
+  AdminMarketsResponse,
   AdminValidationResult,
   AvailablePairPayload,
   AvailablePairResult,
@@ -1052,6 +1053,11 @@ export function createBotSubStore(botId: string, botName: string) {
       return data;
     }
 
+    async function getAdminMarkets() {
+      const { data } = await api.get<AdminMarketsResponse>('/admin/markets');
+      return data;
+    }
+
     async function restoreAdminBackup(kind: AdminDocumentKind, payload: RestoreAdminBackupPayload) {
       const { data } = await api.post<
         RestoreAdminBackupPayload,
@@ -1685,6 +1691,7 @@ export function createBotSubStore(botId: string, botName: string) {
       validateAdminDocument,
       saveAdminDocument,
       getAdminBackups,
+      getAdminMarkets,
       restoreAdminBackup,
       deleteTrade,
       cancelOpenOrder,

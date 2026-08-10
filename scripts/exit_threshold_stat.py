@@ -120,17 +120,21 @@ def main():
             add(f"A单根 平多 阴线<{-x}", body < -x, out)
             add(f"A单根 平空 阳线>{x}", body > x, out)
 
-        # B. 双根反转
+        # B. 双根反转（与策略一致：每根同向 + 实体和超阈值）
         sum2 = body + body.shift(1)
         for x in DOUBLE_X:
-            add(f"B双根 平多 和<{-x}", sum2 < -x, out)
-            add(f"B双根 平空 和>{x}", sum2 > x, out)
+            add(f"B双根 平多 两根阴+和<{-x}",
+                (body < 0) & (body.shift(1) < 0) & (sum2 < -x), out)
+            add(f"B双根 平空 两根阳+和>{x}",
+                (body > 0) & (body.shift(1) > 0) & (sum2 > x), out)
 
-        # C. 三根反转
+        # C. 三根反转（与策略一致：三根同向 + 实体和超阈值）
         sum3 = body + body.shift(1) + body.shift(2)
         for x in TRIPLE_X:
-            add(f"C三根 平多 和<{-x}", sum3 < -x, out)
-            add(f"C三根 平空 和>{x}", sum3 > x, out)
+            add(f"C三根 平多 三根阴+和<{-x}",
+                (body < 0) & (body.shift(1) < 0) & (body.shift(2) < 0) & (sum3 < -x), out)
+            add(f"C三根 平空 三根阳+和>{x}",
+                (body > 0) & (body.shift(1) > 0) & (body.shift(2) > 0) & (sum3 > x), out)
 
         # D. 长影线（底部区域超长下影线 → 看涨反转；顶部区域超长上影线 → 看跌反转）
         for x in WICK_X:
