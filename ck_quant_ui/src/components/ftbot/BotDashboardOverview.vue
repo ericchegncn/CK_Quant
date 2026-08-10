@@ -9,6 +9,18 @@ const profit = computed(() => activeBot.value?.profit);
 const stakeCurrency = computed(() => activeBot.value?.stakeCurrency || 'USDT');
 const stakeDecimals = computed(() => activeBot.value?.stakeCurrencyDecimals ?? 3);
 
+// 未平仓浮盈（从 5 秒刷新的持仓数据实时计算，与 Summary 表格同源）
+const openProfit = computed(() => {
+  const activeBotId = botStore.selectedBot;
+  if (!activeBotId) return 0;
+  const trades = botStore.allOpenTrades[activeBotId];
+  if (!trades) return 0;
+  return trades.reduce(
+    (a, b) => a + (b.total_profit_abs ?? b.profit_abs ?? 0),
+    0,
+  );
+});
+
 function stakeValue(value?: number | null): string {
   return value === undefined || value === null
     ? 'N/A'
@@ -25,28 +37,31 @@ function timestampWithAge(humanized?: string, timestamp?: number): string {
   return humanized ? `${humanized} (${date})` : date;
 }
 
+// 初始资金（balance 接口的 starting_capital，收益率分母）
+const startingCapital = computed(() => {
+  const activeBotId = botStore.selectedBot;
+  return botStore.allBalance[activeBotId!]?.starting_capital ?? 10000;
+});
+
 const roiItems = computed(() => {
   if (!profit.value) return [];
+  const closedCoin = profit.value.profit_closed_coin ?? 0;
+  const allCoin = closedCoin + openProfit.value; // 已平仓 + 未平仓浮盈
+  const base = startingCapital.value || 10000;
   return [
     {
       label: t('workspace.roiClosedTrades'),
-      value: `${stakeValue(profit.value.profit_closed_coin)} (${formatPercent(
-        profit.value.profit_closed_ratio,
-        2,
-      )})`,
+      value: `${stakeValue(closedCoin)} (${formatPercent(closedCoin / base, 2)})`,
       sum: `Σ ${formatPercent(profit.value.profit_closed_ratio_sum, 2)}`,
       fiat: fiatValue(profit.value.profit_closed_fiat),
-      positive: profit.value.profit_closed_coin >= 0,
+      positive: closedCoin >= 0,
     },
     {
       label: t('workspace.roiAllTrades'),
-      value: `${stakeValue(profit.value.profit_all_coin)} (${formatPercent(
-        profit.value.profit_all_ratio,
-        2,
-      )})`,
+      value: `${stakeValue(allCoin)} (${formatPercent(allCoin / base, 2)})`,
       sum: `Σ ${formatPercent(profit.value.profit_all_ratio_sum, 2)}`,
       fiat: fiatValue(profit.value.profit_all_fiat),
-      positive: profit.value.profit_all_coin >= 0,
+      positive: allCoin >= 0,
     },
   ];
 });
