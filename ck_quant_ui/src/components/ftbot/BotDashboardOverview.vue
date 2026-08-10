@@ -31,7 +31,7 @@ const roiItems = computed(() => {
     {
       label: t('workspace.roiClosedTrades'),
       value: `${stakeValue(profit.value.profit_closed_coin)} (${formatPercent(
-        profit.value.profit_closed_ratio_mean,
+        profit.value.profit_closed_ratio,
         2,
       )})`,
       sum: `Σ ${formatPercent(profit.value.profit_closed_ratio_sum, 2)}`,
@@ -41,7 +41,7 @@ const roiItems = computed(() => {
     {
       label: t('workspace.roiAllTrades'),
       value: `${stakeValue(profit.value.profit_all_coin)} (${formatPercent(
-        profit.value.profit_all_ratio_mean,
+        profit.value.profit_all_ratio,
         2,
       )})`,
       sum: `Σ ${formatPercent(profit.value.profit_all_ratio_sum, 2)}`,

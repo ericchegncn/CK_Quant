@@ -154,11 +154,10 @@ export function createBotSubStore(botId: string, botName: string) {
       return dTrade;
     });
     const refreshNow = computed(() => {
-      if (
-        autoRefresh.value &&
-        isBotOnline.value &&
-        botState.value?.runmode !== RunModes.WEBSERVER
-      ) {
+      // 自动刷新：只要开启 autoRefresh 且机器人在线就刷新
+      // （不再排除 WEBSERVER 模式 —— WebServer/远程模式下收益率卡片
+      //   也需实时刷新，否则只能手动点刷新）
+      if (autoRefresh.value && isBotOnline.value) {
         return true;
       }
       return false;
