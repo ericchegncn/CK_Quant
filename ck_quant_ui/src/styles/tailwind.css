@@ -125,9 +125,16 @@ textarea {
 }
 
 .ckq-bottom-nav {
-  margin: 0 10px max(10px, env(safe-area-inset-bottom));
+  /* 浮动固定底部导航：始终显示在视口底部，滚动页面时保持可见 */
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  z-index: 100;
+  margin: 0;
   border-radius: 22px;
   overflow: hidden;
+  background: var(--ckq-glass);
 }
 
 .ckq-glass-card {

@@ -25,7 +25,7 @@ watch(
   <UApp>
     <div id="app" class="flex flex-col h-dvh ckq-shell" :style="colorStore.cssVars">
       <NavBar />
-      <BodyLayout class="grow overflow-auto" />
+      <BodyLayout class="grow overflow-auto md:pb-0 pb-24" />
       <NavFooter />
     </div>
   </UApp>
