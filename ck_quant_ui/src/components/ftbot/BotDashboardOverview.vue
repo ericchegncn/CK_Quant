@@ -157,16 +157,18 @@ const metricItems = computed(() => {
               class="absolute inset-y-0 left-0 w-1"
               :class="item.positive ? 'bg-emerald-500' : 'bg-rose-500'"
             />
-            <p class="text-xs font-medium uppercase tracking-wide text-muted">{{ item.label }}</p>
-            <div class="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <p class="text-lg font-semibold uppercase tracking-wide text-center">
+              {{ item.label }}
+            </p>
+            <div class="mt-2 flex flex-col items-center gap-1">
               <strong
-                class="text-xl tabular-nums"
-                :class="item.positive ? 'text-profit' : 'text-loss'"
+                class="text-2xl tabular-nums"
+                :class="item.positive ? 'text-emerald-400' : 'text-rose-400'"
                 >{{ item.value }}</strong
               >
-              <span class="text-xs tabular-nums text-muted">{{ item.sum }}</span>
+              <span class="text-sm tabular-nums text-muted">{{ item.sum }}</span>
             </div>
-            <p class="mt-1 text-base tabular-nums text-muted">{{ item.fiat }}</p>
+            <p class="mt-1 text-base tabular-nums text-muted text-center">{{ item.fiat }}</p>
           </article>
         </div>
 
