@@ -13,5 +13,5 @@ services:
       --userdir /CK_Quant/user_data
       --logfile /CK_Quant/user_data/logs/${CK_QUANT_LOGFILE:-ck-quant.log}
       --db-url sqlite:////CK_Quant/user_data/${CK_QUANT_DATABASE:-tradesv3.sqlite}
-      --config /CK_Quant/user_data/${CK_QUANT_CONFIG:-config.json}
+      --config /CK_Quant/user_data/${CK_QUANT_CONFIG:-config_5m.json}
       --strategy ${CK_QUANT_STRATEGY:-CK_Trend_5m}

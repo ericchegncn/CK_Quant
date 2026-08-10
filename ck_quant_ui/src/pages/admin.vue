@@ -3,6 +3,7 @@ import type {
   AdminBackupInfo,
   AdminCapabilities,
   AdminDocumentKind,
+  AdminMarketsResponse,
   EditableAdminDocument,
 } from '@/types';
 import { RunModes } from '@/types';
@@ -22,6 +23,9 @@ const saving = ref(false);
 const unavailable = ref(false);
 const backupId = ref('');
 const backups = ref<AdminBackupInfo[]>([]);
+const marketData = ref<AdminMarketsResponse>();
+const marketsLoading = ref(false);
+const marketsError = ref('');
 
 const canEdit = computed(() =>
   documentKind.value === 'config'
@@ -96,6 +100,18 @@ const pairWhitelist = computed({
   },
 });
 
+const pairWhitelistEntries = computed({
+  get: () => {
+    const exchange = configModel.value?.exchange as Record<string, unknown> | undefined;
+    return Array.isArray(exchange?.pair_whitelist)
+      ? exchange.pair_whitelist.filter((pair): pair is string => typeof pair === 'string')
+      : [];
+  },
+  set: (value: string[]) => {
+    pairWhitelist.value = value.join('\n');
+  },
+});
+
 function errorMessage(error: unknown) {
   if (axios.isAxiosError(error)) {
     if (error.response?.status === 409) return t('admin.conflict');
@@ -125,7 +141,7 @@ async function loadAdmin() {
     capabilities.value = await botStore.activeBot.getAdminCapabilities();
     unavailable.value = !capabilities.value.enabled;
     if (!unavailable.value) {
-      await Promise.all([loadDocument(), loadBackups()]);
+      await Promise.all([loadDocument(), loadBackups(), loadMarkets()]);
     }
   } catch (error) {
     unavailable.value = true;
@@ -142,6 +158,18 @@ async function loadBackups() {
     backups.value = await botStore.activeBot.getAdminBackups();
   } catch (error) {
     showAlert(errorMessage(error), 'error');
+  }
+}
+
+async function loadMarkets() {
+  marketsLoading.value = true;
+  marketsError.value = '';
+  try {
+    marketData.value = await botStore.activeBot.getAdminMarkets();
+  } catch {
+    marketsError.value = t('admin.marketLoadFailed');
+  } finally {
+    marketsLoading.value = false;
   }
 }
 
@@ -267,6 +295,16 @@ onMounted(loadAdmin);
             </UFormField>
           </div>
         </UCard>
+
+        <PairWhitelistManager
+          v-if="documentKind === 'config' && configModel"
+          v-model:whitelist="pairWhitelistEntries"
+          :market-data="marketData"
+          :loading="marketsLoading"
+          :error="marketsError"
+          :disabled="!canEdit"
+          @refresh="loadMarkets"
+        />
 
         <UCard>
           <template #header>
