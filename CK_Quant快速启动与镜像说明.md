@@ -125,7 +125,7 @@ user_data/strategies/
 例如：
 
 ```text
-user_data/strategies/CK_Trend.py
+user_data/strategies/MyPrivateStrategy.py
 ```
 
 `.env` 中的 `CK_QUANT_STRATEGY` 必须填写 Python 文件内部的策略类名，
@@ -139,7 +139,7 @@ user_data/strategies/CK_Trend.py
 CK_QUANT_IMAGE=ericchenghz/ck-quant:stable
 CK_QUANT_CONTAINER_NAME=CK_Quant
 CK_QUANT_CONFIG=config_Trend.json
-CK_QUANT_STRATEGY=CK_Trend
+CK_QUANT_STRATEGY=MyPrivateStrategy
 CK_QUANT_DATABASE=tradesv3.sqlite
 CK_QUANT_LOGFILE=ck-quant.log
 CK_QUANT_WEBUI_BIND=127.0.0.1
@@ -431,7 +431,7 @@ docker compose run --rm ck-quant \
 `.env` 中应填写类名，例如：
 
 ```dotenv
-CK_QUANT_STRATEGY=CK_Trend
+CK_QUANT_STRATEGY=MyPrivateStrategy
 ```
 
 ### WebUI 无法访问

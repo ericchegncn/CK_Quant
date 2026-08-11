@@ -137,13 +137,16 @@ python scripts/download_vision_chunked.py ETHUSDT 20250701 20250731 \
 
 # 运行 tick 回测
 python -m freqtrade.ck_quant.tick_backtest \
-    --config user_data/config.json --strategy CK_Trend \
+    --config user_data/config.json --strategy MyPrivateStrategy \
     --data-dir user_data/data/binance/futures/trades_eth \
     --timerange 20250701-20250731 --pair "ETH/USDT:USDT" \
     --stoploss 0.005 --takeprofit 0.005
 ```
 
 详见 [docs/advanced-tick-backtest.md](docs/advanced-tick-backtest.md)。
+
+> **策略隐私边界：** 私有策略只保存在宿主机的 `user_data/strategies/`，通过运行时
+> volume 挂载供机器人加载。它们不会进入 Git、APK 或 CK Quant 官方 Docker 镜像。
 
 ---
 
