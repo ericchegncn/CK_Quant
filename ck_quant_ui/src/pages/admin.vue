@@ -7,6 +7,7 @@ import type {
   EditableAdminDocument,
 } from '@/types';
 import { RunModes } from '@/types';
+import { normalizeAdminConfigSource } from '@/utils/adminConfig';
 import axios from 'axios';
 import { useI18n } from 'vue-i18n';
 
@@ -175,7 +176,10 @@ async function loadMarkets() {
 
 async function validateDocument() {
   try {
-    await botStore.activeBot.validateAdminDocument(documentKind.value, source.value);
+    const sourceToValidate =
+      documentKind.value === 'config' ? normalizeAdminConfigSource(source.value) : source.value;
+    await botStore.activeBot.validateAdminDocument(documentKind.value, sourceToValidate);
+    source.value = sourceToValidate;
     showAlert(t('admin.valid'), 'success');
     return true;
   } catch (error) {

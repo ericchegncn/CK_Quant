@@ -9,6 +9,7 @@ from freqtrade.rpc.api_server.api_ck_quant_admin import (
     REDACTED,
     _admin_market_rows,
     _atomic_write,
+    _normalize_config_types,
     _redact_config,
     _restore_secrets,
     _save,
@@ -46,6 +47,18 @@ def test_redaction_and_secret_restore() -> None:
     assert restored["exchange"]["key"] == "exchange-key"
     assert restored["api_server"]["password"] == "password"
     assert restored["max_open_trades"] == 20
+
+
+def test_normalize_config_types_accepts_numeric_stake_amount_from_mobile_ui() -> None:
+    numeric = {"stake_amount": "3"}
+    decimal = {"stake_amount": " 2.5 "}
+    unlimited = {"stake_amount": "unlimited"}
+    invalid = {"stake_amount": "not-a-number"}
+
+    assert _normalize_config_types(numeric)["stake_amount"] == 3.0
+    assert _normalize_config_types(decimal)["stake_amount"] == 2.5
+    assert _normalize_config_types(unlimited)["stake_amount"] == "unlimited"
+    assert _normalize_config_types(invalid)["stake_amount"] == "not-a-number"
 
 
 def test_admin_market_rows_filters_normalizes_and_sorts() -> None:
