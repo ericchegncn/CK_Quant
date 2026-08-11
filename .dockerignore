@@ -42,6 +42,11 @@ config*.json
 *.db
 *.db-*
 user_data/
+scripts/
+**/strategies/
+**/CK_*.py
+**/test_ck_*.py
+.hotfix-build*/
 *.log
 *.pem
 *.key
