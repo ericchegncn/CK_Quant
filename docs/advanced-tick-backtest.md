@@ -48,7 +48,7 @@ python scripts/download_vision_chunked.py ETHUSDT 20250701 20250731 \
 ```bash
 python -m freqtrade.ck_quant.tick_backtest \
     --config user_data/config.json \
-    --strategy CK_Trend \
+    --strategy MyPrivateStrategy \
     --data-dir user_data/data/binance/futures/trades_eth \
     --timerange 20250701-20250731 \
     --pair "ETH/USDT:USDT" \
