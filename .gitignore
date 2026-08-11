@@ -20,6 +20,21 @@ user_data/*
 user_data/freqaimodels/*
 user_data/models/*
 user_data/notebooks/*
+
+# Proprietary strategy research and live-operation helpers must remain local.
+user_data/strategies/
+scripts/ssh_*.py
+scripts/*_stat*.py
+scripts/wick_*.py
+scripts/diag_*.py
+scripts/check_ml_quality.py
+scripts/calc_drawdown_unreal.py
+scripts/tick_match_proto.py
+scripts/mini_test*.py
+scripts/gen_patent_report.py
+scripts/tmp_*.py
+tests/strategy/test_ck_*.py
+docs/strategy-dev-*.md
 freqtrade-plot.html
 freqtrade-profit-plot.html
 freqtrade/rpc/api_server/ui/*
