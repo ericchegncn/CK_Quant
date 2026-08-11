@@ -60,7 +60,23 @@ USER ftuser
 # Install and execute
 COPY --chown=ftuser:ftuser . /freqtrade/
 
-RUN pip install -e . --user --no-cache-dir \
+RUN if find /freqtrade -type f \( \
+      -name 'CK_*.py' \
+      -o -name 'test_ck_*.py' \
+      -o -path '*/user_data/strategies/*' \
+      -o -path '*/.hotfix-build-*/*' \
+    \) \
+      -print -quit | grep -q .; then \
+      echo 'Refusing to build: proprietary strategy source detected in Docker context.' >&2; \
+      exit 1; \
+    fi \
+  && if grep -RIlE \
+      'from user_data\.strategies\.CK_|import user_data\.strategies\.CK_|class CK_(Trend|EMA|Momentum|Reversion|Wick|Structure|RS|Retest)' \
+      /freqtrade --include='*.py' | grep -q .; then \
+      echo 'Refusing to build: proprietary CK strategy logic detected.' >&2; \
+      exit 1; \
+    fi \
+  && pip install -e . --user --no-cache-dir \
   && mkdir -p /freqtrade/user_data/ /freqtrade/freqtrade/rpc/api_server/ui/installed/
 
 COPY --from=ck-quant-ui --chown=ftuser:ftuser \

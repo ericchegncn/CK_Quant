@@ -46,7 +46,7 @@ docker compose up -d
 docker compose run ck-quant download-data --exchange binance --userdir /CK_Quant/user_data --config /CK_Quant/user_data/config.json --pairs ".*/USDT:USDT" --timerange=20250101- -t 15m 1m
 
 回测命令
-docker compose run ck-quant backtesting --userdir /CK_Quant/user_data --config /CK_Quant/user_data/config.json --timerange 20250601-20260101 --strategy CK_Trend --timeframe-detail 1m --fee 0.001 --breakdown month
+docker compose run ck-quant backtesting --userdir /CK_Quant/user_data --config /CK_Quant/user_data/config.json --timerange 20250601-20260101 --strategy MyPrivateStrategy --timeframe-detail 1m --fee 0.001 --breakdown month
 
 防止未来函数
 docker compose run ck-quant lookahead-analysis --config user_data/config.json --timerange=20250101- --strategy CK_X_RS --fee 0.001 --breakdown month
