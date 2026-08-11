@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""更新 47.239.242.72 实盘镜像到最新版（含新 UI + 回测修复）
+"""更新目标实盘服务器镜像到最新版（含新 UI + 回测修复）
 
 安全要点：
 - 只更新镜像，绝不动 --db-url（订单历史保留）
@@ -8,10 +8,9 @@
 import os, sys, time
 import paramiko
 
-HOST = "47.239.242.72"
-USER = "root"
-PASSWORD = "*@naS!Luvx6p^f&P"
-
+HOST = os.environ["CK_QUANT_SSH_HOST"]
+USER = os.getenv("CK_QUANT_SSH_USER", "root")
+PASSWORD = os.environ["CK_QUANT_SSH_PASSWORD"]
 cmd = r"""
 set -e
 cd /root/CK_Quant || { echo "❌ 项目目录不存在"; exit 1; }
