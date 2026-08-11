@@ -3,10 +3,9 @@
 import os, sys
 import paramiko
 
-HOST = "8.209.251.99"
-USER = "root"
-PASSWORD = "*@naS!Luvx6p^f&P"
-
+HOST = os.environ["CK_QUANT_SSH_HOST"]
+USER = os.getenv("CK_QUANT_SSH_USER", "root")
+PASSWORD = os.environ["CK_QUANT_SSH_PASSWORD"]
 cmd = r"""
 set -e
 echo '=== docker-compose.yml ==='
