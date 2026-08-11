@@ -261,8 +261,17 @@ def _serialize_config(value: dict[str, Any]) -> str:
     return rapidjson.dumps(value, indent=4, ensure_ascii=False) + "\n"
 
 
+def _normalize_config_types(value: dict[str, Any]) -> dict[str, Any]:
+    stake_amount = value.get("stake_amount")
+    if isinstance(stake_amount, str) and stake_amount.strip():
+        numeric_stake_amount = _optional_number(stake_amount.strip())
+        if numeric_stake_amount is not None:
+            value["stake_amount"] = numeric_stake_amount
+    return value
+
+
 def _validate_config(source: str, config: Config) -> str:
-    candidate = _parse_config(source)
+    candidate = _normalize_config_types(_parse_config(source))
     current = _parse_config(_read(_config_path(config)))
     candidate = _restore_secrets(candidate, current)
     merged = deep_merge_dicts(candidate, deepcopy(config))
