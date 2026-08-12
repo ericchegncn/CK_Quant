@@ -168,6 +168,8 @@ class Profit(BaseModel):
     max_drawdown_start_timestamp: int
     max_drawdown_end: str
     max_drawdown_end_timestamp: int
+    drawdown_high: float
+    drawdown_low: float
     current_drawdown: float
     current_drawdown_abs: float
     current_drawdown_high: float

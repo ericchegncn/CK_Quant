@@ -148,6 +148,27 @@ def test_calculate_max_drawdown(testdatadir):
         calculate_underwater(DataFrame())
 
 
+def test_calculate_max_drawdown_current_date_tracks_new_equity_high():
+    dates = [dt_utc(2026, 8, 11), dt_utc(2026, 8, 12)]
+    trades = DataFrame(
+        {
+            "close_date": dates,
+            "profit_abs": [-10.0, 20.0],
+        }
+    )
+
+    drawdown = calculate_max_drawdown(
+        trades,
+        date_col="close_date",
+        value_col="profit_abs",
+        starting_balance=1000.0,
+    )
+
+    assert drawdown.current_drawdown_abs == 0.0
+    assert drawdown.current_high_value == 10.0
+    assert drawdown.current_high_date == dates[-1]
+
+
 def test_calculate_max_drawdown_from_balance():
     balance_history = DataFrame(
         {

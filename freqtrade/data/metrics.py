@@ -247,7 +247,9 @@ def calculate_max_drawdown(
     max_drawdown_rel = max_drawdown_df.at[idxmin, "drawdown_relative"]
 
     # Calculate current drawdown
-    current_high_idx = max_drawdown_df["high_value"].iloc[:-1].idxmax()
+    # Include the current point: it may establish a new equity high (for example
+    # when the current aggregate unrealized PnL recovers the previous drawdown).
+    current_high_idx = max_drawdown_df["high_value"].idxmax()
     current_high_date = profit_results.at[max(current_high_idx - 1, 0), date_col]
     current_high_value = max_drawdown_df.iloc[-1]["high_value"]
     current_cumulative = max_drawdown_df.iloc[-1]["cumulative"]
