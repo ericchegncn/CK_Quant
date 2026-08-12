@@ -4,8 +4,10 @@ from unittest.mock import ANY, MagicMock, PropertyMock
 
 import pytest
 from numpy import isnan
+from pandas import DataFrame
 from sqlalchemy import select
 
+from freqtrade.data.metrics import DrawDownResult
 from freqtrade.enums import SignalDirection, State, TradingMode
 from freqtrade.exceptions import ExchangeError, InvalidOrderException, TemporaryError
 from freqtrade.persistence import Order, Trade
@@ -502,6 +504,132 @@ def test_rpc_trade_statistics(default_conf_usdt, ticker, fee, mocker) -> None:
     assert stats["best_pair"] == "NEO/USDT"
     assert stats["best_rate"] == 1.99
     assert isnan(stats["profit_all_coin"])
+
+
+def test_rpc_trade_statistics_drawdown_uses_wallet_and_current_equity(
+    default_conf_usdt, ticker, fee, mocker
+) -> None:
+    mocker.patch("freqtrade.rpc.telegram.Telegram", MagicMock())
+    mocker.patch.multiple(
+        EXMS,
+        fetch_ticker=ticker,
+        get_fee=fee,
+    )
+    freqtradebot = get_patched_freqtradebot(mocker, default_conf_usdt)
+    rpc = RPC(freqtradebot)
+    rpc._fiat_converter = CryptoToFiatConverter({})
+    mocker.patch.object(rpc._fiat_converter, "get_price", return_value=1.0)
+    mocker.patch.object(freqtradebot.wallets, "get_starting_balance", return_value=1000.0)
+    create_mock_trades_usdt(fee)
+
+    snapshot_time = datetime(2026, 8, 12, 8, 51, 27, tzinfo=UTC)
+    mocker.patch("freqtrade.rpc.rpc.dt_now", return_value=snapshot_time)
+    mocker.patch(
+        "freqtrade.rpc.rpc.KeyValueStore.get_datetime_value",
+        return_value=snapshot_time - timedelta(days=2),
+    )
+    wallet_history = DataFrame(
+        {
+            "date": [snapshot_time.replace(tzinfo=None) - timedelta(days=1)],
+            "total_quote": [1050.0],
+        }
+    )
+    mocker.patch.object(rpc, "_rpc_get_historic_balance", return_value=(wallet_history, 0))
+    captured_drawdown_df = None
+
+    def capture_drawdown(dataframe, **kwargs):
+        nonlocal captured_drawdown_df
+        captured_drawdown_df = dataframe.copy()
+        from freqtrade.data.metrics import (
+            calculate_max_drawdown_from_balance as real_calculate_max_drawdown,
+        )
+
+        return real_calculate_max_drawdown(dataframe, **kwargs)
+
+    mocker.patch(
+        "freqtrade.rpc.rpc.calculate_max_drawdown_from_balance", side_effect=capture_drawdown
+    )
+
+    stats = rpc._rpc_trade_statistics("USDT", "USD")
+
+    assert captured_drawdown_df is not None
+    snapshot = captured_drawdown_df.iloc[-1]
+    assert snapshot["date"] == snapshot_time.replace(tzinfo=None)
+    assert snapshot["total_quote"] == pytest.approx(1000.0 + stats["profit_all_coin"])
+    assert snapshot["total_quote"] != pytest.approx(1000.0 + stats["profit_closed_coin"])
+    assert captured_drawdown_df.iloc[-2]["total_quote"] == 1050.0
+
+
+def test_rpc_trade_statistics_open_loss_can_set_max_and_current_drawdown(
+    default_conf_usdt, ticker, fee, mocker
+) -> None:
+    mocker.patch("freqtrade.rpc.telegram.Telegram", MagicMock())
+    mocker.patch.multiple(
+        EXMS,
+        fetch_ticker=ticker,
+        get_fee=fee,
+    )
+    freqtradebot = get_patched_freqtradebot(mocker, default_conf_usdt)
+    rpc = RPC(freqtradebot)
+    rpc._fiat_converter = CryptoToFiatConverter({})
+    mocker.patch.object(rpc._fiat_converter, "get_price", return_value=1.0)
+    mocker.patch.object(freqtradebot.wallets, "get_starting_balance", return_value=1000.0)
+    create_mock_trades_usdt(fee)
+
+    stats = rpc._rpc_trade_statistics("USDT", "USD")
+
+    assert stats["profit_all_coin"] < stats["profit_closed_coin"]
+    assert stats["current_drawdown_abs"] == pytest.approx(
+        stats["drawdown_high"] - stats["profit_all_coin"]
+    )
+    assert stats["max_drawdown_abs"] >= stats["current_drawdown_abs"]
+
+
+def test_persisted_max_drawdown_does_not_decrease_when_current_drawdown_recovers(mocker):
+    stored_state = None
+
+    def get_state(_key):
+        return stored_state
+
+    def store_state(_key, value):
+        nonlocal stored_state
+        stored_state = value
+
+    mocker.patch("freqtrade.rpc.rpc.KeyValueStore.get_string_value", side_effect=get_state)
+    mocker.patch("freqtrade.rpc.rpc.KeyValueStore.store_value", side_effect=store_state)
+
+    started = datetime(2026, 8, 12, 8, 0, tzinfo=UTC)
+    peak_time = started + timedelta(minutes=1)
+    peak = DrawDownResult(current_high_date=peak_time, current_high_value=50.0)
+
+    RPC._apply_persisted_drawdown_state(
+        peak,
+        current_equity=1050.0,
+        starting_balance=1000.0,
+        current_date=peak_time,
+        bot_start=started,
+    )
+    loss = RPC._apply_persisted_drawdown_state(
+        peak,
+        current_equity=1020.0,
+        starting_balance=1000.0,
+        current_date=peak_time + timedelta(minutes=1),
+        bot_start=started,
+    )
+    recovered = RPC._apply_persisted_drawdown_state(
+        peak,
+        current_equity=1035.0,
+        starting_balance=995.0,
+        current_date=peak_time + timedelta(minutes=2),
+        bot_start=started,
+    )
+
+    assert loss.drawdown_abs == 30.0
+    assert loss.current_drawdown_abs == 30.0
+    assert recovered.drawdown_abs == 30.0
+    assert recovered.current_drawdown_abs == 10.0
+    assert stored_state is not None
+    assert len(stored_state) <= 255
 
 
 def test_rpc_balance_handle_error(default_conf, mocker, caplog):
