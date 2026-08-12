@@ -52,6 +52,7 @@ scripts/
 *.key
 *credentials*
 *secrets*
+Freqtrade*.txt
 .env
 .env.*
 
