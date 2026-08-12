@@ -18,6 +18,7 @@ jobs:
         shell: bash
         run: |
           forbidden_paths="$(git ls-files \
+            'Freqtrade安装与操作说明.txt' \
             'user_data/strategies/**' \
             'scripts/ssh_*.py' \
             'scripts/*_stat*.py' \
@@ -35,3 +36,64 @@ jobs:
             echo 'Private CK strategy code or imports detected.' >&2
             exit 1
           fi
+
+      - name: Reject credentials in operational documentation
+        shell: python
+        run: |
+          import ipaddress
+          import pathlib
+          import re
+          import subprocess
+          import sys
+
+          paths = subprocess.check_output(
+              ["git", "ls-files", "-z", "--", "*.md", "*.txt"]
+          ).decode("utf-8").split("\0")
+          credential = re.compile(
+              r"(?im)(?:password|passwd|root[ _-]*password|\u5bc6\u7801|\u53e3\u4ee4)"
+              r"\s*[:=\uff1a]\s*([^\s#]+)"
+          )
+          ipv4 = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
+          placeholders = {
+              "changeme",
+              "change-me",
+              "example",
+              "password",
+              "redacted",
+              "your-password",
+              "your_password",
+          }
+          violations = []
+
+          for item in filter(None, paths):
+              path = pathlib.Path(item)
+              text = path.read_text(encoding="utf-8", errors="ignore")
+              values = [
+                  match.group(1).strip("'\"")
+                  for match in credential.finditer(text)
+              ]
+              real_values = [
+                  value
+                  for value in values
+                  if value.lower() not in placeholders
+                  and not value.startswith(("<", "$", "{", "*"))
+              ]
+              public_ips = []
+              for candidate in ipv4.findall(text):
+                  try:
+                      if ipaddress.ip_address(candidate).is_global:
+                          public_ips.append(candidate)
+                  except ValueError:
+                      pass
+              if real_values and public_ips:
+                  violations.append(item)
+
+          if violations:
+              print(
+                  "Credential-like values and public server addresses "
+                  "must not be committed together:",
+                  file=sys.stderr,
+              )
+              for item in violations:
+                  print(f"  {item}", file=sys.stderr)
+              raise SystemExit(1)
