@@ -1363,6 +1363,8 @@ def test_api_profit(botclient, mocker, ticker, fee, markets, is_short, expected)
         "max_drawdown_start_timestamp": ANY,
         "max_drawdown_end": ANY,
         "max_drawdown_end_timestamp": ANY,
+        "drawdown_high": ANY,
+        "drawdown_low": ANY,
         "current_drawdown": ANY,
         "current_drawdown_abs": ANY,
         "current_drawdown_high": ANY,

@@ -25,6 +25,7 @@ from freqtrade.data.metrics import (
     calculate_calmar,
     calculate_expectancy,
     calculate_max_drawdown,
+    calculate_max_drawdown_from_balance,
     calculate_sharpe,
     calculate_sortino,
     calculate_sqn,
@@ -530,6 +531,7 @@ class RPC:
         losing_trades = 0
         winning_profit = 0.0
         losing_profit = 0.0
+        open_profit_coin = []
 
         for trade in trades:
             current_rate: float = 0.0
@@ -565,6 +567,7 @@ class RPC:
                     _profit = trade.calculate_profit(trade.close_rate or current_rate)
                     profit_ratio = _profit.profit_ratio
                     profit_abs = _profit.total_profit
+                    open_profit_coin.append(profit_abs)
 
             profit_all_coin.append(profit_abs)
             profit_all_ratio.append(profit_ratio)
@@ -579,7 +582,74 @@ class RPC:
             "losing_trades": losing_trades,
             "winning_profit": winning_profit,
             "losing_profit": losing_profit,
+            "open_profit_coin": open_profit_coin,
         }
+
+    def _calculate_full_equity_drawdown(
+        self,
+        starting_balance: float,
+        profit_all_coin_sum: float,
+        first_date: datetime | None,
+        bot_start: datetime | None,
+    ) -> DrawDownResult:
+        """Calculate drawdown from persisted and current mark-to-market equity."""
+        wallet_history, _ = self._rpc_get_historic_balance()
+        initial_date = (bot_start or first_date or dt_now()).replace(tzinfo=None)
+        current_date = dt_now().replace(tzinfo=None)
+        equity_points = [{"date": initial_date, "total_quote": starting_balance}]
+
+        for point in wallet_history.itertuples(index=False):
+            point_date = point.date
+            if hasattr(point_date, "to_pydatetime"):
+                point_date = point_date.to_pydatetime()
+            if point_date.tzinfo is not None:
+                point_date = point_date.replace(tzinfo=None)
+            if point_date >= initial_date and point.total_quote is not None:
+                equity_points.append({"date": point_date, "total_quote": point.total_quote})
+
+        equity_points.append(
+            {
+                "date": current_date,
+                "total_quote": starting_balance + profit_all_coin_sum,
+            }
+        )
+        try:
+            return calculate_max_drawdown_from_balance(
+                DataFrame(equity_points),
+                date_col="date",
+                balance_col="total_quote",
+            )
+        except ValueError:
+            return DrawDownResult()
+
+    @staticmethod
+    def _calculate_scoped_trade_drawdown(
+        trades_df: DataFrame,
+        open_profit_coin: list[float],
+        starting_balance: float,
+    ) -> DrawDownResult:
+        """Calculate a trade-scoped approximation for filtered/directional reports."""
+        drawdown_df = trades_df.copy()
+        if open_profit_coin:
+            open_profit_snapshot_date = dt_now().replace(tzinfo=None)
+            open_profit_snapshot = {
+                "close_date": format_date(open_profit_snapshot_date),
+                "close_date_dt": open_profit_snapshot_date,
+                "profit_abs": sum(open_profit_coin),
+            }
+            if drawdown_df.empty:
+                drawdown_df = DataFrame([open_profit_snapshot])
+            else:
+                drawdown_df.loc[len(drawdown_df)] = open_profit_snapshot
+        try:
+            return calculate_max_drawdown(
+                drawdown_df,
+                value_col="profit_abs",
+                date_col="close_date_dt",
+                starting_balance=starting_balance,
+            )
+        except ValueError:
+            return DrawDownResult()
 
     def _rpc_trade_statistics(
         self,
@@ -591,6 +661,7 @@ class RPC:
         """
         Returns cumulative profit statistics, with optional direction filter (long/short)
         """
+        use_full_equity_history = start_date is None and direction is None
         start_date = datetime.fromtimestamp(0) if start_date is None else start_date
 
         trade_filter = (
@@ -619,6 +690,7 @@ class RPC:
         losing_trades = stats["losing_trades"]
         winning_profit = stats["winning_profit"]
         losing_profit = stats["losing_profit"]
+        open_profit_coin = stats["open_profit_coin"]
 
         closed_trade_count = len([t for t in trades if not t.is_open])
 
@@ -674,18 +746,28 @@ class RPC:
 
         expectancy, expectancy_ratio = calculate_expectancy(trades_df)
 
-        drawdown = DrawDownResult()
-        if len(trades_df) > 0:
-            try:
-                drawdown = calculate_max_drawdown(
-                    trades_df,
-                    value_col="profit_abs",
-                    date_col="close_date_dt",
-                    starting_balance=starting_balance,
-                )
-            except ValueError:
-                # ValueError if no losing trade.
-                pass
+        first_date = trades[0].open_date_utc if trades else None
+        last_date = trades[-1].open_date_utc if trades else None
+        bot_start = KeyValueStore.get_datetime_value("bot_start_time")
+
+        if use_full_equity_history:
+            # Standard /profit and the dashboard must use actual mark-to-market equity
+            # snapshots.  A realized-only trade curve cannot represent drawdown while
+            # positions remain open.
+            drawdown = self._calculate_full_equity_drawdown(
+                starting_balance,
+                profit_all_coin_sum,
+                first_date,
+                bot_start,
+            )
+        else:
+            # Direction-specific and date-filtered reports cannot use a whole-wallet
+            # history.  Keep their trade-scoped equity approximation.
+            drawdown = self._calculate_scoped_trade_drawdown(
+                trades_df,
+                open_profit_coin,
+                starting_balance,
+            )
 
         profit_all_fiat = (
             self._fiat_converter.convert_amount(
@@ -695,10 +777,7 @@ class RPC:
             else 0
         )
 
-        first_date = trades[0].open_date_utc if trades else None
-        last_date = trades[-1].open_date_utc if trades else None
         num = float(len(durations) or 1)
-        bot_start = KeyValueStore.get_datetime_value("bot_start_time")
 
         sharpe = calculate_sharpe(
             trades=trades_df,
