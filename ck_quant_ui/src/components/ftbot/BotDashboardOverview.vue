@@ -15,10 +15,7 @@ const openProfit = computed(() => {
   if (!activeBotId) return 0;
   const trades = botStore.allOpenTrades[activeBotId];
   if (!trades) return 0;
-  return trades.reduce(
-    (a, b) => a + (b.total_profit_abs ?? b.profit_abs ?? 0),
-    0,
-  );
+  return trades.reduce((a, b) => a + (b.total_profit_abs ?? b.profit_abs ?? 0), 0);
 });
 
 function stakeValue(value?: number | null): string {
@@ -50,18 +47,18 @@ const roiItems = computed(() => {
   const base = startingCapital.value || 10000;
   return [
     {
-      label: t('workspace.roiClosedTrades'),
-      value: `${stakeValue(closedCoin)} (${formatPercent(closedCoin / base, 2)})`,
-      sum: `Σ ${formatPercent(profit.value.profit_closed_ratio_sum, 2)}`,
-      fiat: fiatValue(profit.value.profit_closed_fiat),
-      positive: closedCoin >= 0,
-    },
-    {
       label: t('workspace.roiAllTrades'),
       value: `${stakeValue(allCoin)} (${formatPercent(allCoin / base, 2)})`,
       sum: `Σ ${formatPercent(profit.value.profit_all_ratio_sum, 2)}`,
       fiat: fiatValue(profit.value.profit_all_fiat),
       positive: allCoin >= 0,
+    },
+    {
+      label: t('workspace.roiClosedTrades'),
+      value: `${stakeValue(closedCoin)} (${formatPercent(closedCoin / base, 2)})`,
+      sum: `Σ ${formatPercent(profit.value.profit_closed_ratio_sum, 2)}`,
+      fiat: fiatValue(profit.value.profit_closed_fiat),
+      positive: closedCoin >= 0,
     },
   ];
 });
@@ -151,7 +148,7 @@ const metricItems = computed(() => {
           <article
             v-for="item in roiItems"
             :key="item.label"
-            class="relative overflow-hidden rounded-xl border border-default/60 bg-elevated/55 p-4"
+            class="overview-stat-card relative overflow-hidden rounded-xl border border-default/60 bg-elevated/55 p-4"
           >
             <div
               class="absolute inset-y-0 left-0 w-1"
@@ -176,7 +173,7 @@ const metricItems = computed(() => {
           <article
             v-for="item in metricItems"
             :key="item.label"
-            class="min-w-0 rounded-lg border border-default/50 bg-default/25 px-3.5 py-3"
+            class="overview-stat-card min-w-0 rounded-lg border border-default/50 bg-default/25 px-3.5 py-3"
           >
             <p class="text-sm font-medium text-muted">{{ item.label }}</p>
             <p
@@ -219,5 +216,20 @@ const metricItems = computed(() => {
   background:
     radial-gradient(circle at 12% 0%, rgb(16 185 129 / 8%), transparent 34%),
     radial-gradient(circle at 88% 32%, rgb(59 130 246 / 8%), transparent 36%);
+}
+
+.overview-stat-card {
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.overview-stat-card:hover {
+  border-color: rgb(59 130 246 / 78%);
+  background-color: rgb(59 130 246 / 7%);
+  box-shadow:
+    0 0 0 1px rgb(59 130 246 / 20%),
+    0 8px 24px rgb(15 23 42 / 18%);
 }
 </style>
