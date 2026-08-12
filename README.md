@@ -21,7 +21,7 @@
 | Android App 登录量化服务器、管理机器人及操作订单 | Android app for connecting to a CK Quant server, managing bots, and operating trades |
 | 可复现的 CPU / FreqAI Docker 镜像 | reproducible CPU and FreqAI Docker image definitions |
 | **Tick 级回测引擎**（真实逐笔撮合，内存友好） | a memory-friendly **tick-level backtest engine** matching exits on real tick sequences instead of guessing OHLCV bar paths |
-| **精确回撤百分比**（钱包余额含未平仓浮盈） | accurate drawdown: backtest wallet balance includes unrealized P&L of open positions (true account equity) |
+| **综合权益回撤**（已平仓收益与未平仓浮盈亏） | mark-to-market equity drawdown combining realized and unrealized P&L |
 
 > **策略保密**：真实策略、配置、模型、数据库、日志、凭据和服务器信息
 > **有意不包含**在本仓库中。
@@ -59,6 +59,11 @@ the cumulative-profit chart in one responsive overview card. Desktop screens use
 a readable side-by-side layout, while portrait phones stack the smooth profit
 curve below the bot statistics. Larger metric typography and a clear vertical
 scale make profit quality and drawdown easier to assess at a glance.
+
+Maximum drawdown is persisted as the all-time peak-to-trough record for the bot
+lifecycle, while current drawdown updates from live mark-to-market equity. The
+dashboard and Telegram `/profit` command share the same calculation. Summary
+cards place all-trades ROI first and highlight their borders on hover.
 
 管理员功能默认关闭。先在 `config.json` 中显式启用所需权限：
 
