@@ -2,6 +2,7 @@
 This module contains class to define a RPC communications
 """
 
+import json
 import logging
 from abc import abstractmethod
 from collections.abc import Generator, Sequence
@@ -614,13 +615,112 @@ class RPC:
             }
         )
         try:
-            return calculate_max_drawdown_from_balance(
+            drawdown = calculate_max_drawdown_from_balance(
                 DataFrame(equity_points),
                 date_col="date",
                 balance_col="total_quote",
             )
         except ValueError:
-            return DrawDownResult()
+            drawdown = DrawDownResult()
+
+        return self._apply_persisted_drawdown_state(
+            drawdown,
+            current_equity=starting_balance + profit_all_coin_sum,
+            starting_balance=starting_balance,
+            current_date=current_date,
+            bot_start=initial_date,
+        )
+
+    @staticmethod
+    def _apply_persisted_drawdown_state(
+        drawdown: DrawDownResult,
+        *,
+        current_equity: float,
+        starting_balance: float,
+        current_date: datetime,
+        bot_start: datetime,
+    ) -> DrawDownResult:
+        """Keep the all-time maximum drawdown while current drawdown remains live."""
+        state_raw = KeyValueStore.get_string_value("equity_drawdown_state")
+        try:
+            state = json.loads(state_raw) if state_raw else {}
+        except (TypeError, ValueError):
+            state = {}
+
+        bot_start_ts = int(bot_start.timestamp())
+        current_profit = current_equity - starting_balance
+        if state.get("v") != 1 or state.get("b") != bot_start_ts:
+            state = {
+                "v": 1,
+                "b": bot_start_ts,
+                "s": starting_balance,
+                "p": starting_balance,
+                "pt": bot_start_ts,
+                "m": 0.0,
+                "mr": 0.0,
+                "mh": starting_balance,
+                "ml": starting_balance,
+                "ms": bot_start_ts,
+                "me": bot_start_ts,
+            }
+
+        # Dry-run wallets can slightly re-estimate get_starting_balance() as trades
+        # close.  Lock the baseline captured for this bot lifecycle so this cannot
+        # reset or shift the all-time drawdown record.
+        starting_balance = state["s"]
+        current_equity = starting_balance + current_profit
+
+        observed_peak = starting_balance + drawdown.current_high_value
+        if observed_peak > state["p"]:
+            state["p"] = observed_peak
+            state["pt"] = int(drawdown.current_high_date.timestamp())
+        if current_equity > state["p"]:
+            state["p"] = current_equity
+            state["pt"] = int(current_date.timestamp())
+
+        observed_max = drawdown.drawdown_abs
+        if observed_max > state["m"]:
+            observed_high = starting_balance + drawdown.high_value
+            state.update(
+                {
+                    "m": observed_max,
+                    "mr": drawdown.relative_account_drawdown,
+                    "mh": observed_high,
+                    "ml": starting_balance + drawdown.low_value,
+                    "ms": int(drawdown.high_date.timestamp()),
+                    "me": int(drawdown.low_date.timestamp()),
+                }
+            )
+
+        current_drawdown_abs = max(0.0, state["p"] - current_equity)
+        current_drawdown = current_drawdown_abs / state["p"] if state["p"] else 0.0
+        if current_drawdown_abs > state["m"]:
+            state.update(
+                {
+                    "m": current_drawdown_abs,
+                    "mr": current_drawdown,
+                    "mh": state["p"],
+                    "ml": current_equity,
+                    "ms": state["pt"],
+                    "me": int(current_date.timestamp()),
+                }
+            )
+
+        KeyValueStore.store_value(
+            "equity_drawdown_state", json.dumps(state, separators=(",", ":"))
+        )
+        return DrawDownResult(
+            drawdown_abs=state["m"],
+            high_date=datetime.fromtimestamp(state["ms"], UTC),
+            low_date=datetime.fromtimestamp(state["me"], UTC),
+            high_value=state["mh"] - starting_balance,
+            low_value=state["ml"] - starting_balance,
+            relative_account_drawdown=state["mr"],
+            current_high_date=datetime.fromtimestamp(state["pt"], UTC),
+            current_high_value=state["p"] - starting_balance,
+            current_drawdown_abs=current_drawdown_abs,
+            current_relative_account_drawdown=current_drawdown,
+        )
 
     @staticmethod
     def _calculate_scoped_trade_drawdown(
