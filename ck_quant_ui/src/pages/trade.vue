@@ -113,10 +113,10 @@ const tradingTabItems = computed<TabsItem[]>(() => {
   <GridLayout
     class="h-full w-full"
     style="padding: 1px"
-    :row-height="50"
+    :row-height="31"
     :layout="gridLayoutData"
     :vertical-compact="false"
-    :margin="[1, 1]"
+    :margin="[1, 20]"
     :responsive-layouts="responsiveGridLayouts"
     :is-resizable="!isLayoutLocked"
     :is-draggable="!isLayoutLocked"
