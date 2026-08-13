@@ -1,3 +1,43 @@
+export function applyManualPairWhitelist(
+  config: Record<string, unknown>,
+  whitelist: string[],
+): Record<string, unknown> {
+  const exchange =
+    typeof config.exchange === 'object' &&
+    config.exchange !== null &&
+    !Array.isArray(config.exchange)
+      ? (config.exchange as Record<string, unknown>)
+      : {};
+  const pairlists = Array.isArray(config.pairlists) ? config.pairlists : [];
+  const firstPairlist = pairlists[0];
+  const firstMethod =
+    typeof firstPairlist === 'object' && firstPairlist !== null && !Array.isArray(firstPairlist)
+      ? (firstPairlist as Record<string, unknown>).method
+      : undefined;
+
+  const staticPairlists =
+    firstMethod === 'StaticPairList'
+      ? pairlists
+      : [
+          { method: 'StaticPairList' },
+          ...pairlists.slice(1).filter((pairlist) => {
+            if (typeof pairlist !== 'object' || pairlist === null || Array.isArray(pairlist)) {
+              return true;
+            }
+            return (pairlist as Record<string, unknown>).method !== 'StaticPairList';
+          }),
+        ];
+
+  return {
+    ...config,
+    exchange: {
+      ...exchange,
+      pair_whitelist: whitelist,
+    },
+    pairlists: staticPairlists,
+  };
+}
+
 export function normalizeAdminConfigSource(source: string): string {
   try {
     const config = JSON.parse(source) as Record<string, unknown>;

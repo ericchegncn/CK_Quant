@@ -65,3 +65,63 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: mode=max
           sbom: true
+
+      - name: Generate FreqAI image metadata
+        id: meta-freqai
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=freqai
+            type=raw,value=stable-freqai
+            type=raw,value=latest-freqai
+            type=raw,value=${{ inputs.release_tag }}-freqai,enable=${{ inputs.release_tag != '' }}
+            type=semver,pattern={{version}}-freqai
+            type=sha,prefix=sha-,suffix=-freqai
+
+      - name: Build and push FreqAI image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        with:
+          context: .
+          file: ./docker/Dockerfile.ck-quant-freqai
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            sourceimage=${{ env.IMAGE_NAME }}
+            sourcetag=stable
+          tags: ${{ steps.meta-freqai.outputs.tags }}
+          labels: ${{ steps.meta-freqai.outputs.labels }}
+          cache-from: type=gha,scope=freqai
+          cache-to: type=gha,mode=max,scope=freqai
+          provenance: mode=max
+          sbom: true
+
+      - name: Generate FreqAI RL image metadata
+        id: meta-freqai-rl
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=freqai-rl
+            type=raw,value=stable-freqai-rl
+            type=raw,value=latest-freqai-rl
+            type=raw,value=${{ inputs.release_tag }}-freqai-rl,enable=${{ inputs.release_tag != '' }}
+            type=semver,pattern={{version}}-freqai-rl
+            type=sha,prefix=sha-,suffix=-freqai-rl
+
+      - name: Build and push FreqAI RL image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        with:
+          context: .
+          file: ./docker/Dockerfile.ck-quant-freqai-rl
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            sourceimage=${{ env.IMAGE_NAME }}
+            sourcetag=stable-freqai
+          tags: ${{ steps.meta-freqai-rl.outputs.tags }}
+          labels: ${{ steps.meta-freqai-rl.outputs.labels }}
+          cache-from: type=gha,scope=freqai-rl
+          cache-to: type=gha,mode=max,scope=freqai-rl
+          provenance: mode=max
+          sbom: true
