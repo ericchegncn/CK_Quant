@@ -21,21 +21,38 @@ export enum DashboardLayout {
 
 // Define default layouts
 const DEFAULT_TRADING_LAYOUT: GridItemData[] = [
-  { i: TradeLayout.multiPane, x: 0, y: 0, w: 3, h: 35 },
+  { i: TradeLayout.multiPane, x: 0, y: 0, w: 3, h: 40 },
   { i: TradeLayout.chartView, x: 3, y: 0, w: 9, h: 14 },
-  { i: TradeLayout.tradeDetail, x: 3, y: 19, w: 9, h: 6 },
-  { i: TradeLayout.openTrades, x: 3, y: 14, w: 9, h: 5 },
-  { i: TradeLayout.tradeHistory, x: 3, y: 25, w: 9, h: 10 },
+  { i: TradeLayout.openTrades, x: 3, y: 14, w: 9, h: 14 },
+  { i: TradeLayout.tradeHistory, x: 3, y: 28, w: 9, h: 14 },
+  { i: TradeLayout.tradeDetail, x: 3, y: 42, w: 9, h: 6 },
 ];
 
 // Mobile layout: keep the main trading cards visible in a single scrollable column.
 const DEFAULT_TRADING_LAYOUT_SM: GridItemData[] = [
   { i: TradeLayout.multiPane, x: 0, y: 0, w: 12, h: 10 },
   { i: TradeLayout.chartView, x: 0, y: 10, w: 12, h: 12 },
-  { i: TradeLayout.openTrades, x: 0, y: 22, w: 12, h: 6 },
-  { i: TradeLayout.tradeHistory, x: 0, y: 28, w: 12, h: 10 },
-  { i: TradeLayout.tradeDetail, x: 0, y: 38, w: 12, h: 6 },
+  { i: TradeLayout.openTrades, x: 0, y: 22, w: 12, h: 12 },
+  { i: TradeLayout.tradeHistory, x: 0, y: 34, w: 12, h: 12 },
+  { i: TradeLayout.tradeDetail, x: 0, y: 46, w: 12, h: 6 },
 ];
+
+function isLegacyTradingLayout(layout: GridItemData[]): boolean {
+  const multiPane = layout.find((item) => item.i === TradeLayout.multiPane);
+  const openTrades = layout.find((item) => item.i === TradeLayout.openTrades);
+  const tradeHistory = layout.find((item) => item.i === TradeLayout.tradeHistory);
+  const tradeDetail = layout.find((item) => item.i === TradeLayout.tradeDetail);
+
+  return (
+    multiPane?.h === 35 &&
+    openTrades?.y === 14 &&
+    openTrades.h === 5 &&
+    tradeDetail?.y === 19 &&
+    tradeDetail.h === 6 &&
+    tradeHistory?.y === 25 &&
+    tradeHistory.h === 10
+  );
+}
 
 const DEFAULT_DASHBOARD_LAYOUT: GridItemData[] = [
   { i: DashboardLayout.botComparison, x: 0, y: 0, w: 12, h: 10 },
@@ -57,7 +74,7 @@ const DEFAULT_DASHBOARD_LAYOUT_SM: GridItemData[] = [
   { i: DashboardLayout.allClosedTrades, x: 0, y: 54, w: 12, h: 8 },
 ];
 
-const STORE_LAYOUTS = 'ftLayoutSettings_v2';
+const STORE_LAYOUTS = 'ftLayoutSettings_v3';
 
 function migrateLayoutSettings() {
   const STORE_DASHBOARD_LAYOUT = 'ftDashboardLayout';
@@ -82,8 +99,9 @@ function migrateLayoutSettings() {
   localStorage.removeItem(STORE_LAYOUT_LOCK);
   localStorage.removeItem(STORE_TRADING_LAYOUT);
   localStorage.removeItem(STORE_DASHBOARD_LAYOUT);
-  // Remove v1 layout cache so the new single-column default layout loads
+  // Remove v1/v2 layout cache so the new default layout loads
   localStorage.removeItem(STORE_LAYOUTS_V1);
+  localStorage.removeItem('ftLayoutSettings_v2');
 }
 migrateLayoutSettings();
 /**
@@ -149,6 +167,9 @@ export const useLayoutStore = defineStore(
           context.store.tradingLayout.length < DEFAULT_TRADING_LAYOUT.length
         ) {
           console.log('loading trading Layout from default.');
+          context.store.tradingLayout = deepClone(DEFAULT_TRADING_LAYOUT);
+        } else if (isLegacyTradingLayout(context.store.tradingLayout)) {
+          console.log('upgrading trading layout card heights and spacing.');
           context.store.tradingLayout = deepClone(DEFAULT_TRADING_LAYOUT);
         }
       },
