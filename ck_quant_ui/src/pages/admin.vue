@@ -7,11 +7,7 @@ import type {
   EditableAdminDocument,
 } from '@/types';
 import { RunModes } from '@/types';
-<<<<<<< HEAD
-import { normalizeAdminConfigSource } from '@/utils/adminConfig';
-=======
 import { applyManualPairWhitelist, normalizeAdminConfigSource } from '@/utils/adminConfig';
->>>>>>> origin/main
 import axios from 'axios';
 import { useI18n } from 'vue-i18n';
 
@@ -87,29 +83,11 @@ const pairWhitelist = computed({
   },
   set: (value: string) => {
     if (!configModel.value) return;
-<<<<<<< HEAD
-    const exchange = (configModel.value.exchange as Record<string, unknown> | undefined) ?? {};
-    source.value = JSON.stringify(
-      {
-        ...configModel.value,
-        exchange: {
-          ...exchange,
-          pair_whitelist: value
-            .split('\n')
-            .map((pair) => pair.trim())
-            .filter(Boolean),
-        },
-      },
-      null,
-      2,
-    );
-=======
     const whitelist = value
       .split('\n')
       .map((pair) => pair.trim())
       .filter(Boolean);
     source.value = JSON.stringify(applyManualPairWhitelist(configModel.value, whitelist), null, 2);
->>>>>>> origin/main
   },
 });
 

@@ -63,10 +63,7 @@ COPY --chown=ftuser:ftuser . /freqtrade/
 RUN if find /freqtrade -type f \( \
       -name 'CK_*.py' \
       -o -name 'test_ck_*.py' \
-<<<<<<< HEAD
-=======
       -o -iname 'Freqtrade*.txt' \
->>>>>>> origin/main
       -o -path '*/user_data/strategies/*' \
       -o -path '*/.hotfix-build-*/*' \
     \) \

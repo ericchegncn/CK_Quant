@@ -18,10 +18,7 @@ jobs:
         shell: bash
         run: |
           forbidden_paths="$(git ls-files \
-<<<<<<< HEAD
-=======
             'Freqtrade安装与操作说明.txt' \
->>>>>>> origin/main
             'user_data/strategies/**' \
             'scripts/ssh_*.py' \
             'scripts/*_stat*.py' \
@@ -39,8 +36,7 @@ jobs:
             echo 'Private CK strategy code or imports detected.' >&2
             exit 1
           fi
-<<<<<<< HEAD
-=======
+
 
       - name: Reject credentials in operational documentation
         shell: python
@@ -102,4 +98,3 @@ jobs:
               for item in violations:
                   print(f"  {item}", file=sys.stderr)
               raise SystemExit(1)
->>>>>>> origin/main
