@@ -6,6 +6,14 @@ CK Quant publishes a prebuilt CPU image to Docker Hub:
 ericchenghz/ck-quant:stable
 ```
 
+FreqAI images are published from the same privacy-safe source tree:
+
+```text
+ericchenghz/ck-quant:stable-freqai     # LightGBM, XGBoost, random forest
+ericchenghz/ck-quant:stable-freqai-rl  # adds PyTorch and reinforcement learning
+```
+
+Set `CK_QUANT_IMAGE` in `.env` to the required tag before `docker compose pull`.
 The image contains CK Quant and its WebUI. It does **not** contain your
 configuration, strategies, exchange keys, Telegram token, database, models, or
 logs. Runtime data is mounted from the local `CK_Quant/user_data` directory.
@@ -102,6 +110,9 @@ what will be removed.
 
 - `stable`: recommended release for normal deployment.
 - `latest`: currently the same tested release as `stable`.
+- `stable-freqai` / `freqai`: complete conventional FreqAI model stack.
+- `stable-freqai-rl` / `freqai-rl`: FreqAI plus PyTorch and reinforcement learning.
+- `<release>-freqai` / `<release>-freqai-rl`: immutable release-specific variants.
 - `sha-<commit>`: immutable build tied to one Git commit.
 - `vX.Y.Z`: versioned release tag when a GitHub release is published.
 

@@ -130,6 +130,10 @@ target/
 *.key
 *credentials*
 *secrets*
+<<<<<<< HEAD
+=======
+Freqtrade安装与操作说明.txt
+>>>>>>> origin/main
 .venv
 uv.lock
 .idea
