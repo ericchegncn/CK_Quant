@@ -23,18 +23,20 @@ export enum DashboardLayout {
 const DEFAULT_TRADING_LAYOUT: GridItemData[] = [
   { i: TradeLayout.multiPane, x: 0, y: 0, w: 3, h: 40 },
   { i: TradeLayout.chartView, x: 3, y: 0, w: 9, h: 14 },
-  { i: TradeLayout.openTrades, x: 3, y: 14, w: 9, h: 14 },
+{ i: TradeLayout.openTrades, x: 3, y: 14, w: 9, h: 14 },
   { i: TradeLayout.tradeHistory, x: 3, y: 28, w: 9, h: 14 },
   { i: TradeLayout.tradeDetail, x: 3, y: 42, w: 9, h: 6 },
+
 ];
 
 // Mobile layout: keep the main trading cards visible in a single scrollable column.
 const DEFAULT_TRADING_LAYOUT_SM: GridItemData[] = [
   { i: TradeLayout.multiPane, x: 0, y: 0, w: 12, h: 10 },
   { i: TradeLayout.chartView, x: 0, y: 10, w: 12, h: 12 },
-  { i: TradeLayout.openTrades, x: 0, y: 22, w: 12, h: 12 },
+{ i: TradeLayout.openTrades, x: 0, y: 22, w: 12, h: 12 },
   { i: TradeLayout.tradeHistory, x: 0, y: 34, w: 12, h: 12 },
   { i: TradeLayout.tradeDetail, x: 0, y: 46, w: 12, h: 6 },
+
 ];
 
 function isLegacyTradingLayout(layout: GridItemData[]): boolean {
@@ -76,6 +78,7 @@ const DEFAULT_DASHBOARD_LAYOUT_SM: GridItemData[] = [
 
 const STORE_LAYOUTS = 'ftLayoutSettings_v3';
 
+
 function migrateLayoutSettings() {
   const STORE_DASHBOARD_LAYOUT = 'ftDashboardLayout';
   const STORE_TRADING_LAYOUT = 'ftTradingLayout';
@@ -99,9 +102,10 @@ function migrateLayoutSettings() {
   localStorage.removeItem(STORE_LAYOUT_LOCK);
   localStorage.removeItem(STORE_TRADING_LAYOUT);
   localStorage.removeItem(STORE_DASHBOARD_LAYOUT);
-  // Remove v1/v2 layout cache so the new default layout loads
+// Remove v1/v2 layout cache so the new default layout loads
   localStorage.removeItem(STORE_LAYOUTS_V1);
   localStorage.removeItem('ftLayoutSettings_v2');
+
 }
 migrateLayoutSettings();
 /**

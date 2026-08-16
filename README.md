@@ -88,7 +88,13 @@ Android APK 可从 [GitHub Releases](https://github.com/ericchegncn/CK_Quant/rel
 
 ## Docker 快速开始 | Docker quick start
 
+<<<<<<< HEAD
 推荐镜像：`ericchenghz/ck-quant:stable`。新部署默认使用目录名 `CK_Quant`：
+=======
+普通交易推荐镜像：`ericchenghz/ck-quant:stable`。FreqAI 使用
+`ericchenghz/ck-quant:stable-freqai`；需要 PyTorch 和强化学习时使用
+`ericchenghz/ck-quant:stable-freqai-rl`。新部署默认使用目录名 `CK_Quant`：
+>>>>>>> origin/main
 
 ```bash
 mkdir CK_Quant

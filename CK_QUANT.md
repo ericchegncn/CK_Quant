@@ -63,7 +63,16 @@ docker build -f docker/Dockerfile.ck-quant-freqai-rl \
   -t ck-quant:freqai-rl .
 ```
 
+<<<<<<< HEAD
 The public CPU image is `ericchenghz/ck-quant:stable`. The root
+=======
+The public images are `ericchenghz/ck-quant:stable`,
+`ericchenghz/ck-quant:stable-freqai`, and
+`ericchenghz/ck-quant:stable-freqai-rl`. The FreqAI image contains the
+conventional LightGBM, XGBoost, random-forest, feature-engineering, and training
+stack. The RL variant additionally contains PyTorch and reinforcement-learning
+models. The root
+>>>>>>> origin/main
 `docker-compose.yml` can be downloaded and used directly:
 
 ```bash
