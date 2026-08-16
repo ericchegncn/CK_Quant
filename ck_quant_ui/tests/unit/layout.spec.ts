@@ -49,12 +49,18 @@ describe('desktop trading layout', () => {
     setActivePinia(createPinia());
   });
 
-  it('places equal-height open and closed trade cards next to each other', () => {
+  it('stacks all cards full-width in a single column', () => {
     const layout = useLayoutStore().tradingLayout;
     const openTrades = layout.find((item) => item.i === TradeLayout.openTrades)!;
     const closedTrades = layout.find((item) => item.i === TradeLayout.tradeHistory)!;
     const chartView = layout.find((item) => item.i === TradeLayout.chartView)!;
+    const multiPane = layout.find((item) => item.i === TradeLayout.multiPane)!;
 
+    // 全部卡片全宽（w=12），单列堆叠
+    expect(multiPane.w).toBe(12);
+    expect(chartView.w).toBe(12);
+    expect(openTrades.w).toBe(12);
+    expect(closedTrades.w).toBe(12);
     // 未平仓/已平仓卡片高度与图表卡一致（用户要求）
     expect(openTrades.h).toBe(chartView.h);
     expect(closedTrades.h).toBe(openTrades.h);

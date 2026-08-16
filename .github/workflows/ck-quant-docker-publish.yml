@@ -65,8 +65,6 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: mode=max
           sbom: true
-<<<<<<< HEAD
-=======
 
       - name: Generate FreqAI image metadata
         id: meta-freqai
@@ -127,4 +125,3 @@ jobs:
           cache-to: type=gha,mode=max,scope=freqai-rl
           provenance: mode=max
           sbom: true
->>>>>>> origin/main

@@ -73,7 +73,20 @@ const tableFields = computed(() => {
 });
 
 const tableColumns = computed<TableColumn<Trade>[]>(() =>
-  tableFields.value.map((f) => ({ accessorKey: f.field, header: f.header })),
+  tableFields.value.map((f) => ({
+    accessorKey: f.field,
+    header: f.header,
+    // 操作列固定在右侧，横向滚动时始终可见
+    ...(f.field === 'actions'
+      ? {
+          meta: {
+            className:
+              'sticky right-0 bg-white dark:bg-gray-900 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.15)]',
+            headerClassName: 'sticky right-0 bg-white dark:bg-gray-900 z-10',
+          },
+        }
+      : {}),
+  })),
 );
 
 const filteredTrades = computed(() => {
@@ -212,10 +225,13 @@ const rowSelection = computed({
       :pagination-options="{ getPaginationRowModel: getPaginationRowModel() }"
       :data="filteredTrades"
       :columns="tableColumns"
-      class="text-center"
+      class="text-center w-full"
       v-model:row-selection="rowSelection"
       :ui="{
         tr: 'data-[selected=true]:bg-primary/30 dark:data-[selected=true]:bg-primary-700',
+        wrapper: 'overflow-x-auto',
+        th: 'whitespace-nowrap',
+        td: 'whitespace-nowrap',
       }"
       @select="onRowSelect"
     >

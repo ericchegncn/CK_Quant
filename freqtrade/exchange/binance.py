@@ -287,11 +287,19 @@ class Binance(Exchange):
                 return rates
             return {}
         except ccxt.DDoSProtection as e:
-            raise DDosProtection(e) from e
+            # 403 / rate-limit: 静默降级，避免重试卡死主循环
+            self.logger.warning(
+                f"fetch_funding_rates throttled by exchange (DDoSProtection): {e}. "
+                "Degrading to empty funding rates."
+            )
+            return {}
         except (ccxt.OperationFailed, ccxt.ExchangeError) as e:
-            raise TemporaryError(
-                f"Error in additional_exchange_init due to {e.__class__.__name__}. Message: {e}"
-            ) from e
+            # 403 Forbidden (Binance blocks bulk funding history): 静默降级
+            self.logger.warning(
+                f"fetch_funding_rates failed ({e.__class__.__name__}): {e}. "
+                "Degrading to empty funding rates."
+            )
+            return {}
 
         except ccxt.BaseError as e:
             raise OperationalException(e) from e
@@ -349,7 +357,10 @@ class Binance(Exchange):
                     # Only "other" trades are considered
                     continue
                 if self._config["runmode"] in ("live", "dry_run"):
-                    mark_price = funding_rates[trade.pair]["markPrice"]
+                    # funding_rates may be empty when the exchange throttles bulk
+                    # funding requests (e.g. 403) — fall back to open rate.
+                    funding = funding_rates.get(trade.pair, {})
+                    mark_price = funding.get("markPrice") or trade.open_rate
                 else:
                     # Fall back to open rate for backtesting
                     mark_price = trade.open_rate
