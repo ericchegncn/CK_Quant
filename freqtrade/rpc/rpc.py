@@ -532,6 +532,9 @@ class RPC:
         losing_trades = 0
         winning_profit = 0.0
         losing_profit = 0.0
+        # 实时（含未平仓）赢/亏 —— 仅用于 profit factor
+        live_winning_profit = 0.0
+        live_losing_profit = 0.0
         open_profit_coin = []
 
         for trade in trades:
@@ -569,6 +572,11 @@ class RPC:
                     profit_ratio = _profit.profit_ratio
                     profit_abs = _profit.total_profit
                     open_profit_coin.append(profit_abs)
+                    # 未平仓浮盈计入实时赢/亏（用于实时 profit factor）
+                    if profit_ratio >= 0:
+                        live_winning_profit += profit_abs
+                    else:
+                        live_losing_profit += profit_abs
 
             profit_all_coin.append(profit_abs)
             profit_all_ratio.append(profit_ratio)
@@ -583,6 +591,8 @@ class RPC:
             "losing_trades": losing_trades,
             "winning_profit": winning_profit,
             "losing_profit": losing_profit,
+            "live_winning_profit": live_winning_profit,
+            "live_losing_profit": live_losing_profit,
             "open_profit_coin": open_profit_coin,
         }
 
@@ -829,6 +839,16 @@ class RPC:
             profit_all_ratio_fromstart = profit_all_coin_sum / starting_balance
 
         profit_factor = winning_profit / abs(losing_profit) if losing_profit else float("inf")
+
+        # 实时 Profit Factor（已平仓 + 未平仓浮盈）—— 机器人开着就有未平仓单，统计需实时
+        live_winning = winning_profit + stats["live_winning_profit"]
+        live_losing = losing_profit + stats["live_losing_profit"]
+        if live_losing:
+            profit_factor = live_winning / abs(live_losing)
+        elif live_winning > 0:
+            profit_factor = float("inf")
+        else:
+            profit_factor = 0.0
 
         winrate = (winning_trades / closed_trade_count) if closed_trade_count > 0 else 0
 
