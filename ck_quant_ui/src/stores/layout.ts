@@ -21,11 +21,11 @@ export enum DashboardLayout {
 
 // Define default layouts
 const DEFAULT_TRADING_LAYOUT: GridItemData[] = [
-  { i: TradeLayout.multiPane, x: 0, y: 0, w: 12, h: 10 },
-  { i: TradeLayout.chartView, x: 0, y: 10, w: 12, h: 14 },
-  { i: TradeLayout.openTrades, x: 0, y: 24, w: 12, h: 14 },
-  { i: TradeLayout.tradeHistory, x: 0, y: 38, w: 12, h: 14 },
-  { i: TradeLayout.tradeDetail, x: 0, y: 52, w: 12, h: 6 },
+  { i: TradeLayout.multiPane, x: 0, y: 0, w: 3, h: 40 },
+  { i: TradeLayout.chartView, x: 3, y: 0, w: 9, h: 14 },
+  { i: TradeLayout.openTrades, x: 3, y: 14, w: 9, h: 14 },
+  { i: TradeLayout.tradeHistory, x: 3, y: 28, w: 9, h: 14 },
+  { i: TradeLayout.tradeDetail, x: 3, y: 42, w: 9, h: 6 },
 ];
 
 // Mobile layout: keep the main trading cards visible in a single scrollable column.
