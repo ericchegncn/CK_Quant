@@ -49,6 +49,7 @@ nav:
         - Advanced Hyperopt: advanced-hyperopt.md
         - Advanced Orderflow: advanced-orderflow.md
         - Synthetic Iceberg Orders: advanced-iceberg.md
+        - Gainers/Losers PairList: gainers-losers-pairlist.md
         - Tick-Level Backtest: advanced-tick-backtest.md
         - Producer/Consumer mode: producer-consumer.md
         - SQL Cheat-sheet: sql_cheatsheet.md
