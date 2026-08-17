@@ -58,6 +58,7 @@ AVAILABLE_PAIRLISTS = [
     "StaticPairList",
     "VolumePairList",
     "PercentChangePairList",
+    "GainersLosersPairList",
     "ProducerPairList",
     "RemotePairList",
     "MarketCapPairList",
