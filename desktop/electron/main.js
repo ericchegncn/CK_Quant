@@ -210,6 +210,10 @@ async function deployRobot(ssh, config, onLog) {
   const log = (msg) => { logs.push(msg); onLog?.(msg); };
 
   try {
+    // 获取真实 HOME（sftp 不解析 ~，必须用绝对路径）
+    const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
+    const remote = (p) => p.replace(/^~\//, home + '/');
+
     log('① 检查 Docker 环境...');
     let r = await ssh.exec('docker --version && docker compose version');
     if (r.code !== 0) {
@@ -218,9 +222,9 @@ async function deployRobot(ssh, config, onLog) {
         // 上传全自动安装脚本（无交互，国内源优先）
         // 注意：必须转 LF 换行，否则 bash 报 CRLF 错误
                 const script = DOCKER_INSTALL_SCRIPT.replace(/\r\n/g, '\n');
-        await ssh.writeFile('~/ck-docker-install.sh', script);
-        await ssh.exec('chmod +x ~/ck-docker-install.sh');
-        r = await ssh.exec('bash ~/ck-docker-install.sh', 900000);
+        await ssh.writeFile(remote('~/ck-docker-install.sh'), script);
+        await ssh.exec('chmod +x ' + remote('~/ck-docker-install.sh'));
+        r = await ssh.exec('command -v bash >/dev/null 2>&1 || { echo "no bash, installing"; (command -v apt-get >/dev/null && apt-get install -y bash) || (command -v yum >/dev/null && yum install -y bash) || true; }; bash ' + remote('~/ck-docker-install.sh'), 900000);
         if (r.code !== 0) {
           log('❌ Docker 自动安装失败: ' + r.stderr.slice(-300));
           return { ok: false, logs };
@@ -240,8 +244,8 @@ async function deployRobot(ssh, config, onLog) {
     log('✅ Docker 环境正常');
 
     log('② 创建目录并下载 docker-compose.yml...');
-    await ssh.exec(`mkdir -p ~/CK_Quant/user_data/strategies`);
-    await ssh.writeFile('~/CK_Quant/docker-compose.yml', `services:
+    await ssh.exec(`mkdir -p ${remote('~/CK_Quant/user_data/strategies')}`);
+    await ssh.writeFile(remote('~/CK_Quant/docker-compose.yml'), `services:
   CK_Quant:
     image: ericchenghz/ck-quant:stable
     container_name: CK_Quant
@@ -259,29 +263,29 @@ async function deployRobot(ssh, config, onLog) {
     log('✅ docker-compose.yml 已创建');
 
     log('③ 拉取镜像...');
-    r = await ssh.exec('cd ~/CK_Quant && docker compose pull', 600000);
+    r = await ssh.exec('cd ' + remote('~/CK_Quant') + ' && docker compose pull', 600000);
     if (r.code !== 0) { log('❌ 镜像拉取失败: ' + r.stderr.slice(-200)); return { ok: false, logs }; }
     log('✅ 镜像拉取完成');
 
     if (config.configContent) {
       log('④ 上传用户 config.json...');
-      await ssh.writeFile('~/CK_Quant/user_data/config.json', config.configContent);
+      await ssh.writeFile(remote('~/CK_Quant/user_data/config.json'), config.configContent);
       log('✅ 用户 config.json 已上传');
     } else {
       log('④ 写入默认 config.json...');
       const cfg = buildFreqtradeConfig(config);
-      await ssh.writeFile('~/CK_Quant/user_data/config.json', JSON.stringify(cfg, null, 2));
+      await ssh.writeFile(remote('~/CK_Quant/user_data/config.json'), JSON.stringify(cfg, null, 2));
       log('✅ 默认 config.json 已写入');
     }
 
     if (config.strategyContent) {
       log('⑤ 上传策略文件...');
-      await ssh.writeFile(`~/CK_Quant/user_data/strategies/${config.strategy}.py`, config.strategyContent);
+      await ssh.writeFile(remote(`~/CK_Quant/user_data/strategies/${config.strategy}.py`), config.strategyContent);
       log('✅ 策略已上传');
     }
 
     log('⑥ 启动机器人...');
-    r = await ssh.exec('cd ~/CK_Quant && docker compose up -d', 120000);
+    r = await ssh.exec('cd ' + remote('~/CK_Quant') + ' && docker compose up -d', 120000);
     if (r.code !== 0) { log('❌ 启动失败: ' + r.stderr.slice(-200)); return { ok: false, logs }; }
     log('✅ 机器人已启动！');
 
