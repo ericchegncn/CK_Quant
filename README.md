@@ -25,11 +25,6 @@
 | **Real-time profit factor** | Includes unrealized P&L of open trades — statistics never lag while the bot runs |
 | **One-command release** | Build → push Docker Hub → tag → GitHub Release in one command |
 
-> **Strategy privacy**: Real strategies, configurations, models, databases,
-> logs, credentials, and server details are intentionally **not** part of
-> this repository. Private strategies live in `user_data/strategies/` on your
-> host and are mounted at runtime — they never enter Git, the APK, or the
-> official Docker images.
 
 ---
 
