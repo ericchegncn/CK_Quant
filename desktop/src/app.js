@@ -341,6 +341,42 @@ async function renderMonitor() {
     if (r.ok) $('#cfgEditorWrap').style.display = 'none';
   };
   $('#cfgCancel').onclick = () => { $('#cfgEditorWrap').style.display = 'none'; };
+
+  // 策略编辑器
+  let currentStrategyFile = null;
+  $('#m_editstrategy').onclick = async () => {
+    const sid = sel.value;
+    if (!sid) { toast('请选择服务器'); return; }
+    const r = await api.listStrategies(sid);
+    if (!r.ok) { toast('❌ ' + (r.error || '读取失败')); return; }
+    const files = r.files || [];
+    const opt = files.map((f) => `<option value="${esc(f)}">${esc(f)}</option>`).join('');
+    $('#strategySelect').innerHTML = opt || '<option value="">（无策略文件）</option>';
+    $('#strategyEditor').value = '';
+    currentStrategyFile = null;
+    $('#strategyEditorWrap').style.display = 'block';
+  };
+  $('#strategyLoad').onclick = async () => {
+    const sid = sel.value;
+    const fname = $('#strategySelect').value;
+    if (!sid || !fname) { toast('请选择服务器和策略'); return; }
+    const r = await api.readStrategy(sid, fname);
+    if (!r.ok) { toast('❌ ' + (r.error || '读取失败')); return; }
+    $('#strategyEditor').value = r.content;
+    currentStrategyFile = fname;
+    toast(`✅ 已加载 ${fname}`);
+  };
+  $('#strategySave').onclick = async () => {
+    const sid = sel.value;
+    const fname = currentStrategyFile || $('#strategySelect').value;
+    const content = $('#strategyEditor').value;
+    if (!sid || !fname) { toast('请先选择策略'); return; }
+    if (!content.trim()) { toast('❌ 策略内容不能为空'); return; }
+    const r = await api.saveStrategy(sid, fname, content);
+    toast(r.ok ? '✅ 策略已保存并重载' : '❌ ' + (r.error || '保存失败'));
+    if (r.ok) $('#strategyEditorWrap').style.display = 'none';
+  };
+  $('#strategyCancel').onclick = () => { $('#strategyEditorWrap').style.display = 'none'; };
 }
 
 // ============ WebUI（软件内嵌） ============
