@@ -186,14 +186,25 @@ function renderDeployWizard() {
       <h3>4. 策略与配置</h3>
       <div class="grid-2">
         <div><label>策略名称（类名）</label><input id="d_strategy" value="CK_Trend_15m" placeholder="如：CK_Trend_15m"></div>
-        <div><label>每笔金额 (USDT)</label><input id="d_stake" value="100"></div>
+        <div><label>每笔金额 (USDT) 或本金百分比（如 10%）</label><input id="d_stake" value="100"></div>
         <div><label>最大同时持仓</label><input id="d_maxopen" value="10"></div>
         <div><label>运行模式</label>
           <select id="d_dryrun"><option value="true" ${session?.plan === 'free' ? 'selected' : ''}>模拟盘 (dry_run)</option><option value="false" ${session?.plan !== 'free' ? 'selected' : ''}>实盘</option></select>
         </div>
+        <div id="d_walletRow"><label>模拟盘起始本金 (USDT)</label><input id="d_wallet" value="10000" placeholder="如：10000"></div>
+      </div>
+      <div style="margin-top:10px">
+        <label>config.json（可选）—— 上传后使用你的完整配置，以下选项仅对默认配置生效</label>
+        <input type="file" id="d_configfile" accept=".json,.jsonc">
       </div>
       <div style="margin-top:10px"><label>策略文件 (.py) —— 可选，不选则只部署框架</label><input type="file" id="d_strategyfile" accept=".py"></div>
       <div style="margin-top:10px"><label>或粘贴策略代码</label><textarea id="d_strategytext" style="width:100%;height:120px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:10px;font-family:monospace;font-size:12px" placeholder="# 粘贴你的策略代码..."></textarea></div>
+      <div style="margin-top:10px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="d_autodocker" checked style="width:auto;margin:0">
+          服务器未安装 Docker 时自动安装（使用国内镜像一键脚本，约 5-10 分钟）
+        </label>
+      </div>
     </div>
     <div class="card">
       <h3>5. 部署</h3>
@@ -209,8 +220,6 @@ function renderDeployWizard() {
 async function deployNow() {
   const serverId = $('#d_server').value;
   if (!serverId) { toast('请先选择服务器'); return; }
-  // 免费版强制模拟盘
-  const dryRun = session?.plan === 'free' ? true : $('#d_dryrun').value === 'true';
 
   let strategyContent = $('#d_strategytext').value;
   const file = $('#d_strategyfile').files[0];
@@ -218,15 +227,27 @@ async function deployNow() {
     strategyContent = await file.text();
   }
 
+  // 可选：上传用户 config.json
+  let configContent = null;
+  const cfgFile = $('#d_configfile').files[0];
+  if (cfgFile) {
+    configContent = await cfgFile.text();
+  }
+
+  const dryRun = session?.plan === 'free' ? true : $('#d_dryrun').value === 'true';
+
   const config = {
     strategy: $('#d_strategy').value.trim() || 'MyStrategy',
     apiKey: $('#d_apikey').value.trim(),
     apiSecret: $('#d_apisecret').value.trim(),
     telegramToken: $('#d_tgtoken').value.trim(),
     telegramChatId: $('#d_tgchat').value.trim(),
-    stakeAmount: parseFloat($('#d_stake').value) || 100,
+    stakeAmount: $('#d_stake').value.trim() || 100,
     maxOpenTrades: parseInt($('#d_maxopen').value) || 10,
     dryRun,
+    dryRunWallet: parseFloat($('#d_wallet').value) || 10000,
+    autoInstallDocker: $('#d_autodocker').checked,
+    configContent,
     strategyContent: strategyContent || null,
     tradingMode: 'futures',
     marginMode: 'isolated',

@@ -140,8 +140,28 @@ async function deployRobot(ssh, config, onLog) {
     log('① 检查 Docker 环境...');
     let r = await ssh.exec('docker --version && docker compose version');
     if (r.code !== 0) {
-      log('❌ 服务器未安装 Docker，请先安装 Docker 或改用本地部署');
-      return { ok: false, logs };
+      if (config.autoInstallDocker !== false) {
+        log('⚠️ 未检测到 Docker，开始自动安装（约 5-10 分钟）...');
+        log('   使用国内镜像源一键脚本: LinuxMirrors');
+        r = await ssh.exec(
+          'bash <(curl -sSL https://cdn.jsdelivr.net/gh/SuperManito/LinuxMirrors@main/DockerInstallation.sh)',
+          900000
+        );
+        if (r.code !== 0) {
+          log('❌ Docker 自动安装失败: ' + r.stderr.slice(-300));
+          return { ok: false, logs };
+        }
+        // 重新验证
+        r = await ssh.exec('docker --version && docker compose version');
+        if (r.code !== 0) {
+          log('❌ Docker 安装后仍不可用，请手动检查');
+          return { ok: false, logs };
+        }
+        log('✅ Docker 自动安装成功');
+      } else {
+        log('❌ 服务器未安装 Docker，请先安装 Docker 或开启自动安装');
+        return { ok: false, logs };
+      }
     }
     log('✅ Docker 环境正常');
 
@@ -169,10 +189,16 @@ async function deployRobot(ssh, config, onLog) {
     if (r.code !== 0) { log('❌ 镜像拉取失败: ' + r.stderr.slice(-200)); return { ok: false, logs }; }
     log('✅ 镜像拉取完成');
 
-    log('④ 写入 config.json...');
-    const cfg = buildFreqtradeConfig(config);
-    await ssh.writeFile('~/CK_Quant/user_data/config.json', JSON.stringify(cfg, null, 2));
-    log('✅ config.json 已写入');
+    if (config.configContent) {
+      log('④ 上传用户 config.json...');
+      await ssh.writeFile('~/CK_Quant/user_data/config.json', config.configContent);
+      log('✅ 用户 config.json 已上传');
+    } else {
+      log('④ 写入默认 config.json...');
+      const cfg = buildFreqtradeConfig(config);
+      await ssh.writeFile('~/CK_Quant/user_data/config.json', JSON.stringify(cfg, null, 2));
+      log('✅ 默认 config.json 已写入');
+    }
 
     if (config.strategyContent) {
       log('⑤ 上传策略文件...');
@@ -193,13 +219,19 @@ async function deployRobot(ssh, config, onLog) {
 }
 
 function buildFreqtradeConfig(cfg) {
-  return {
+  const dryRun = cfg.dryRun !== false;
+  // stake_amount: 支持固定金额（数字）或本金百分比（如 "10%"）
+  let stakeAmount = cfg.stakeAmount || 100;
+  if (typeof stakeAmount === 'string' && stakeAmount.endsWith('%')) {
+    stakeAmount = parseFloat(stakeAmount) / 100; // freqtrade 用 0.1 = 10% 本金
+  }
+  const conf = {
     trading_mode: cfg.tradingMode || 'futures',
     margin_mode: cfg.marginMode || 'isolated',
     stake_currency: 'USDT',
-    stake_amount: cfg.stakeAmount || 100,
+    stake_amount: stakeAmount,
     max_open_trades: cfg.maxOpenTrades || 10,
-    dry_run: cfg.dryRun !== false,
+    dry_run: dryRun,
     exchange: {
       name: cfg.exchange,
       key: cfg.apiKey || '',
@@ -223,6 +255,11 @@ function buildFreqtradeConfig(cfg) {
       ws_token: crypto.randomBytes(32).toString('hex'),
     },
   };
+  // 模拟盘起始本金（默认 10000）
+  if (dryRun) {
+    conf.dry_run_wallet = cfg.dryRunWallet || 10000;
+  }
+  return conf;
 }
 
 // ============ 日志流（docker logs -f） ============
