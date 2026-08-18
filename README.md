@@ -61,6 +61,28 @@ docker compose run --rm ck-quant new-config --config user_data/config.json
 
 Set `CK_QUANT_IMAGE` in `.env` to switch.
 
+### First-time configuration
+
+After `new-config`, edit `user_data/config.json` to set the essentials:
+
+```jsonc
+{
+    "exchange": {
+        "name": "binance",
+        "key": "YOUR_API_KEY",       // from the exchange (enable futures trading)
+        "secret": "YOUR_API_SECRET", // keep it secret — it never enters the image
+        "pair_whitelist": ["BTC/USDT:USDT", "ETH/USDT:USDT"]
+    },
+    "stake_amount": 100,             // fixed amount per trade
+    "max_open_trades": 5,
+    "dry_run": true                  // start in paper-trading mode!
+}
+```
+
+> **Always start with `dry_run: true`** (paper trading). Only switch to
+> `false` after you understand the bot's behavior and expected P&L.
+> For futures, create API keys with **Enable Futures** checked.
+
 ### Put your strategy in and start
 
 ```bash

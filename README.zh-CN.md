@@ -59,6 +59,27 @@ docker compose run --rm ck-quant new-config --config user_data/config.json
 
 在 `.env` 中设置 `CK_QUANT_IMAGE` 切换镜像。
 
+### 首次配置
+
+执行 `new-config` 后，编辑 `user_data/config.json` 设置关键项：
+
+```jsonc
+{
+    "exchange": {
+        "name": "binance",
+        "key": "YOUR_API_KEY",       // 从交易所获取（合约需开通）
+        "secret": "YOUR_API_SECRET", // 注意保密 —— 绝不进入镜像
+        "pair_whitelist": ["BTC/USDT:USDT", "ETH/USDT:USDT"]
+    },
+    "stake_amount": 100,             // 每笔固定金额
+    "max_open_trades": 5,
+    "dry_run": true                  // 先以模拟盘运行！
+}
+```
+
+> **务必先以 `dry_run: true` 模拟盘运行**，充分理解机制与预期盈亏后再切换
+> `false` 实盘。合约交易请创建**已勾选"开通合约"**的 API 密钥。
+
 ### 放入策略并启动
 
 ```bash
