@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src http://127.0.0.1:* http://localhost:*; connect-src 'self' http://127.0.0.1:* http://localhost:*">
   <title>CK Quant Desktop</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -169,6 +169,7 @@
             <button class="btn btn-sm" id="m_startbot">▶ 启动机器人</button>
             <button class="btn btn-sm" id="m_reload">♻️ 重载配置</button>
             <button class="btn btn-sm" id="m_editcfg">📝 编辑配置</button>
+            <button class="btn btn-sm" id="m_editstrategy">🧩 编辑策略</button>
           </div>
         </div>
         <div class="card">
@@ -178,6 +179,20 @@
             <div style="margin-top:8px;display:flex;gap:10px">
               <button class="btn btn-sm btn-success" id="cfgSave">💾 保存并重载</button>
               <button class="btn btn-sm btn-ghost" id="cfgCancel">取消</button>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>策略编辑器</h3>
+          <div id="strategyEditorWrap" style="display:none">
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+              <select id="strategySelect" style="width:260px"></select>
+              <button class="btn btn-sm" id="strategyLoad">📂 加载</button>
+            </div>
+            <textarea id="strategyEditor" style="width:100%;height:280px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:10px;font-family:Consolas,monospace;font-size:12px" spellcheck="false"></textarea>
+            <div style="margin-top:8px;display:flex;gap:10px">
+              <button class="btn btn-sm btn-success" id="strategySave">💾 保存并重载</button>
+              <button class="btn btn-sm btn-ghost" id="strategyCancel">取消</button>
             </div>
           </div>
         </div>

@@ -24,6 +24,11 @@ contextBridge.exposeInMainWorld('ckQuant', {
   readConfig: (serverId) => ipcRenderer.invoke('config:read', serverId),
   saveConfig: (serverId, content) => ipcRenderer.invoke('config:save', { serverId, content }),
 
+  // 策略编辑
+  listStrategies: (serverId) => ipcRenderer.invoke('strategy:list', serverId),
+  readStrategy: (serverId, filename) => ipcRenderer.invoke('strategy:read', { serverId, filename }),
+  saveStrategy: (serverId, filename, content) => ipcRenderer.invoke('strategy:save', { serverId, filename, content }),
+
   // 日志
   startLogs: (serverId) => ipcRenderer.invoke('logs:start', serverId),
   onLog: (cb) => ipcRenderer.on('deploy:log', (e, d) => cb(d)),

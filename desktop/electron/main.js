@@ -554,6 +554,38 @@ ipcMain.handle('config:save', async (e, { serverId, content }) => {
   return r;
 });
 
+// ============ 策略编辑 ============
+// 读取策略目录列表 + 策略内容
+ipcMain.handle('strategy:list', async (e, serverId) => {
+  const ssh = await ensureConnection(serverId);
+  if (!ssh) return { ok: false, error: '无法连接服务器' };
+  const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
+  const r = await ssh.exec(`ls ${home}/CK_Quant/user_data/strategies/ 2>/dev/null | grep '\\.py$'`);
+  if (r.code !== 0) return { ok: true, files: [] };
+  const files = r.stdout.trim().split('\n').filter(Boolean);
+  return { ok: true, files };
+});
+
+ipcMain.handle('strategy:read', async (e, { serverId, filename }) => {
+  const ssh = await ensureConnection(serverId);
+  if (!ssh) return { ok: false, error: '无法连接服务器' };
+  const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
+  const safe = filename.replace(/[^a-zA-Z0-9_.-]/g, '');
+  const r = await ssh.exec(`cat ${home}/CK_Quant/user_data/strategies/${safe}`);
+  if (r.code !== 0) return { ok: false, error: r.stderr.slice(-200) };
+  return { ok: true, content: r.stdout };
+});
+
+ipcMain.handle('strategy:save', async (e, { serverId, filename, content }) => {
+  const ssh = await ensureConnection(serverId);
+  if (!ssh) return { ok: false, error: '无法连接服务器' };
+  const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
+  const safe = filename.replace(/[^a-zA-Z0-9_.-]/g, '');
+  await ssh.writeFile(`${home}/CK_Quant/user_data/strategies/${safe}`, content);
+  const r = await robotAction(serverId, 'reload');
+  return r;
+});
+
 // 日志流
 ipcMain.handle('logs:start', async (e, serverId) => {
   const ssh = await ensureConnection(serverId);
@@ -581,9 +613,20 @@ ipcMain.handle('tunnel:start', async (e, serverId) => {
     // 每个本地连接 → SSH forwardOut → 远程 127.0.0.1:8080
     ssh.conn.forwardOut('127.0.0.1', 0, '127.0.0.1', 8080, (err, stream) => {
       if (err) { socket.destroy(); return; }
-      socket.pipe(stream).pipe(socket);
-      socket.on('error', () => stream.end());
-      stream.on('error', () => socket.end());
+      let closed = false;
+      const cleanup = () => {
+        if (closed) return;
+        closed = true;
+        try { stream.destroy(); } catch (e) {}
+        try { socket.destroy(); } catch (e) {}
+      };
+      // 双向 pipe，但每个方向独立处理 error/close，避免 EPIPE
+      socket.on('error', cleanup);
+      socket.on('close', cleanup);
+      stream.on('error', cleanup);
+      stream.on('close', cleanup);
+      socket.pipe(stream);
+      stream.pipe(socket);
     });
   });
   server.on('error', (err) => {
@@ -610,4 +653,12 @@ app.whenReady().then(() => {
 });
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+// 全局异常守卫：避免 EPIPE 等错误弹崩溃窗口
+process.on('uncaughtException', (err) => {
+  try { console.error('[uncaught]', err.message); } catch (e) {}
+});
+process.on('unhandledRejection', (reason) => {
+  try { console.error('[unhandled]', String(reason)); } catch (e) {}
 });
