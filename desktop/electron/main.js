@@ -386,6 +386,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true,
     },
   });
   mainWindow.loadFile(path.join(__dirname, '../src/index.html'));
@@ -439,7 +440,7 @@ ipcMain.handle('server:get', (e, id) => {
   const servers = readJson(SERVERS_FILE, {});
   const s = servers[id];
   if (!s) return null;
-  return { ...s, password: decryptSecret(s.password), apiSecret: decryptSecret(s.apiSecret), telegramToken: decryptSecret(s.telegramToken) };
+  return { ...s, password: decryptSecret(s.password), apiSecret: decryptSecret(s.apiSecret), telegramToken: decryptSecret(s.telegramToken), apiPassword: s.apiPassword ? decryptSecret(s.apiPassword) : 'ckquant123' };
 });
 
 // 部署
@@ -490,6 +491,15 @@ ipcMain.handle('deploy:run', async (e, { serverId, config }) => {
   });
   // 部署成功/失败都持久化状态
   updateServerStatus(serverId, result.ok ? '已部署' : '部署失败');
+  // 持久化 WebUI 登录凭据（供内嵌 WebUI 自动登录）
+  if (result.ok) {
+    const servers2 = readJson(SERVERS_FILE, {});
+    if (servers2[serverId]) {
+      servers2[serverId].apiUsername = config.apiUsername || servers2[serverId].apiUsername || 'ckquant';
+      servers2[serverId].apiPassword = encryptSecret(config.apiPassword || 'ckquant123');
+      writeJson(SERVERS_FILE, servers2);
+    }
+  }
   return result;
 });
 ipcMain.handle('deploy:disconnect', (e, serverId) => {
@@ -643,6 +653,18 @@ ipcMain.handle('tunnel:stop', (e, serverId) => {
   const t = tunnelServers.get(serverId);
   if (t) { t.server.close(); tunnelServers.delete(serverId); }
   return { ok: true };
+});
+
+// 获取 WebUI 自动登录凭据（部署时保存，加密存储）
+ipcMain.handle('webui:getCredentials', (e, serverId) => {
+  const servers = readJson(SERVERS_FILE, {});
+  const s = servers[serverId];
+  if (!s) return { ok: false, error: '服务器不存在' };
+  return {
+    ok: true,
+    apiUsername: s.apiUsername || 'ckquant',
+    apiPassword: s.apiPassword ? decryptSecret(s.apiPassword) : 'ckquant123',
+  };
 });
 
 app.whenReady().then(() => {

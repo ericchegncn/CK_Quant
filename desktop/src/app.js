@@ -182,14 +182,22 @@ function renderDeployWizard() {
       </div>
     </div>
     <div class="card">
-      <h3>3. Telegram（可选）</h3>
+      <h3>3. WebUI 登录账号（用于软件内嵌 WebUI 登录）</h3>
+      <div class="grid-2">
+        <div><label>用户名</label><input id="d_apiuser" value="ckquant" placeholder="WebUI 登录用户名"></div>
+        <div><label>密码</label><input id="d_apipass" value="ckquant123" placeholder="WebUI 登录密码"></div>
+      </div>
+      <p style="color:var(--muted);font-size:12px;margin-top:4px">💡 这些将写入 config.json 的 api_server 配置，内嵌 WebUI 时自动登录，无需手动输入</p>
+    </div>
+    <div class="card">
+      <h3>4. Telegram（可选）</h3>
       <div class="grid-2">
         <div><label>Bot Token</label><input id="d_tgtoken" placeholder="BotFather 获取的 token"></div>
         <div><label>Chat ID</label><input id="d_tgchat" placeholder="你的 Telegram ID"></div>
       </div>
     </div>
     <div class="card">
-      <h3>4. 策略与配置</h3>
+      <h3>5. 策略与配置</h3>
       <div class="grid-2">
         <div><label>策略名称（类名）</label><input id="d_strategy" value="CK_Trend_15m" placeholder="如：CK_Trend_15m"></div>
         <div><label>每笔金额 (USDT) 或本金百分比（如 10%）</label><input id="d_stake" value="100"></div>
@@ -213,7 +221,7 @@ function renderDeployWizard() {
       </div>
     </div>
     <div class="card">
-      <h3>5. 部署</h3>
+      <h3>6. 部署</h3>
       <button class="btn btn-success" id="d_deployBtn" style="width:auto;padding:12px 32px">🚀 一键部署并启动</button>
       <div style="margin-top:16px">
         <h3 style="margin-bottom:8px">部署日志</h3>
@@ -253,6 +261,8 @@ async function deployNow() {
     dryRun,
     dryRunWallet: parseFloat($('#d_wallet').value) || 10000,
     autoInstallDocker: $('#d_autodocker').checked,
+    apiUsername: $('#d_apiuser').value.trim() || 'ckquant',
+    apiPassword: $('#d_apipass').value.trim() || 'ckquant123',
     configContent,
     strategyContent: strategyContent || null,
     tradingMode: 'futures',
@@ -399,15 +409,63 @@ async function renderWebUI() {
     btn.disabled = true;
     btn.textContent = '⏳ 连接中...';
     const r = await api.startTunnel(sid);
+    if (!r.ok) {
+      btn.disabled = false;
+      btn.textContent = '🔗 连接 WebUI';
+      toast('❌ ' + (r.error || '连接失败'));
+      return;
+    }
+    // 获取自动登录凭据
+    const cred = await api.getCredentials(sid);
+    $('#webuiFrameWrap').style.display = 'block';
+    const view = document.getElementById('webuiView');
+    const url = `http://127.0.0.1:${r.localPort}`;
+
+    // 加载 WebUI
+    view.src = url;
+    toast('✅ WebUI 已连接，正在自动登录...');
+
+    // dom-ready 后注入自动登录脚本（用部署时保存的凭据）
+    const doAutoLogin = () => {
+      try {
+        view.executeJavaScript(`
+          (() => {
+            const tryFill = () => {
+              // 找登录弹窗输入框（id: url-input / username / password）
+              const urlInput = document.querySelector('#url-input');
+              const userInput = document.querySelector('input[type="text"]:not(#url-input)') ||
+                                document.querySelectorAll('input')[1];
+              const passInput = document.querySelector('input[type="password"]');
+              const loginBtn = [...document.querySelectorAll('button')].find(b =>
+                /登录|login|connect/i.test(b.textContent || ''));
+              if (urlInput && passInput) {
+                const setVal = (el, v) => {
+                  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                  setter.call(el, v);
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                };
+                setVal(urlInput, '${url}');
+                if (userInput) setVal(userInput, '${cred.apiUsername || 'ckquant'}');
+                setVal(passInput, '${cred.apiPassword || 'ckquant123'}');
+                if (loginBtn) loginBtn.click();
+                return true;
+              }
+              return false;
+            };
+            // 轮询直到表单出现（最多 30 秒）
+            let tries = 0;
+            const timer = setInterval(() => {
+              tries++;
+              if (tryFill() || tries > 60) clearInterval(timer);
+            }, 500);
+          })();
+        `);
+      } catch (e) { console.log('自动登录注入失败:', e.message); }
+    };
+    view.addEventListener('dom-ready', doAutoLogin, { once: true });
+
     btn.disabled = false;
     btn.textContent = '🔗 连接 WebUI';
-    if (r.ok) {
-      $('#webuiFrameWrap').style.display = 'block';
-      $('#webuiFrame').src = `http://127.0.0.1:${r.localPort}`;
-      toast(`✅ WebUI 已内嵌（端口 ${r.localPort}），如显示登录页请用 api_server 账号密码登录`);
-    } else {
-      toast('❌ ' + (r.error || '连接失败'));
-    }
   };
 }
 
