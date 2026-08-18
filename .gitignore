@@ -153,3 +153,7 @@ docker-compose-*.yml
 docker-compose*.yml
 !docker-compose.ck-quant.example.yml
 scripts/tmp_dl/
+
+# Desktop app
+node_modules/
+desktop/dist/
