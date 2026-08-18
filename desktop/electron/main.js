@@ -287,6 +287,10 @@ async function deployRobot(ssh, config, onLog) {
         }
         // 免费版强制模拟盘
         if (session?.plan === 'free') parsed.dry_run = true;
+        // 读取 api_server 端口（供隧道使用）
+        if (parsed.api_server && parsed.api_server.listen_port) {
+          config.apiPort = parsed.api_server.listen_port;
+        }
         userCfg = JSON.stringify(parsed, null, 2);
       } catch (e) {
         log('⚠️ 用户 config 解析失败，原样上传: ' + e.message);
@@ -296,6 +300,7 @@ async function deployRobot(ssh, config, onLog) {
     } else {
       log('④ 写入默认 config.json...');
       const cfg = buildFreqtradeConfig(config);
+      config.apiPort = cfg.api_server.listen_port || 8080;
       await ssh.writeFile(remote('~/CK_Quant/user_data/config.json'), JSON.stringify(cfg, null, 2));
       log('✅ 默认 config.json 已写入');
     }
@@ -491,12 +496,13 @@ ipcMain.handle('deploy:run', async (e, { serverId, config }) => {
   });
   // 部署成功/失败都持久化状态
   updateServerStatus(serverId, result.ok ? '已部署' : '部署失败');
-  // 持久化 WebUI 登录凭据（供内嵌 WebUI 自动登录）
+  // 持久化 WebUI 登录凭据 + api_server 端口（供内嵌 WebUI 自动登录/隧道）
   if (result.ok) {
     const servers2 = readJson(SERVERS_FILE, {});
     if (servers2[serverId]) {
       servers2[serverId].apiUsername = config.apiUsername || servers2[serverId].apiUsername || 'ckquant';
       servers2[serverId].apiPassword = encryptSecret(config.apiPassword || 'ckquant123');
+      servers2[serverId].apiPort = config.apiPort || servers2[serverId].apiPort || 8080;
       writeJson(SERVERS_FILE, servers2);
     }
   }
@@ -613,6 +619,9 @@ const tunnelServers = new Map(); // serverId -> { server, ssh }
 ipcMain.handle('tunnel:start', async (e, serverId) => {
   const ssh = await ensureConnection(serverId);
   if (!ssh) return { ok: false, error: '无法连接服务器（请检查 SSH 配置）' };
+  // 远程 api_server 实际端口（部署时持久化，默认 8080）
+  const servers = readJson(SERVERS_FILE, {});
+  const remotePort = (servers[serverId] && servers[serverId].apiPort) || 8080;
   // 已有隧道直接复用
   if (tunnelServers.has(serverId)) {
     return { ok: true, localPort: tunnelServers.get(serverId).localPort };
@@ -621,7 +630,7 @@ ipcMain.handle('tunnel:start', async (e, serverId) => {
   const localPort = 18080 + Math.floor(Math.random() * 1000);
   const server = net.createServer((socket) => {
     // 每个本地连接 → SSH forwardOut → 远程 127.0.0.1:8080
-    ssh.conn.forwardOut('127.0.0.1', 0, '127.0.0.1', 8080, (err, stream) => {
+    ssh.conn.forwardOut('127.0.0.1', 0, '127.0.0.1', remotePort, (err, stream) => {
       if (err) { socket.destroy(); return; }
       let closed = false;
       const cleanup = () => {
