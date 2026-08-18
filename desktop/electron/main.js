@@ -287,9 +287,17 @@ async function deployRobot(ssh, config, onLog) {
         }
         // 免费版强制模拟盘
         if (session?.plan === 'free') parsed.dry_run = true;
-        // 读取 api_server 端口（供隧道使用）
-        if (parsed.api_server && parsed.api_server.listen_port) {
-          config.apiPort = parsed.api_server.listen_port;
+        // 读取 api_server 配置（端口 + 真实用户名/密码，供隧道和自动登录）
+        if (parsed.api_server) {
+          if (parsed.api_server.listen_port) {
+            config.apiPort = parsed.api_server.listen_port;
+          }
+          if (parsed.api_server.username) {
+            config.apiUsername = parsed.api_server.username;
+          }
+          if (parsed.api_server.password) {
+            config.apiPassword = parsed.api_server.password;
+          }
         }
         userCfg = JSON.stringify(parsed, null, 2);
       } catch (e) {
@@ -664,15 +672,44 @@ ipcMain.handle('tunnel:stop', (e, serverId) => {
   return { ok: true };
 });
 
-// 获取 WebUI 自动登录凭据（部署时保存，加密存储）
-ipcMain.handle('webui:getCredentials', (e, serverId) => {
+// 获取 WebUI 自动登录凭据（部署时保存，加密存储；缺省时从服务器 config 实时读取）
+ipcMain.handle('webui:getCredentials', async (e, serverId) => {
   const servers = readJson(SERVERS_FILE, {});
   const s = servers[serverId];
   if (!s) return { ok: false, error: '服务器不存在' };
+  let apiUsername = s.apiUsername || null;
+  let apiPassword = s.apiPassword ? decryptSecret(s.apiPassword) : null;
+
+  // 本地无凭据时，从服务器 config.json 实时读取（兼容旧部署/用户上传 config）
+  if (!apiUsername || !apiPassword) {
+    try {
+      const ssh = await ensureConnection(serverId);
+      if (ssh) {
+        const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
+        const r = await ssh.exec(`python3 -c "import json;c=json.load(open('${home}/CK_Quant/user_data/config.json'));a=c.get('api_server',{});print(a.get('username',''),a.get('password',''),a.get('listen_port',8080))" 2>/dev/null || cat ${home}/CK_Quant/user_data/config.json`);
+        if (r.code === 0) {
+          const m = r.stdout.trim().match(/^(\S+)\s+(\S+)\s+(\d+)/);
+          if (m && m[1]) {
+            apiUsername = m[1];
+            apiPassword = m[2] || apiPassword;
+            const port = parseInt(m[3]) || s.apiPort || 8080;
+            // 回写缓存（加密存储）
+            const servers2 = readJson(SERVERS_FILE, {});
+            if (servers2[serverId]) {
+              servers2[serverId].apiUsername = apiUsername;
+              servers2[serverId].apiPassword = encryptSecret(apiPassword);
+              servers2[serverId].apiPort = port;
+              writeJson(SERVERS_FILE, servers2);
+            }
+          }
+        }
+      }
+    } catch (e) { /* 静默 */ }
+  }
   return {
     ok: true,
-    apiUsername: s.apiUsername || 'ckquant',
-    apiPassword: s.apiPassword ? decryptSecret(s.apiPassword) : 'ckquant123',
+    apiUsername: apiUsername || 'ckquant',
+    apiPassword: apiPassword || 'ckquant123',
   };
 });
 
