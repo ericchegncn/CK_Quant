@@ -86,18 +86,22 @@ async function loadServers() {
     list.innerHTML = '<div class="card" style="color:var(--muted)">还没有服务器，点击下方按钮添加</div>';
     return;
   }
-  list.innerHTML = servers.map((s) => `
+  list.innerHTML = servers.map((s) => {
+    const time = s.lastDeployAt ? new Date(s.lastDeployAt).toLocaleString('zh-CN') : '';
+    const statusClass = s.status === '已部署' ? 'deployed' : s.status === '部署失败' ? 'error' : 'pending';
+    return `
     <div class="server-card">
       <div>
         <div class="name">${esc(s.name)}</div>
-        <div class="host">${esc(s.host)}:${s.port || 22} · ${esc(s.username)} · ${esc(s.exchange || 'binance')}</div>
+        <div class="host">${esc(s.host)}:${s.port || 22} · ${esc(s.username)} · ${esc(s.exchange || 'binance')}${time ? ' · 部署于 ' + time : ''}</div>
       </div>
       <div class="server-actions">
-        <span class="status ${s.status === '已部署' ? 'deployed' : 'pending'}">${esc(s.status || '未部署')}</span>
+        <span class="status ${statusClass}">${esc(s.status || '未部署')}</span>
         <button class="btn btn-ghost btn-sm" onclick="editServer('${s.id}')">编辑</button>
         <button class="btn btn-danger btn-sm" onclick="delServer('${s.id}')">删除</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 window.editServer = async (id) => {

@@ -409,10 +409,10 @@ ipcMain.handle('plans:list', () => PLANS);
 // 服务器管理
 ipcMain.handle('server:list', () => {
   const servers = readJson(SERVERS_FILE, {});
-  // 解密返回（脱敏）
+  // 解密返回（脱敏）；status 持久化，重启后依然显示已部署
   return Object.entries(servers).map(([id, s]) => ({
     id, name: s.name, host: s.host, port: s.port, username: s.username,
-    exchange: s.exchange, status: s.status || '未部署',
+    exchange: s.exchange, status: s.status || '未部署', lastDeployAt: s.lastDeployAt || null,
   }));
 });
 ipcMain.handle('server:save', (e, data) => {
@@ -443,6 +443,35 @@ ipcMain.handle('server:get', (e, id) => {
 });
 
 // 部署
+// 确保 SSH 连接存在（重启软件后自动用保存的凭据重连）
+async function ensureConnection(serverId) {
+  const cached = sshCache.get(serverId);
+  if (cached) return cached;
+  const servers = readJson(SERVERS_FILE, {});
+  const s = servers[serverId];
+  if (!s || !s.host) return null;
+  try {
+    const ssh = await sshConnect({
+      host: s.host, port: s.port, username: s.username,
+      password: decryptSecret(s.password),
+    });
+    sshCache.set(serverId, ssh);
+    return ssh;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 更新服务器状态（持久化，重启后依然显示）
+function updateServerStatus(serverId, status) {
+  const servers = readJson(SERVERS_FILE, {});
+  if (servers[serverId]) {
+    servers[serverId].status = status;
+    servers[serverId].lastDeployAt = new Date().toISOString();
+    writeJson(SERVERS_FILE, servers);
+  }
+}
+
 ipcMain.handle('deploy:run', async (e, { serverId, config }) => {
   if (!session) return { ok: false, error: '未登录' };
   const servers = readJson(SERVERS_FILE, {});
@@ -459,6 +488,8 @@ ipcMain.handle('deploy:run', async (e, { serverId, config }) => {
   const result = await deployRobot(ssh, merged, (msg) => {
     mainWindow.webContents.send('deploy:log', { serverId, msg });
   });
+  // 部署成功/失败都持久化状态
+  updateServerStatus(serverId, result.ok ? '已部署' : '部署失败');
   return result;
 });
 ipcMain.handle('deploy:disconnect', (e, serverId) => {
@@ -469,8 +500,8 @@ ipcMain.handle('deploy:disconnect', (e, serverId) => {
 
 // ============ 机器人操作（重启/停止/重载/查看配置） ============
 async function robotAction(serverId, action) {
-  const ssh = sshCache.get(serverId);
-  if (!ssh) return { ok: false, error: '未连接（请先部署）' };
+  const ssh = await ensureConnection(serverId);
+  if (!ssh) return { ok: false, error: '无法连接服务器（请检查 SSH 配置）' };
   const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
   const dir = home + '/CK_Quant';
   let r;
@@ -505,8 +536,8 @@ ipcMain.handle('robot:action', async (e, { serverId, action }) => {
 
 // 读取远程 config.json（用于在线编辑）
 ipcMain.handle('config:read', async (e, serverId) => {
-  const ssh = sshCache.get(serverId);
-  if (!ssh) return { ok: false, error: '未连接' };
+  const ssh = await ensureConnection(serverId);
+  if (!ssh) return { ok: false, error: '无法连接服务器' };
   const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
   const r = await ssh.exec(`cat ${home}/CK_Quant/user_data/config.json`);
   if (r.code !== 0) return { ok: false, error: r.stderr.slice(-200) };
@@ -515,8 +546,8 @@ ipcMain.handle('config:read', async (e, serverId) => {
 
 // 保存远程 config.json（编辑后写回 + 重载）
 ipcMain.handle('config:save', async (e, { serverId, content }) => {
-  const ssh = sshCache.get(serverId);
-  if (!ssh) return { ok: false, error: '未连接' };
+  const ssh = await ensureConnection(serverId);
+  if (!ssh) return { ok: false, error: '无法连接服务器' };
   const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
   await ssh.writeFile(`${home}/CK_Quant/user_data/config.json`, content);
   const r = await robotAction(serverId, 'reload');
@@ -524,9 +555,9 @@ ipcMain.handle('config:save', async (e, { serverId, content }) => {
 });
 
 // 日志流
-ipcMain.handle('logs:start', (e, serverId) => {
-  const ssh = sshCache.get(serverId);
-  if (!ssh) return { ok: false, error: '未连接' };
+ipcMain.handle('logs:start', async (e, serverId) => {
+  const ssh = await ensureConnection(serverId);
+  if (!ssh) return { ok: false, error: '无法连接服务器' };
   streamLogs(ssh, (data) => {
     mainWindow.webContents.send('logs:data', { serverId, data });
   }, () => {});
@@ -537,9 +568,9 @@ ipcMain.handle('logs:start', (e, serverId) => {
 const net = require('net');
 const tunnelServers = new Map(); // serverId -> { server, ssh }
 
-ipcMain.handle('tunnel:start', (e, serverId) => {
-  const ssh = sshCache.get(serverId);
-  if (!ssh) return { ok: false, error: '未连接（请先部署）' };
+ipcMain.handle('tunnel:start', async (e, serverId) => {
+  const ssh = await ensureConnection(serverId);
+  if (!ssh) return { ok: false, error: '无法连接服务器（请检查 SSH 配置）' };
   // 已有隧道直接复用
   if (tunnelServers.has(serverId)) {
     return { ok: true, localPort: tunnelServers.get(serverId).localPort };
