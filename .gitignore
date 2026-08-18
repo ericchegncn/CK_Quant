@@ -157,3 +157,6 @@ scripts/tmp_dl/
 # Desktop app
 node_modules/
 desktop/dist/
+
+desktop/pnpm-lock.yaml
+desktop/pnpm-workspace.yaml
