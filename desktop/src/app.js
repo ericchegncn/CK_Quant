@@ -72,6 +72,8 @@ document.querySelectorAll('.nav-item').forEach((item) => {
     $(`#page-${item.dataset.page}`).classList.add('active');
     if (item.dataset.page === 'servers') loadServers();
     if (item.dataset.page === 'deploy') renderDeployWizard();
+    if (item.dataset.page === 'monitor') renderMonitor();
+    if (item.dataset.page === 'webui') renderWebUI();
     if (item.dataset.page === 'plans') renderPlans();
   });
 });
@@ -277,14 +279,15 @@ async function deployNow() {
 // ============ 监控 ============
 async function renderMonitor() {
   const deployed = servers.filter((s) => s.status === '已部署');
-  $('#monitorServerSelect').innerHTML = deployed.length
-    ? `<select id="m_server">${deployed.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
-       <button class="btn btn-sm" style="margin-top:8px" id="m_start">▶ 连接日志</button>`
-    : '<p style="color:var(--muted)">暂无已部署的服务器</p>';
-  const startBtn = $('#m_start');
-  if (startBtn) startBtn.addEventListener('click', async () => {
-    const sid = $('#m_server').value;
-    $('#logWindow').innerHTML = '';
+  const sel = $('#m_server');
+  sel.innerHTML = deployed.length
+    ? deployed.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')
+    : '<option value="">暂无已部署的服务器（请先部署）</option>';
+
+  $('#m_start').onclick = async () => {
+    const sid = sel.value;
+    if (!sid) { toast('请选择服务器'); return; }
+    $('#logWindow').innerHTML = '<div class="log-line info">连接日志中...</div>';
     api.onLogData(({ serverId, data }) => {
       if (serverId !== sid) return;
       const div = document.createElement('div');
@@ -293,26 +296,78 @@ async function renderMonitor() {
       $('#logWindow').appendChild(div);
       $('#logWindow').scrollTop = $('#logWindow').scrollHeight;
     });
-    await api.startLogs(sid);
-  });
+    const r = await api.startLogs(sid);
+    if (!r.ok) { $('#logWindow').innerHTML = `<div class="log-line err">${esc(r.error)}</div>`; }
+  };
+
+  // 操作按钮
+  const bindAction = (id, action, label) => {
+    const btn = $(id);
+    btn.onclick = async () => {
+      const sid = sel.value;
+      if (!sid) { toast('请选择服务器'); return; }
+      btn.disabled = true;
+      btn.textContent = label + '...';
+      const r = await api.robotAction(sid, action);
+      btn.disabled = false;
+      btn.textContent = label;
+      toast(r.ok ? `✅ ${label}成功` : `❌ ${r.error || '操作失败'}`);
+    };
+  };
+  bindAction('#m_restart', 'restart', '🔄 重启机器人');
+  bindAction('#m_stop', 'stop', '⏹ 停止机器人');
+  bindAction('#m_startbot', 'start', '▶ 启动机器人');
+  bindAction('#m_reload', 'reload', '♻️ 重载配置');
+
+  // 配置编辑器
+  $('#m_editcfg').onclick = async () => {
+    const sid = sel.value;
+    if (!sid) { toast('请选择服务器'); return; }
+    const r = await api.readConfig(sid);
+    if (!r.ok) { toast('❌ ' + (r.error || '读取失败')); return; }
+    $('#cfgEditor').value = r.content;
+    $('#cfgEditorWrap').style.display = 'block';
+  };
+  $('#cfgSave').onclick = async () => {
+    const sid = sel.value;
+    const content = $('#cfgEditor').value;
+    try { JSON.parse(content); } catch (e) { toast('❌ 配置不是合法 JSON: ' + e.message); return; }
+    const r = await api.saveConfig(sid, content);
+    toast(r.ok ? '✅ 配置已保存并重载' : '❌ ' + (r.error || '保存失败'));
+    if (r.ok) $('#cfgEditorWrap').style.display = 'none';
+  };
+  $('#cfgCancel').onclick = () => { $('#cfgEditorWrap').style.display = 'none'; };
 }
 
-// ============ WebUI ============
+// ============ WebUI（软件内嵌） ============
 async function renderWebUI() {
   const deployed = servers.filter((s) => s.status === '已部署');
-  $('#webuiServerSelect').innerHTML = deployed.length
-    ? `<select id="w_server">${deployed.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>`
-    : '<p style="color:var(--muted)">暂无已部署的服务器</p>';
+  const sel = $('#w_server');
+  sel.innerHTML = deployed.length
+    ? deployed.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')
+    : '<option value="">暂无已部署的服务器</option>';
+
+  api.onTunnelError(({ serverId, error }) => {
+    toast('❌ WebUI 隧道错误: ' + error);
+    $('#webuiFrameWrap').style.display = 'none';
+  });
+
   const btn = $('#webuiOpenBtn');
   btn.onclick = async () => {
-    const sid = $('#w_server').value;
+    const sid = sel.value;
     if (!sid) { toast('请选择服务器'); return; }
+    btn.disabled = true;
+    btn.textContent = '⏳ 连接中...';
     const r = await api.startTunnel(sid);
+    btn.disabled = false;
+    btn.textContent = '🔗 连接 WebUI';
     if (r.ok) {
       $('#webuiFrameWrap').style.display = 'block';
       $('#webuiFrame').src = `http://127.0.0.1:${r.localPort}`;
-      toast(`WebUI 隧道已建立 (端口 ${r.localPort})`);
-    } else toast(r.error || '隧道建立失败');
+      toast(`✅ WebUI 已内嵌（端口 ${r.localPort}），如显示登录页请用 api_server 账号密码登录`);
+    } else {
+      toast('❌ ' + (r.error || '连接失败'));
+    }
   };
 }
 

@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld('ckQuant', {
   deploy: (serverId, config) => ipcRenderer.invoke('deploy:run', { serverId, config }),
   disconnect: (serverId) => ipcRenderer.invoke('deploy:disconnect', serverId),
 
+  // 机器人操作
+  robotAction: (serverId, action) => ipcRenderer.invoke('robot:action', { serverId, action }),
+  readConfig: (serverId) => ipcRenderer.invoke('config:read', serverId),
+  saveConfig: (serverId, content) => ipcRenderer.invoke('config:save', { serverId, content }),
+
   // 日志
   startLogs: (serverId) => ipcRenderer.invoke('logs:start', serverId),
   onLog: (cb) => ipcRenderer.on('deploy:log', (e, d) => cb(d)),
@@ -26,4 +31,6 @@ contextBridge.exposeInMainWorld('ckQuant', {
 
   // 隧道（WebUI 内嵌）
   startTunnel: (serverId) => ipcRenderer.invoke('tunnel:start', serverId),
+  stopTunnel: (serverId) => ipcRenderer.invoke('tunnel:stop', serverId),
+  onTunnelError: (cb) => ipcRenderer.on('tunnel:error', (e, d) => cb(d)),
 });
