@@ -1,0 +1,36 @@
+{
+  "name": "ck-quant-desktop",
+  "version": "0.1.0",
+  "description": "CK Quant Desktop - 量化机器人部署与管理工作台",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "build": "electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.ckquant.desktop",
+    "productName": "CK Quant Desktop",
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "dist/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "ssh2": "^1.16.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  }
+}
