@@ -159,20 +159,42 @@
     <div class="page" id="page-monitor">
       <h2>运行监控</h2>
       <div id="monitorArea">
-        <div class="card"><h3>选择已部署的服务器查看日志</h3><div id="monitorServerSelect"></div></div>
+        <div class="card">
+          <h3>选择已部署的服务器</h3>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <select id="m_server" style="width:220px"></select>
+            <button class="btn btn-sm" id="m_start">▶ 连接日志</button>
+            <button class="btn btn-sm btn-success" id="m_restart" style="margin-left:12px">🔄 重启机器人</button>
+            <button class="btn btn-sm" id="m_stop">⏹ 停止机器人</button>
+            <button class="btn btn-sm" id="m_startbot">▶ 启动机器人</button>
+            <button class="btn btn-sm" id="m_reload">♻️ 重载配置</button>
+            <button class="btn btn-sm" id="m_editcfg">📝 编辑配置</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>配置编辑器</h3>
+          <div id="cfgEditorWrap" style="display:none">
+            <textarea id="cfgEditor" style="width:100%;height:220px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:10px;font-family:Consolas,monospace;font-size:12px"></textarea>
+            <div style="margin-top:8px;display:flex;gap:10px">
+              <button class="btn btn-sm btn-success" id="cfgSave">💾 保存并重载</button>
+              <button class="btn btn-sm btn-ghost" id="cfgCancel">取消</button>
+            </div>
+          </div>
+        </div>
         <div class="card"><h3>实时日志</h3><div class="log-window" id="logWindow"></div></div>
       </div>
     </div>
 
     <!-- WebUI -->
     <div class="page" id="page-webui">
-      <h2>WebUI</h2>
+      <h2>WebUI（软件内嵌）</h2>
       <div class="card">
-        <h3>启动 WebUI 隧道</h3>
-        <div id="webuiServerSelect"></div>
-        <button class="btn btn-sm" id="webuiOpenBtn" style="margin-top:12px">🔗 打开 WebUI</button>
+        <div style="display:flex;gap:10px;align-items:center">
+          <select id="w_server" style="width:220px"></select>
+          <button class="btn btn-sm" id="webuiOpenBtn">🔗 连接 WebUI</button>
+        </div>
         <div id="webuiFrameWrap" style="margin-top:16px;display:none">
-          <iframe id="webuiFrame" class="webui-frame" src="about:blank"></iframe>
+          <iframe id="webuiFrame" class="webui-frame" src="about:blank" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
         </div>
       </div>
     </div>

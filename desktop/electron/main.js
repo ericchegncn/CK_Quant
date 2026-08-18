@@ -269,8 +269,30 @@ async function deployRobot(ssh, config, onLog) {
 
     if (config.configContent) {
       log('④ 上传用户 config.json...');
-      await ssh.writeFile(remote('~/CK_Quant/user_data/config.json'), config.configContent);
-      log('✅ 用户 config.json 已上传');
+      // 用户 config 为准，但补入表单里的交易所密钥/Telegram（避免小白漏填）
+      let userCfg = config.configContent;
+      try {
+        const parsed = JSON.parse(
+          config.configContent
+            .replace(/\/\/.*$/gm, '')      // 去掉 JSONC 注释
+            .replace(/,\s*([}\]])/g, '$1') // 去掉尾逗号
+        );
+        if (config.apiKey && parsed.exchange) parsed.exchange.key = config.apiKey;
+        if (config.apiSecret && parsed.exchange) parsed.exchange.secret = config.apiSecret;
+        if (config.telegramToken) {
+          parsed.telegram = parsed.telegram || {};
+          parsed.telegram.enabled = true;
+          parsed.telegram.token = config.telegramToken;
+          parsed.telegram.chat_id = config.telegramChatId || parsed.telegram.chat_id;
+        }
+        // 免费版强制模拟盘
+        if (session?.plan === 'free') parsed.dry_run = true;
+        userCfg = JSON.stringify(parsed, null, 2);
+      } catch (e) {
+        log('⚠️ 用户 config 解析失败，原样上传: ' + e.message);
+      }
+      await ssh.writeFile(remote('~/CK_Quant/user_data/config.json'), userCfg);
+      log('✅ 用户 config.json 已上传（以用户参数为准）');
     } else {
       log('④ 写入默认 config.json...');
       const cfg = buildFreqtradeConfig(config);
@@ -445,6 +467,62 @@ ipcMain.handle('deploy:disconnect', (e, serverId) => {
   return { ok: true };
 });
 
+// ============ 机器人操作（重启/停止/重载/查看配置） ============
+async function robotAction(serverId, action) {
+  const ssh = sshCache.get(serverId);
+  if (!ssh) return { ok: false, error: '未连接（请先部署）' };
+  const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
+  const dir = home + '/CK_Quant';
+  let r;
+  switch (action) {
+    case 'restart':
+      r = await ssh.exec(`cd ${dir} && docker compose restart`, 120000);
+      break;
+    case 'stop':
+      r = await ssh.exec(`cd ${dir} && docker compose stop`, 120000);
+      break;
+    case 'start':
+      r = await ssh.exec(`cd ${dir} && docker compose start`, 120000);
+      break;
+    case 'reload':
+      // 通过 freqtrade API 热重载配置（需要 api_server 凭据）；失败则回退重启
+      r = await ssh.exec(`curl -s -X POST http://127.0.0.1:8080/api/v1/reload_config -u ckquant:ckquant123 | head -c 200`, 30000);
+      if (r.code !== 0 || !r.stdout.includes('"status":"success"')) {
+        r = await ssh.exec(`cd ${dir} && docker compose restart`, 120000);
+      }
+      break;
+    default:
+      return { ok: false, error: '未知操作' };
+  }
+  if (r.code !== 0) return { ok: false, error: r.stderr.slice(-200) };
+  return { ok: true, output: r.stdout.slice(-300) };
+}
+
+ipcMain.handle('robot:action', async (e, { serverId, action }) => {
+  if (!session) return { ok: false, error: '未登录' };
+  return await robotAction(serverId, action);
+});
+
+// 读取远程 config.json（用于在线编辑）
+ipcMain.handle('config:read', async (e, serverId) => {
+  const ssh = sshCache.get(serverId);
+  if (!ssh) return { ok: false, error: '未连接' };
+  const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
+  const r = await ssh.exec(`cat ${home}/CK_Quant/user_data/config.json`);
+  if (r.code !== 0) return { ok: false, error: r.stderr.slice(-200) };
+  return { ok: true, content: r.stdout };
+});
+
+// 保存远程 config.json（编辑后写回 + 重载）
+ipcMain.handle('config:save', async (e, { serverId, content }) => {
+  const ssh = sshCache.get(serverId);
+  if (!ssh) return { ok: false, error: '未连接' };
+  const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
+  await ssh.writeFile(`${home}/CK_Quant/user_data/config.json`, content);
+  const r = await robotAction(serverId, 'reload');
+  return r;
+});
+
 // 日志流
 ipcMain.handle('logs:start', (e, serverId) => {
   const ssh = sshCache.get(serverId);
@@ -455,16 +533,42 @@ ipcMain.handle('logs:start', (e, serverId) => {
   return { ok: true };
 });
 
-// 端口转发（WebUI 内嵌）
+// 端口转发（WebUI 内嵌）：本地 TCP server → SSH 隧道 → 远程 8080
+const net = require('net');
+const tunnelServers = new Map(); // serverId -> { server, ssh }
+
 ipcMain.handle('tunnel:start', (e, serverId) => {
   const ssh = sshCache.get(serverId);
-  if (!ssh) return { ok: false, error: '未连接' };
-  // 动态分配本地端口，转发到远程 8080
+  if (!ssh) return { ok: false, error: '未连接（请先部署）' };
+  // 已有隧道直接复用
+  if (tunnelServers.has(serverId)) {
+    return { ok: true, localPort: tunnelServers.get(serverId).localPort };
+  }
+  // 动态分配本地端口
   const localPort = 18080 + Math.floor(Math.random() * 1000);
-  ssh.conn.forwardOut('127.0.0.1', 8080, '127.0.0.1', localPort, (err) => {
-    if (err) return { ok: false, error: err.message };
+  const server = net.createServer((socket) => {
+    // 每个本地连接 → SSH forwardOut → 远程 127.0.0.1:8080
+    ssh.conn.forwardOut('127.0.0.1', 0, '127.0.0.1', 8080, (err, stream) => {
+      if (err) { socket.destroy(); return; }
+      socket.pipe(stream).pipe(socket);
+      socket.on('error', () => stream.end());
+      stream.on('error', () => socket.end());
+    });
+  });
+  server.on('error', (err) => {
+    tunnelServers.delete(serverId);
+    mainWindow.webContents.send('tunnel:error', { serverId, error: err.message });
+  });
+  server.listen(localPort, '127.0.0.1', () => {
+    tunnelServers.set(serverId, { server, localPort, ssh });
   });
   return { ok: true, localPort };
+});
+
+ipcMain.handle('tunnel:stop', (e, serverId) => {
+  const t = tunnelServers.get(serverId);
+  if (t) { t.server.close(); tunnelServers.delete(serverId); }
+  return { ok: true };
 });
 
 app.whenReady().then(() => {
