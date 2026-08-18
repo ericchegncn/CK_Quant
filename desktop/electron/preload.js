@@ -37,5 +37,6 @@ contextBridge.exposeInMainWorld('ckQuant', {
   // 隧道（WebUI 内嵌）
   startTunnel: (serverId) => ipcRenderer.invoke('tunnel:start', serverId),
   stopTunnel: (serverId) => ipcRenderer.invoke('tunnel:stop', serverId),
+  getCredentials: (serverId) => ipcRenderer.invoke('webui:getCredentials', serverId),
   onTunnelError: (cb) => ipcRenderer.on('tunnel:error', (e, d) => cb(d)),
 });
