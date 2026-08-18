@@ -81,6 +81,79 @@ const PLANS = {
 // ============ SSH 部署引擎（ssh2） ============
 const { Client } = require('ssh2');
 
+// 全自动 Docker 安装脚本（无交互，国内源优先，多级回退）
+const DOCKER_INSTALL_SCRIPT = `#!/usr/bin/env bash
+set -e
+log()  { echo "[docker-install] $*"; }
+fail() { echo "[docker-install] FAIL $*"; exit 1; }
+log "=== CK Quant Docker auto-install ==="
+if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  log "Docker already installed"; exit 0
+fi
+if [ -f /etc/os-release ]; then . /etc/os-release; OS_ID="$ID"; else OS_ID="unknown"; fi
+log "System: $OS_ID $(uname -m)"
+install_deps() {
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq >/dev/null 2>&1 || true
+    apt-get install -y -qq curl ca-certificates gnupg lsb-release >/dev/null 2>&1 || true
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y -q curl ca-certificates >/dev/null 2>&1 || true
+  fi
+}
+try_official() {
+  log "Trying official script (get.docker.com)..."
+  if curl -fsSL --connect-timeout 10 https://get.docker.com -o /tmp/get-docker.sh 2>/dev/null; then
+    sh /tmp/get-docker.sh >/tmp/docker-install.log 2>&1 && return 0
+    log "Official failed, trying mirrors..."
+  fi
+  return 1
+}
+try_aliyun() {
+  log "Trying Aliyun mirror..."
+  local arch="$(uname -m)" docker_arch=""
+  case "$arch" in
+    x86_64)  docker_arch="amd64" ;;
+    aarch64) docker_arch="arm64" ;;
+    *)       docker_arch="$arch" ;;
+  esac
+  if command -v apt-get >/dev/null 2>&1; then
+    local distro="$(lsb_release -is 2>/dev/null | tr '[:upper:]' '[:lower:]' || echo "$OS_ID")"
+    local codename="$(grep -oP 'VERSION_CODENAME=\\K.*' /etc/os-release 2>/dev/null || echo bookworm)"
+    mkdir -p /etc/apt/keyrings
+    curl -fsSL --connect-timeout 10 "https://mirrors.aliyun.com/docker-ce/linux/$distro/gpg" -o /etc/apt/keyrings/docker.asc 2>/dev/null || return 1
+    chmod a+r /etc/apt/keyrings/docker.asc
+    echo "deb [arch=$docker_arch signed-by=/etc/apt/keyrings/docker.asc] https://mirrors.aliyun.com/docker-ce/linux/$distro $codename stable" > /etc/apt/sources.list.d/docker.list
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq >/dev/null 2>&1 || true
+    apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1 && return 0
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y -q yum-utils >/dev/null 2>&1 || true
+    yum-config-manager --add-repo "https://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo" >/dev/null 2>&1 || return 1
+    yum install -y -q docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1 && return 0
+  fi
+  return 1
+}
+install_deps
+if ! try_official; then
+  try_aliyun || fail "Docker install failed"
+fi
+log "Starting Docker + enable on boot..."
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl enable docker >/dev/null 2>&1 || true
+  systemctl start docker >/dev/null 2>&1 || service docker start || true
+elif command -v service >/dev/null 2>&1; then
+  service docker start >/dev/null 2>&1 || true
+fi
+sleep 2
+if docker --version >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  log "DOCKER_OK $(docker --version)"
+  exit 0
+else
+  fail "Docker verification failed"
+fi
+`;
+
 class SSHClient {
   constructor(conn) { this.conn = conn; }
 
@@ -141,12 +214,13 @@ async function deployRobot(ssh, config, onLog) {
     let r = await ssh.exec('docker --version && docker compose version');
     if (r.code !== 0) {
       if (config.autoInstallDocker !== false) {
-        log('⚠️ 未检测到 Docker，开始自动安装（约 5-10 分钟）...');
-        log('   使用国内镜像源一键脚本: LinuxMirrors');
-        r = await ssh.exec(
-          'bash <(curl -sSL https://cdn.jsdelivr.net/gh/SuperManito/LinuxMirrors@main/DockerInstallation.sh)',
-          900000
-        );
+        log('⚠️ 未检测到 Docker，开始全自动安装（约 3-10 分钟）...');
+        // 上传全自动安装脚本（无交互，国内源优先）
+        // 注意：必须转 LF 换行，否则 bash 报 CRLF 错误
+                const script = DOCKER_INSTALL_SCRIPT.replace(/\r\n/g, '\n');
+        await ssh.writeFile('~/ck-docker-install.sh', script);
+        await ssh.exec('chmod +x ~/ck-docker-install.sh');
+        r = await ssh.exec('bash ~/ck-docker-install.sh', 900000);
         if (r.code !== 0) {
           log('❌ Docker 自动安装失败: ' + r.stderr.slice(-300));
           return { ok: false, logs };
@@ -157,7 +231,7 @@ async function deployRobot(ssh, config, onLog) {
           log('❌ Docker 安装后仍不可用，请手动检查');
           return { ok: false, logs };
         }
-        log('✅ Docker 自动安装成功');
+        log('✅ Docker 全自动安装成功');
       } else {
         log('❌ 服务器未安装 Docker，请先安装 Docker 或开启自动安装');
         return { ok: false, logs };
