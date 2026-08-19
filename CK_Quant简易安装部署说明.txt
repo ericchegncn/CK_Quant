@@ -33,10 +33,10 @@ curl -L https://raw.githubusercontent.com/ericchegncn/CK_Quant/main/docker-compo
 docker compose pull
 
 8. 创建用户数据user_data目录
-docker compose run --rm ck-quant create-userdir --userdir user_data
+docker compose run --rm CK_Quant create-userdir --userdir user_data  # 容器工作目录为 /CK_Quant，相对路径会落在挂载卷内
 
 9. 新建配置文件或上传config.json配置文件
-docker compose run --rm ck-quant new-config --config user_data/config.json
+docker compose run --rm CK_Quant new-config --config user_data/config.json
 
 10. 上传策略文件到user_data\strategies目录
 

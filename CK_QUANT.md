@@ -81,7 +81,7 @@ cd CK_Quant
 curl -L https://raw.githubusercontent.com/ericchegncn/CK_Quant/main/docker-compose.yml \
   -o docker-compose.yml
 docker compose pull
-docker compose run --rm ck-quant create-userdir --userdir user_data
+docker compose run --rm CK_Quant create-userdir --userdir user_data  # 容器工作目录为 /CK_Quant，相对路径会落在挂载卷内
 ```
 
 The image itself contains no strategies, configuration, databases, models,
