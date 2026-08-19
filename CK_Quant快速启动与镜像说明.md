@@ -80,7 +80,7 @@ docker image ls ericchenghz/ck-quant
 ### 4. 创建本地私有用户目录
 
 ```bash
-docker compose run --rm ck-quant create-userdir --userdir user_data
+docker compose run --rm CK_Quant create-userdir --userdir user_data  # 容器工作目录为 /CK_Quant，相对路径会落在挂载卷内
 ```
 
 这会创建类似以下结构：
@@ -102,7 +102,7 @@ CK_Quant/
 新用户可交互式创建配置：
 
 ```bash
-docker compose run --rm ck-quant \
+docker compose run --rm CK_Quant \
   new-config --config user_data/config.json
 ```
 
@@ -172,7 +172,7 @@ docker compose config
 检查配置是否可加载：
 
 ```bash
-docker compose run --rm ck-quant \
+docker compose run --rm CK_Quant \
   show-config \
   --userdir /freqtrade/user_data \
   --config /freqtrade/user_data/config_Trend.json
@@ -181,7 +181,7 @@ docker compose run --rm ck-quant \
 检查策略是否能被找到：
 
 ```bash
-docker compose run --rm ck-quant \
+docker compose run --rm CK_Quant \
   list-strategies \
   --userdir /freqtrade/user_data \
   --config /freqtrade/user_data/config_Trend.json
@@ -228,8 +228,8 @@ Invoke-WebRequest `
   -OutFile ".env"
 
 docker compose pull
-docker compose run --rm ck-quant create-userdir --userdir user_data
-docker compose run --rm ck-quant new-config --config user_data/config.json
+docker compose run --rm CK_Quant create-userdir --userdir user_data  # 容器工作目录为 /CK_Quant，相对路径会落在挂载卷内
+docker compose run --rm CK_Quant new-config --config user_data/config.json
 ```
 
 然后：
@@ -422,7 +422,7 @@ docker compose logs --tail 300
 确认策略类名：
 
 ```bash
-docker compose run --rm ck-quant \
+docker compose run --rm CK_Quant \
   list-strategies \
   --userdir /freqtrade/user_data \
   --config /freqtrade/user_data/config.json

@@ -47,13 +47,13 @@ Pull the image and create the private runtime directory:
 
 ```bash
 docker compose pull
-docker compose run --rm ck-quant create-userdir --userdir user_data
+docker compose run --rm CK_Quant create-userdir --userdir user_data  # 容器工作目录为 /CK_Quant，相对路径会落在挂载卷内
 ```
 
 Create a configuration interactively:
 
 ```bash
-docker compose run --rm ck-quant new-config --config user_data/config.json
+docker compose run --rm CK_Quant new-config --config user_data/config.json
 ```
 
 Copy your strategy to `user_data/strategies/`. If it is not named

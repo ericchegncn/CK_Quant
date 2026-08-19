@@ -42,14 +42,14 @@ curl -L https://raw.githubusercontent.com/ericchegncn/CK_Quant/main/docker-compo
 
 # Pull the image and create your user directory
 docker compose pull
-docker compose run --rm ck-quant create-userdir --userdir user_data
+docker compose run --rm CK_Quant create-userdir --userdir user_data
 > The compose service runs with `working_dir: /CK_Quant`, so relative
 > paths like `user_data` land inside the mounted volume.
 > (Absolute path also works: `--userdir /CK_Quant/user_data`)
 
 
 # Generate a starter config
-docker compose run --rm ck-quant new-config --config user_data/config.json
+docker compose run --rm CK_Quant new-config --config user_data/config.json
 ```
 
 **Image selection**:
@@ -166,7 +166,7 @@ Select top gainers and top losers dynamically, with **two modes**:
 Verify with:
 
 ```bash
-docker compose run --rm ck-quant test-pairlist \
+docker compose run --rm CK_Quant test-pairlist \
     --userdir user_data --config user_data/config.json
 ```
 
@@ -233,7 +233,7 @@ python scripts/release.py 2026.8 --dry-run  # preview
 ## Backtesting
 
 ```bash
-docker compose run --rm ck-quant backtesting \
+docker compose run --rm CK_Quant backtesting \
     --userdir user_data \
     --config user_data/config.json \
     --strategy YourStrategy \
