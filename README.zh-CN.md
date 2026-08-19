@@ -41,6 +41,10 @@ curl -L https://raw.githubusercontent.com/ericchegncn/CK_Quant/main/docker-compo
 # 拉取镜像并创建用户目录
 docker compose pull
 docker compose run --rm ck-quant create-userdir --userdir user_data
+> The compose service runs with `working_dir: /CK_Quant`, so relative
+> paths like `user_data` land inside the mounted volume.
+> (Absolute path also works: `--userdir /CK_Quant/user_data`)
+
 
 # 生成初始配置
 docker compose run --rm ck-quant new-config --config user_data/config.json

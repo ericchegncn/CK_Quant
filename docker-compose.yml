@@ -1,9 +1,10 @@
 ---
 services:
-  ck-quant:
+  CK_Quant:
     image: ${CK_QUANT_IMAGE:-ericchenghz/ck-quant:latest}
     container_name: ${CK_QUANT_CONTAINER_NAME:-CK_Quant}
     restart: unless-stopped
+    working_dir: /CK_Quant
     volumes:
       - "./user_data:/CK_Quant/user_data"
     ports:
@@ -11,7 +12,7 @@ services:
     command: >
       trade
       --userdir /CK_Quant/user_data
-      --logfile /CK_Quant/user_data/logs/${CK_QUANT_LOGFILE:-ck-quant.log}
+      --logfile /CK_Quant/user_data/logs/${CK_QUANT_LOGFILE:-tradesv3.log}
       --db-url sqlite:////CK_Quant/user_data/${CK_QUANT_DATABASE:-tradesv3.sqlite}
-      --config /CK_Quant/user_data/${CK_QUANT_CONFIG:-config_5m.json}
-      --strategy ${CK_QUANT_STRATEGY:-CK_Trend_5m}
+      --config /CK_Quant/user_data/${CK_QUANT_CONFIG:-config_15m.json}
+      --strategy ${CK_QUANT_STRATEGY:-CK_Trend_15m}
