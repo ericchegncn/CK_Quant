@@ -19,12 +19,25 @@
 | **Card-based responsive UI** | Translucent, mobile-friendly WebUI with 7 locales (zh-CN, zh-TW, en, de, ja, fr, ko) |
 | **Authenticated admin workspace** | Edit/validate config & strategy online, auto-backup, safe reload/restart |
 | **Android app** | Connect to your server, manage bots, operate trades from your phone |
+| **CK Quant Desktop** | Beginner-oriented Windows workspace with offline lifetime machine licensing, encrypted credentials, AI chat, serial backtests, deterministic G1-G10 gates, monitoring and confirmed paper deployment |
 | **Tick-level backtest engine** | Memory-friendly engine matching exits on real tick sequences instead of guessing OHLCV bar paths |
 | **Mark-to-market drawdown** | Equity drawdown combining realized and unrealized P&L |
 | **Gainers/Losers pairlist** | Rank pairs by percent change (top gainers + top losers), mixable with volume/static lists |
 | **Real-time profit factor** | Includes unrealized P&L of open trades — statistics never lag while the bot runs |
 | **One-command release** | Build → push Docker Hub → tag → GitHub Release in one command |
 
+
+---
+
+## CK Quant Desktop
+
+The Windows desktop app is under [`desktop/`](desktop/). It uses a one-time **10,000 USDT lifetime license** bound to a machine code; there is no recurring subscription. The customer app contains only the public verification key, while registration codes are signed in the separate, ignored manufacturer console.
+
+The one-click research workflow starts from a 15m adaptation of Freqtrade's public `SampleStrategy`, never from a user's private strategy. Imported private strategies, generated variants, API credentials, backtest artifacts and audit data stay in the local application-data directory and are excluded from Git and release packages.
+
+All backtests run serially through the local CK Quant Docker container. Missing statistical evidence is shown as **not evaluated**, and paper deployment requires an explicit user confirmation. Live capital activation remains a separate manual confirmation step.
+
+See [`desktop/README.md`](desktop/README.md) for installation, activation and development details.
 
 ---
 
