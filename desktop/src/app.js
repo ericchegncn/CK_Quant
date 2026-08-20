@@ -60,6 +60,7 @@ document.querySelectorAll('.nav-item').forEach((item) => {
     if (item.dataset.page === 'chat') loadChatHistory();
     if (item.dataset.page === 'settings') loadAISettings();
     if (item.dataset.page === 'backtest') loadBacktests();
+    if (item.dataset.page === 'strategies') loadLocalStrategies();
   });
 });
 
@@ -754,6 +755,130 @@ api.onBacktestProgress(() => {
 });
 api.onBacktestDone((payload) => { selectedBacktestId = payload.jobId; loadBacktests(); });
 api.onBacktestFailed((payload) => { selectedBacktestId = payload.jobId; loadBacktests(); });
+
+// ============ 本地策略库 ============
+let localStrategies = [];
+let currentLocalStrategy = null;
+
+const BLANK_STRATEGY = `from datetime import datetime\n\nfrom freqtrade.strategy import IStrategy\n\n\nclass NewStrategy(IStrategy):\n    timeframe = '15m'\n    can_short = True\n    stoploss = -0.10\n    minimal_roi = {"0": 0.02}\n\n    def populate_indicators(self, dataframe, metadata):\n        return dataframe\n\n    def populate_entry_trend(self, dataframe, metadata):\n        dataframe['enter_long'] = 0\n        dataframe['enter_short'] = 0\n        return dataframe\n\n    def populate_exit_trend(self, dataframe, metadata):\n        dataframe['exit_long'] = 0\n        dataframe['exit_short'] = 0\n        return dataframe\n\n    def leverage(self, pair, current_time, current_rate, proposed_leverage, max_leverage, entry_tag, side, **kwargs):\n        return min(1.0, max_leverage)\n\n    def custom_exit(self, pair, trade, current_time: datetime, current_rate, current_profit, **kwargs):\n        return None\n`;
+
+const strategyStatusLabels = { draft: '草稿', backtesting: '回测中', passed: '已通过', rejected: '已淘汰', paper: '模拟盘', live: '实盘', banned: '禁用' };
+
+async function loadLocalStrategies() {
+  const result = await api.listLocalStrategies();
+  if (!result.ok) { $('#localStrategyList').innerHTML = `<div class="chat-empty">${esc(result.error)}</div>`; return; }
+  localStrategies = result.strategies || [];
+  if (!localStrategies.length) {
+    $('#localStrategyList').innerHTML = '<div class="chat-empty">尚未导入策略</div>';
+    return;
+  }
+  $('#localStrategyList').innerHTML = localStrategies.map((item) => `
+    <div class="strategy-row ${currentLocalStrategy?.name === item.name ? 'active' : ''}" data-strategy-name="${esc(item.name)}">
+      <div><div class="job-title">${item.locked ? '<span class="lock">🔒</span> ' : ''}${esc(item.name)}</div><div class="job-meta">${esc(item.source || 'user')} · ${strategyStatusLabels[item.status] || esc(item.status)}</div></div>
+      <span class="job-status ${item.status === 'passed' || item.status === 'paper' ? 'done' : item.status === 'rejected' || item.status === 'banned' ? 'failed' : 'queued'}">${item.locked ? '只读' : '可编辑'}</span>
+    </div>`).join('');
+  document.querySelectorAll('.strategy-row').forEach((row) => row.addEventListener('click', () => openLocalStrategy(row.dataset.strategyName)));
+  if (!currentLocalStrategy) await openLocalStrategy(localStrategies[0].name, false);
+}
+
+function renderStrategyValidation(validation) {
+  const box = $('#localStrategyValidation');
+  if (!box) return;
+  const errors = validation?.errors || [];
+  const warnings = validation?.warnings || [];
+  box.className = `validation-list ${errors.length ? 'error' : warnings.length ? 'warn' : 'ok'}`;
+  box.innerHTML = errors.length
+    ? `<strong>校验未通过</strong><br>${errors.map((item) => `✕ ${esc(item.rule)}：${esc(item.message)}`).join('<br>')}${warnings.map((item) => `<br>! ${esc(item.rule)}：${esc(item.message)}`).join('')}`
+    : warnings.length
+      ? `<strong>可以保存，但存在风险提示</strong><br>${warnings.map((item) => `! ${esc(item.rule)}：${esc(item.message)}`).join('<br>')}`
+      : '<strong>✓ 静态校验通过</strong><br>这只表示代码结构和安全边界通过，不代表策略能够盈利。';
+}
+
+function renderLocalStrategyEditor(item, code) {
+  currentLocalStrategy = item;
+  const locked = Boolean(item?.locked);
+  $('#localStrategyEditor').innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><h3>${locked ? '🔒 ' : ''}${esc(item?.name || '新策略')}</h3><p class="page-lead">${locked ? '核心模板已锁定，不能覆盖或删除；需要修改时请另存为新策略。' : '保存前会执行 Python 语法、安全导入、15m 周期和未来数据检查。'}</p></div><span class="job-status ${locked ? 'queued' : 'done'}">${locked ? '核心模板' : '本机私有'}</span></div>
+    <div><label>策略名称（必须与 Python 类名一致）</label><input id="localStrategyName" value="${esc(item?.name || 'NewStrategy')}" ${item ? 'readonly' : ''}></div>
+    <textarea id="localStrategyCode" spellcheck="false" ${locked ? 'readonly' : ''}></textarea>
+    <div class="strategy-toolbar" style="margin-top:10px"><button class="btn btn-ghost" id="localStrategyValidateBtn">校验</button>${locked ? '<button class="btn" id="localStrategySaveAsBtn">另存为新策略</button>' : '<button class="btn" id="localStrategySaveBtn">保存到本机</button>'}${item && !locked ? '<button class="btn btn-danger" id="localStrategyDeleteBtn">删除</button>' : ''}</div>
+    <div class="validation-list warn" id="localStrategyValidation">尚未执行校验</div>`;
+  $('#localStrategyCode').value = code;
+  $('#localStrategyValidateBtn').addEventListener('click', validateCurrentLocalStrategy);
+  $('#localStrategySaveBtn')?.addEventListener('click', saveCurrentLocalStrategy);
+  $('#localStrategySaveAsBtn')?.addEventListener('click', saveCurrentLocalStrategyAs);
+  $('#localStrategyDeleteBtn')?.addEventListener('click', deleteCurrentLocalStrategy);
+}
+
+async function openLocalStrategy(name, refreshList = true) {
+  const result = await api.readLocalStrategy(name);
+  if (!result.ok) { toast(result.error || '无法读取策略'); return; }
+  renderLocalStrategyEditor(result.meta, result.code);
+  if (refreshList) await loadLocalStrategies();
+  if (result.meta.warnings?.length) renderStrategyValidation({ warnings: result.meta.warnings.map((message) => ({ rule: '历史提示', message })), errors: [] });
+}
+
+async function validateCurrentLocalStrategy() {
+  const name = $('#localStrategyName').value.trim();
+  const code = $('#localStrategyCode').value;
+  $('#localStrategyValidation').className = 'validation-list warn';
+  $('#localStrategyValidation').textContent = '正在调用本机 Python 或 CK_Quant 容器检查…';
+  const result = await api.validateLocalStrategy(name, code, Boolean(currentLocalStrategy?.locked));
+  renderStrategyValidation(result);
+  return result;
+}
+
+async function saveCurrentLocalStrategy() {
+  const name = $('#localStrategyName').value.trim();
+  const code = $('#localStrategyCode').value;
+  const result = await api.saveLocalStrategy({ name, code, source: currentLocalStrategy?.source || 'user', base: currentLocalStrategy?.base || '' });
+  renderStrategyValidation(result.validation || result);
+  if (!result.ok) { toast(result.error || '策略保存失败'); return; }
+  toast('策略已安全保存到本机');
+  await loadLocalStrategies();
+  await openLocalStrategy(name);
+}
+
+async function saveCurrentLocalStrategyAs() {
+  const name = prompt('输入新策略名称（必须与代码中的类名一致）', `${currentLocalStrategy.name}_v2`);
+  if (!name) return;
+  const result = await api.saveLocalStrategy({ name: name.trim(), code: $('#localStrategyCode').value, source: 'variant', base: currentLocalStrategy.name });
+  renderStrategyValidation(result.validation || result);
+  if (!result.ok) { toast(result.error || '另存失败；请同时修改代码中的类名'); return; }
+  toast('已另存为本机私有策略');
+  await loadLocalStrategies();
+  await openLocalStrategy(name.trim());
+}
+
+async function deleteCurrentLocalStrategy() {
+  if (!currentLocalStrategy || !confirm(`确定删除策略 ${currentLocalStrategy.name}？文件会改名保留，可人工恢复。`)) return;
+  const result = await api.deleteLocalStrategy(currentLocalStrategy.name);
+  if (!result.ok) { toast(result.error); return; }
+  currentLocalStrategy = null;
+  $('#localStrategyEditor').innerHTML = '<div class="chat-empty">策略已从列表删除</div>';
+  await loadLocalStrategies();
+}
+
+$('#strategyImportBtn').addEventListener('click', async () => {
+  const result = await api.importLocalStrategy(false);
+  if (result.cancelled) return;
+  if (!result.ok) { toast(result.error || '导入失败'); return; }
+  toast('策略已导入本机私有库');
+  await loadLocalStrategies();
+  await openLocalStrategy(result.strategy.name);
+});
+$('#strategyImportLockedBtn').addEventListener('click', async () => {
+  if (!confirm('锁定后不能覆盖或删除，只能另存为新策略。确定把它作为核心模板导入吗？')) return;
+  const result = await api.importLocalStrategy(true);
+  if (result.cancelled) return;
+  if (!result.ok) { toast(result.error || '核心模板导入失败'); return; }
+  toast('核心模板已导入并锁定');
+  await loadLocalStrategies();
+  await openLocalStrategy(result.strategy.name);
+});
+$('#strategyNewBtn').addEventListener('click', () => {
+  renderLocalStrategyEditor(null, BLANK_STRATEGY);
+});
 
 // ============ 初始化 ============
 (async () => {

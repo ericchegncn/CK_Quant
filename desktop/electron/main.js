@@ -1,11 +1,12 @@
 // CK Quant Desktop - Electron 主进程
-const { app, BrowserWindow, ipcMain, Menu, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, safeStorage, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { LicenseService, registerLicenseHandlers } = require('./licensing/service');
 const { registerAIHandlers } = require('./ai');
 const { registerBacktestHandlers } = require('./backtest');
+const { registerStrategyLibraryHandlers } = require('./strategy');
 
 // ============ 数据存储（JSON + 加密） ============
 const DATA_DIR = path.join(app.getPath('userData'), 'data');
@@ -826,6 +827,12 @@ const backtestRuntime = registerBacktestHandlers(ipcMain, {
   send: (channel, payload) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
   },
+});
+const strategyLibrary = registerStrategyLibraryHandlers(ipcMain, {
+  dataDir: DATA_DIR,
+  isLicensed,
+  dialog,
+  getWindow: () => mainWindow,
 });
 const aiRuntime = registerAIHandlers(ipcMain, {
   dataDir: DATA_DIR,
