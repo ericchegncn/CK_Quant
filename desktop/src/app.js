@@ -57,6 +57,8 @@ document.querySelectorAll('.nav-item').forEach((item) => {
     if (item.dataset.page === 'deploy') renderDeployWizard();
     if (item.dataset.page === 'monitor') renderMonitor();
     if (item.dataset.page === 'webui') renderWebUI();
+    if (item.dataset.page === 'chat') loadChatHistory();
+    if (item.dataset.page === 'settings') loadAISettings();
   });
 });
 
@@ -464,6 +466,190 @@ async function renderWebUI() {
     btn.textContent = '🔗 连接 WebUI';
   };
 }
+
+// ============ AI 助手 ============
+let currentChatSessionId = null;
+let currentAIReply = null;
+let pendingAIConfirmation = null;
+let chatHistoryLoaded = false;
+
+function scrollChatToBottom() {
+  const box = $('#chatMessages');
+  box.scrollTop = box.scrollHeight;
+}
+
+function setChatBusy(busy) {
+  $('#chatSendBtn').disabled = busy;
+  $('#chatSendBtn').textContent = busy ? '回答中…' : '发送';
+  $('#chatInput').disabled = busy;
+}
+
+function addChatMessage(role, content, options = {}) {
+  $('#chatEmpty')?.remove();
+  const row = document.createElement('div');
+  row.className = `message ${role === 'user' ? 'user' : 'assistant'}`;
+  if (options.replyId) row.dataset.replyId = options.replyId;
+  const avatar = document.createElement('div');
+  avatar.className = 'message-avatar';
+  avatar.textContent = role === 'user' ? '我' : 'K';
+  const body = document.createElement('div');
+  body.className = 'message-body';
+  body.textContent = content || (options.streaming ? '正在思考…' : '');
+  row.append(avatar, body);
+  $('#chatMessages').appendChild(row);
+  scrollChatToBottom();
+  return body;
+}
+
+function addToolCard(payload) {
+  let card = [...document.querySelectorAll('.tool-card')].reverse().find((node) =>
+    node.dataset.replyId === payload.replyId && node.dataset.tool === payload.tool && !node.dataset.finished);
+  if (!card) {
+    card = document.createElement('div');
+    card.className = 'tool-card';
+    card.dataset.replyId = payload.replyId || '';
+    card.dataset.tool = payload.tool || '';
+    $('#chatMessages').appendChild(card);
+  }
+  const labels = { robot_status: '查询机器人状态', robot_logs: '读取机器人日志', backtest_list: '读取回测记录', robot_action: '执行机器人操作' };
+  const status = payload.status === 'start' ? '处理中…' : payload.status === 'done' ? '已完成' : '失败';
+  card.textContent = `${labels[payload.tool] || payload.tool} · ${status}`;
+  card.classList.toggle('done', payload.status === 'done');
+  card.classList.toggle('error', payload.status === 'error');
+  if (payload.status !== 'start') card.dataset.finished = 'true';
+  scrollChatToBottom();
+}
+
+async function loadChatHistory(force = false) {
+  if (chatHistoryLoaded && !force) return;
+  chatHistoryLoaded = true;
+  const sessions = await api.getChatHistory();
+  if (!sessions.ok || !sessions.messages?.length) return;
+  const latest = [...sessions.messages].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0];
+  currentChatSessionId = latest.sessionId;
+  const result = await api.getChatHistory(currentChatSessionId);
+  if (!result.ok) return;
+  $('#chatMessages').innerHTML = '';
+  for (const message of result.messages || []) addChatMessage(message.role, message.content);
+}
+
+async function sendChatMessage(text) {
+  const message = String(text ?? $('#chatInput').value).trim();
+  if (!message || currentAIReply) return;
+  addChatMessage('user', message);
+  $('#chatInput').value = '';
+  setChatBusy(true);
+  const body = addChatMessage('assistant', '', { streaming: true });
+  const result = await api.chat(message, currentChatSessionId);
+  if (!result.ok) {
+    body.textContent = `无法发送：${result.error || '未知错误'}`;
+    setChatBusy(false);
+    return;
+  }
+  currentChatSessionId = result.sessionId;
+  currentAIReply = { replyId: result.replyId, body, content: '' };
+  body.parentElement.dataset.replyId = result.replyId;
+}
+
+$('#chatSendBtn').addEventListener('click', () => sendChatMessage());
+$('#chatInput').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendChatMessage(); }
+});
+document.querySelectorAll('.quick-prompt').forEach((button) => button.addEventListener('click', () => sendChatMessage(button.textContent)));
+$('#clearChatBtn').addEventListener('click', async () => {
+  if (currentAIReply) { toast('请等待当前回答完成'); return; }
+  await api.clearChat(currentChatSessionId);
+  currentChatSessionId = null;
+  chatHistoryLoaded = true;
+  $('#chatMessages').innerHTML = '<div class="chat-empty" id="chatEmpty"><div style="font-size:34px">💬</div><h3 style="color:var(--text);margin-top:10px">对话已清空</h3><p>可以开始一个新问题。</p></div>';
+});
+
+api.onAIStream((payload) => {
+  if (!currentAIReply || payload.replyId !== currentAIReply.replyId) return;
+  currentAIReply.content += payload.delta || '';
+  currentAIReply.body.textContent = currentAIReply.content;
+  scrollChatToBottom();
+});
+api.onAITool((payload) => addToolCard(payload));
+api.onAIDone((payload) => {
+  if (!currentAIReply || payload.replyId !== currentAIReply.replyId) return;
+  currentAIReply.body.textContent = payload.final || currentAIReply.content || '操作已处理。';
+  currentAIReply = null;
+  setChatBusy(false);
+  scrollChatToBottom();
+});
+api.onAIError((payload) => {
+  if (!currentAIReply || payload.replyId !== currentAIReply.replyId) return;
+  currentAIReply.body.textContent = `无法完成：${payload.error || '未知错误'}`;
+  currentAIReply = null;
+  setChatBusy(false);
+  scrollChatToBottom();
+});
+api.onAIConfirmation((payload) => {
+  pendingAIConfirmation = payload;
+  $('#aiConfirmSummary').textContent = `${payload.action?.summary || 'AI 请求执行操作'}（30 秒内确认）`;
+  $('#aiConfirmBar').classList.add('show');
+});
+
+async function answerAIConfirmation(approved) {
+  if (!pendingAIConfirmation) return;
+  await api.confirmAIAction(pendingAIConfirmation.confirmationId, approved);
+  pendingAIConfirmation = null;
+  $('#aiConfirmBar').classList.remove('show');
+}
+$('#aiApproveBtn').addEventListener('click', () => answerAIConfirmation(true));
+$('#aiRejectBtn').addEventListener('click', () => answerAIConfirmation(false));
+
+// ============ AI 设置 ============
+async function loadAISettings() {
+  const result = await api.getAISettings();
+  if (!result.ok) { $('#aiConnectionStatus').textContent = result.error || '读取设置失败'; return; }
+  const settings = result.settings;
+  $('#aiBaseUrl').value = settings.baseUrl || '';
+  $('#aiModel').value = settings.model || '';
+  $('#aiTemperature').value = settings.temperature ?? 0.3;
+  $('#aiMaxTokens').value = settings.maxTokens ?? 4096;
+  $('#aiApiKey').value = '';
+  $('#aiKeyStatus').textContent = settings.hasKey ? 'API Key 已使用 Windows 系统加密保存；留空不会修改。' : 'API Key 尚未配置';
+  $('#aiConnectionStatus').textContent = settings.testedAt ? `上次连接成功：${new Date(settings.testedAt).toLocaleString('zh-CN')} · ${settings.lastLatencyMs || '-'} ms` : '';
+}
+
+$('#saveAISettingsBtn').addEventListener('click', async () => {
+  const button = $('#saveAISettingsBtn');
+  button.disabled = true;
+  const result = await api.saveAISettings({
+    baseUrl: $('#aiBaseUrl').value.trim(), model: $('#aiModel').value.trim(), apiKey: $('#aiApiKey').value.trim(),
+    temperature: Number($('#aiTemperature').value), maxTokens: Number($('#aiMaxTokens').value),
+  });
+  button.disabled = false;
+  if (!result.ok) { $('#aiConnectionStatus').textContent = `保存失败：${result.error}`; return; }
+  toast('AI 设置已保存');
+  await loadAISettings();
+});
+
+$('#testAIConnectionBtn').addEventListener('click', async () => {
+  const button = $('#testAIConnectionBtn');
+  button.disabled = true;
+  $('#aiConnectionStatus').textContent = '正在测试模型连接…';
+  const result = await api.testAIConnection();
+  button.disabled = false;
+  $('#aiConnectionStatus').textContent = result.ok ? `连接成功 · ${result.model} · ${result.latencyMs} ms` : `连接失败：${result.error || '未知错误'}`;
+});
+
+$('#loadAIModelsBtn').addEventListener('click', async () => {
+  const button = $('#loadAIModelsBtn');
+  button.disabled = true;
+  const result = await api.listAIModels();
+  button.disabled = false;
+  if (!result.ok || !result.models?.length) { $('#aiConnectionStatus').textContent = result.error || '服务商未提供模型列表，请手动填写模型名称。'; return; }
+  $('#aiModelList').innerHTML = '';
+  for (const model of result.models) {
+    const option = document.createElement('option');
+    option.value = model;
+    $('#aiModelList').appendChild(option);
+  }
+  $('#aiConnectionStatus').textContent = `已获取 ${result.models.length} 个模型，可在模型名称中选择。`;
+});
 
 // ============ 初始化 ============
 (async () => {
