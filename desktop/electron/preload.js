@@ -62,6 +62,16 @@ contextBridge.exposeInMainWorld('ckQuant', {
   onAIDone: (cb) => subscribe('ai:done', cb),
   onAIError: (cb) => subscribe('ai:error', cb),
   onAIConfirmation: (cb) => subscribe('ai:requireConfirm', cb),
+
+  // 回测中心
+  submitBacktest: (input) => ipcRenderer.invoke('backtest:submit', input),
+  listBacktests: (limit) => ipcRenderer.invoke('backtest:list', { limit }),
+  getBacktest: (jobId) => ipcRenderer.invoke('backtest:get', { jobId }),
+  cancelBacktest: (jobId) => ipcRenderer.invoke('backtest:cancel', { jobId }),
+  compareBacktests: (jobIds) => ipcRenderer.invoke('backtest:compare', { jobIds }),
+  onBacktestProgress: (cb) => subscribe('backtest:progress', cb),
+  onBacktestDone: (cb) => subscribe('backtest:done', cb),
+  onBacktestFailed: (cb) => subscribe('backtest:failed', cb),
 });
 
 function subscribe(channel, callback) {

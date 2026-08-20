@@ -59,6 +59,7 @@ document.querySelectorAll('.nav-item').forEach((item) => {
     if (item.dataset.page === 'webui') renderWebUI();
     if (item.dataset.page === 'chat') loadChatHistory();
     if (item.dataset.page === 'settings') loadAISettings();
+    if (item.dataset.page === 'backtest') loadBacktests();
   });
 });
 
@@ -334,7 +335,7 @@ async function renderMonitor() {
   $('#cfgSave').onclick = async () => {
     const sid = sel.value;
     const content = $('#cfgEditor').value;
-    try { JSON.parse(content); } catch (e) { toast('❌ 配置不是合法 JSON: ' + e.message); return; }
+    if (!content.trim()) { toast('❌ 配置内容不能为空'); return; }
     const r = await api.saveConfig(sid, content);
     toast(r.ok ? '✅ 配置已保存并重载' : '❌ ' + (r.error || '保存失败'));
     if (r.ok) $('#cfgEditorWrap').style.display = 'none';
@@ -511,7 +512,7 @@ function addToolCard(payload) {
     card.dataset.tool = payload.tool || '';
     $('#chatMessages').appendChild(card);
   }
-  const labels = { robot_status: '查询机器人状态', robot_logs: '读取机器人日志', backtest_list: '读取回测记录', robot_action: '执行机器人操作' };
+  const labels = { robot_status: '查询机器人状态', robot_logs: '读取机器人日志', backtest_list: '读取回测记录', backtest_submit: '提交回测任务', robot_action: '执行机器人操作' };
   const status = payload.status === 'start' ? '处理中…' : payload.status === 'done' ? '已完成' : '失败';
   card.textContent = `${labels[payload.tool] || payload.tool} · ${status}`;
   card.classList.toggle('done', payload.status === 'done');
@@ -650,6 +651,109 @@ $('#loadAIModelsBtn').addEventListener('click', async () => {
   }
   $('#aiConnectionStatus').textContent = `已获取 ${result.models.length} 个模型，可在模型名称中选择。`;
 });
+
+// ============ 回测中心 ============
+let backtestJobs = [];
+let selectedBacktestId = null;
+const comparedBacktests = new Set();
+
+function pct(value, digits = 2) {
+  const number = Number(value);
+  return Number.isFinite(number) ? `${(number * 100).toFixed(digits)}%` : '-';
+}
+
+function num(value, digits = 3) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(digits) : '-';
+}
+
+function jobProgress(job) {
+  const stages = Object.values(job.stages || {}).map(Number);
+  return stages.length ? stages.reduce((sum, value) => sum + value, 0) / stages.length : 0;
+}
+
+async function loadBacktests() {
+  const result = await api.listBacktests(100);
+  if (!result.ok) { $('#btJobList').innerHTML = `<div class="chat-empty">${esc(result.error || '读取失败')}</div>`; return; }
+  backtestJobs = result.jobs || [];
+  const labels = { queued: '排队中', running: '运行中', done: '已完成', failed: '失败', cancelled: '已取消' };
+  if (!backtestJobs.length) {
+    $('#btJobList').innerHTML = '<div class="chat-empty">暂无回测任务</div>';
+    $('#btReport').innerHTML = '<div class="chat-empty">提交任务后将在这里显示报告</div>';
+    return;
+  }
+  $('#btJobList').innerHTML = backtestJobs.map((job) => `
+    <div class="job-item ${job.jobId === selectedBacktestId ? 'active' : ''}" data-job-id="${esc(job.jobId)}">
+      <input class="bt-compare-check" data-job-id="${esc(job.jobId)}" type="checkbox" ${comparedBacktests.has(job.jobId) ? 'checked' : ''} style="width:auto;margin:3px 0 0">
+      <div><div class="job-title">${esc(job.strategy)}</div><div class="job-meta">15m · ${esc(job.timerange || '全部数据')} · ${new Date(job.createdAt).toLocaleString('zh-CN')}</div>${['queued', 'running'].includes(job.status) ? `<div class="progress-track"><div class="progress-fill" style="width:${Math.round(jobProgress(job) * 100)}%"></div></div>` : ''}</div>
+      <span class="job-status ${esc(job.status)}">${labels[job.status] || esc(job.status)}</span>
+    </div>`).join('');
+  document.querySelectorAll('.job-item').forEach((item) => item.addEventListener('click', (event) => {
+    if (event.target.classList.contains('bt-compare-check')) return;
+    showBacktest(item.dataset.jobId);
+  }));
+  document.querySelectorAll('.bt-compare-check').forEach((checkbox) => checkbox.addEventListener('change', () => {
+    if (checkbox.checked) comparedBacktests.add(checkbox.dataset.jobId); else comparedBacktests.delete(checkbox.dataset.jobId);
+  }));
+  if (!selectedBacktestId) selectedBacktestId = backtestJobs[0].jobId;
+  await showBacktest(selectedBacktestId, true);
+}
+
+function renderGate(key, gate) {
+  const tone = gate.status === 'warning' || gate.status === 'not_evaluated' ? 'warn' : gate.pass ? 'pass' : 'fail';
+  const icon = tone === 'pass' ? '✓' : tone === 'fail' ? '✕' : '!';
+  const label = gate.status === 'not_evaluated' ? '尚未评估' : gate.status === 'warning' ? '数据警告' : gate.pass ? '通过' : '未通过';
+  return `<div class="gate ${tone}"><strong>${icon} ${esc(key)} · ${label}</strong><small>${esc(gate.detail || '')}<br>标准：${esc(typeof gate.threshold === 'object' ? JSON.stringify(gate.threshold) : gate.threshold)}</small></div>`;
+}
+
+async function showBacktest(jobId, refreshList = true) {
+  selectedBacktestId = jobId;
+  if (refreshList) document.querySelectorAll('.job-item').forEach((item) => item.classList.toggle('active', item.dataset.jobId === jobId));
+  const response = await api.getBacktest(jobId);
+  if (!response.ok) { $('#btReport').innerHTML = `<div class="chat-empty">${esc(response.error)}</div>`; return; }
+  const job = response.job;
+  if (!job.result) {
+    $('#btReport').innerHTML = `<h3>${esc(job.strategy)}</h3><p class="page-lead">状态：${esc(job.status)}</p>${job.error ? `<div class="assumptions">${esc(job.error)}</div>` : '<div class="progress-track"><div class="progress-fill" style="width:' + Math.round(jobProgress(job) * 100) + '%"></div></div>'}${['queued', 'running'].includes(job.status) ? '<button class="btn btn-danger btn-sm" id="btCancelBtn" style="width:auto;margin-top:16px">取消任务</button>' : ''}`;
+    $('#btCancelBtn')?.addEventListener('click', async () => { await api.cancelBacktest(jobId); await loadBacktests(); });
+    return;
+  }
+  const result = job.result;
+  const gates = result.evalResult?.gates || {};
+  $('#btReport').innerHTML = `
+    <h3>${esc(result.strategy)}</h3><p class="page-lead">${esc(result.timerange || '')} · ${esc(result.timeframe)} · ${result.trades} 笔</p>
+    <div class="report-metrics"><div class="report-metric"><span>总收益（滑点后）</span><strong>${pct(result.totalProfitRatio)}</strong></div><div class="report-metric"><span>每笔期望</span><strong>${pct(result.expectedValue, 3)}</strong></div><div class="report-metric"><span>利润因子</span><strong>${num(result.profitFactor, 2)}</strong></div><div class="report-metric"><span>最大回撤</span><strong>${pct(result.maxDrawdown)}</strong></div><div class="report-metric"><span>胜率</span><strong>${pct(result.winRate)}</strong></div><div class="report-metric"><span>年化收益</span><strong>${pct(result.annualReturn)}</strong></div><div class="report-metric"><span>单币集中度</span><strong>${pct(result.topPairShare)}</strong></div><div class="report-metric"><span>单月集中度</span><strong>${pct(result.topMonthShare)}</strong></div></div>
+    <h3 style="margin:16px 0 9px">G1-G10 统计门禁</h3><p class="page-lead">${esc(result.evalResult?.summary || '')}</p><div class="gate-grid">${Object.entries(gates).map(([key, gate]) => renderGate(key, gate)).join('')}</div>
+    <div class="assumptions"><strong>诚实假设</strong><br>${(result.assumptions || []).map(esc).join('<br>')}</div>`;
+}
+
+$('#btSubmitBtn').addEventListener('click', async () => {
+  const button = $('#btSubmitBtn');
+  button.disabled = true;
+  const result = await api.submitBacktest({
+    strategy: $('#btStrategy').value.trim(), configPath: $('#btConfig').value.trim(), timerange: $('#btTimerange').value.trim(),
+    container: $('#btContainer').value.trim(), timeframe: '15m', fee: Number($('#btFee').value), slippage: Number($('#btSlippage').value), detail1m: $('#btDetail1m').checked,
+  });
+  button.disabled = false;
+  if (!result.ok) { toast(`回测无法提交：${result.error}`); return; }
+  selectedBacktestId = result.jobId;
+  toast('回测已加入串行队列');
+  await loadBacktests();
+});
+$('#btRefreshBtn').addEventListener('click', () => loadBacktests());
+$('#btCompareBtn').addEventListener('click', async () => {
+  if (comparedBacktests.size < 2) { toast('请至少勾选两个已完成任务'); return; }
+  const response = await api.compareBacktests([...comparedBacktests]);
+  if (!response.ok) { toast(response.error || '对比失败'); return; }
+  const ids = [...comparedBacktests];
+  $('#btReport').innerHTML = `<h3>回测对比</h3><div style="overflow:auto"><table style="width:100%;border-collapse:collapse;margin-top:14px"><thead><tr><th style="text-align:left;padding:8px">指标</th>${ids.map((id) => `<th style="text-align:left;padding:8px">${esc(backtestJobs.find((job) => job.jobId === id)?.strategy || id)}</th>`).join('')}</tr></thead><tbody>${response.table.map((row) => `<tr><td style="padding:8px;border-top:1px solid var(--border)">${esc(row.metric)}</td>${ids.map((id) => `<td style="padding:8px;border-top:1px solid var(--border)">${esc(row.values[id] ?? '-')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+});
+let backtestReloadTimer = null;
+api.onBacktestProgress(() => {
+  if (backtestReloadTimer) return;
+  backtestReloadTimer = setTimeout(() => { backtestReloadTimer = null; loadBacktests(); }, 250);
+});
+api.onBacktestDone((payload) => { selectedBacktestId = payload.jobId; loadBacktests(); });
+api.onBacktestFailed((payload) => { selectedBacktestId = payload.jobId; loadBacktests(); });
 
 // ============ 初始化 ============
 (async () => {

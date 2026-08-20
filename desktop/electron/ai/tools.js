@@ -37,9 +37,25 @@ const READ_TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'backtest_submit',
+      description: '把一个 15m 策略回测加入本机串行队列。执行前软件必须要求用户确认。',
+      parameters: {
+        type: 'object', required: ['strategy'], additionalProperties: false,
+        properties: {
+          strategy: { type: 'string', description: 'Freqtrade 策略类名' },
+          timerange: { type: 'string', description: '例如 20240101-20260101' },
+          configPath: { type: 'string', description: '容器内配置路径，默认 /CK_Quant/user_data/config.json' },
+          detail1m: { type: 'boolean', description: '是否使用 1m 细节数据' },
+        },
+      },
+    },
+  },
 ];
 
-const WRITE_TOOLS = new Set(['robot_action']);
+const WRITE_TOOLS = new Set(['robot_action', 'backtest_submit']);
 
 function clampLines(value) {
   return Math.max(10, Math.min(500, Number(value) || 100));
@@ -77,6 +93,11 @@ function createToolExecutor(ctx) {
       return { ok: true, source: '本地 jobs.json', jobs: jobs.slice(-(Number(args.limit) || 10)).reverse() };
     }
     if (name === 'robot_action') return ctx.robotAction(String(args.serverId || ''), String(args.action || ''));
+    if (name === 'backtest_submit') return ctx.submitBacktest({
+      strategy: String(args.strategy || ''), timerange: String(args.timerange || ''),
+      configPath: String(args.configPath || '/CK_Quant/user_data/config.json'), detail1m: Boolean(args.detail1m),
+      timeframe: '15m', container: 'CK_Quant', fee: 0.0004, slippage: 0.0005,
+    });
     return { ok: false, error: `未知工具: ${name}` };
   };
 }
