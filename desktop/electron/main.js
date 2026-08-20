@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { LicenseService, registerLicenseHandlers } = require('./licensing/service');
+const { registerAIHandlers } = require('./ai');
 
 // ============ 数据存储（JSON + 加密） ============
 const DATA_DIR = path.join(app.getPath('userData'), 'data');
@@ -766,6 +767,18 @@ ipcMain.handle('webui:getCredentials', async (e, serverId) => {
   };
 });
 
+const aiRuntime = registerAIHandlers(ipcMain, {
+  dataDir: DATA_DIR,
+  safeStorage,
+  isLicensed,
+  send: (channel, payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+  },
+  getServers: () => Object.entries(readJson(SERVERS_FILE, {})).map(([id, server]) => ({ id, ...server })),
+  ensureConnection,
+  robotAction,
+});
+
 app.whenReady().then(() => {
   setLicenseSession(licenseService.verify());
   createWindow();
@@ -774,6 +787,7 @@ app.whenReady().then(() => {
   });
 });
 app.on('window-all-closed', () => {
+  aiRuntime.confirmations.close();
   if (process.platform !== 'darwin') app.quit();
 });
 

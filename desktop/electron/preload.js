@@ -47,4 +47,25 @@ contextBridge.exposeInMainWorld('ckQuant', {
   stopTunnel: (serverId) => ipcRenderer.invoke('tunnel:stop', serverId),
   getCredentials: (serverId) => ipcRenderer.invoke('webui:getCredentials', serverId),
   onTunnelError: (cb) => ipcRenderer.on('tunnel:error', (e, d) => cb(d)),
+
+  // AI 助手与 BYOK 设置
+  getAISettings: () => ipcRenderer.invoke('ai:getSettings'),
+  saveAISettings: (settings) => ipcRenderer.invoke('ai:saveSettings', settings),
+  testAIConnection: () => ipcRenderer.invoke('ai:testConnection'),
+  listAIModels: () => ipcRenderer.invoke('ai:listModels'),
+  chat: (message, sessionId) => ipcRenderer.invoke('ai:chat', { message, sessionId }),
+  getChatHistory: (sessionId) => ipcRenderer.invoke('ai:history', { sessionId }),
+  clearChat: (sessionId) => ipcRenderer.invoke('ai:clear', { sessionId }),
+  confirmAIAction: (confirmationId, approved) => ipcRenderer.invoke('ai:confirm', { confirmationId, approved }),
+  onAIStream: (cb) => subscribe('ai:stream', cb),
+  onAITool: (cb) => subscribe('ai:tool', cb),
+  onAIDone: (cb) => subscribe('ai:done', cb),
+  onAIError: (cb) => subscribe('ai:error', cb),
+  onAIConfirmation: (cb) => subscribe('ai:requireConfirm', cb),
 });
+
+function subscribe(channel, callback) {
+  const listener = (_event, payload) => callback(payload);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
