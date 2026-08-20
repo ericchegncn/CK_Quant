@@ -1,5 +1,5 @@
 // CK Quant Desktop - Electron 主进程
-const { app, BrowserWindow, ipcMain, Menu, safeStorage, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, safeStorage, dialog, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -7,6 +7,7 @@ const { LicenseService, registerLicenseHandlers } = require('./licensing/service
 const { registerAIHandlers } = require('./ai');
 const { registerBacktestHandlers } = require('./backtest');
 const { registerStrategyLibraryHandlers } = require('./strategy');
+const { registerOpsHandlers } = require('./ops');
 
 // ============ 数据存储（JSON + 加密） ============
 const DATA_DIR = path.join(app.getPath('userData'), 'data');
@@ -625,6 +626,13 @@ async function robotAction(serverId, action) {
       return { ok: false, error: '未知操作' };
   }
   if (r.code !== 0) return { ok: false, error: r.stderr.slice(-200) };
+  if (['start', 'restart', 'stop'].includes(action)) {
+    const servers = readJson(SERVERS_FILE, {});
+    if (servers[serverId]) {
+      servers[serverId].desiredState = action === 'stop' ? 'stopped' : 'running';
+      writeJson(SERVERS_FILE, servers);
+    }
+  }
   return { ok: true, output: r.stdout.slice(-300) };
 }
 
@@ -834,6 +842,22 @@ const strategyLibrary = registerStrategyLibraryHandlers(ipcMain, {
   dialog,
   getWindow: () => mainWindow,
 });
+const opsRuntime = registerOpsHandlers(ipcMain, {
+  dataDir: DATA_DIR,
+  isLicensed,
+  getServers: () => Object.entries(readJson(SERVERS_FILE, {})).map(([id, server]) => ({
+    id, name: server.name, host: server.host, desiredState: server.desiredState || 'running',
+    apiUsername: server.apiUsername || '', apiPassword: decryptSecret(server.apiPassword), apiPort: server.apiPort || 8080,
+  })),
+  ensureConnection,
+  robotAction,
+  send: (channel, payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+  },
+  notify: (alert) => {
+    if (Notification.isSupported()) new Notification({ title: `CK Quant · ${alert.level === 'critical' ? '严重告警' : '运行提醒'}`, body: `${alert.serverName}: ${alert.message}` }).show();
+  },
+});
 const aiRuntime = registerAIHandlers(ipcMain, {
   dataDir: DATA_DIR,
   safeStorage,
@@ -850,12 +874,14 @@ const aiRuntime = registerAIHandlers(ipcMain, {
 app.whenReady().then(() => {
   setLicenseSession(licenseService.verify());
   createWindow();
+  opsRuntime.start();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 app.on('window-all-closed', () => {
   aiRuntime.confirmations.close();
+  opsRuntime.stop();
   if (process.platform !== 'darwin') app.quit();
 });
 
