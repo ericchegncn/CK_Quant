@@ -91,6 +91,11 @@ contextBridge.exposeInMainWorld('ckQuant', {
   saveOpsSettings: (input) => ipcRenderer.invoke('ops:saveSettings', input),
   onMonitorUpdate: (cb) => subscribe('monitor:update', cb),
   onMonitorAlert: (cb) => subscribe('monitor:alert', cb),
+
+  // 通知
+  getNotifySettings: () => ipcRenderer.invoke('notify:getSettings'),
+  saveNotifySettings: (input) => ipcRenderer.invoke('notify:saveSettings', input),
+  testNotifications: () => ipcRenderer.invoke('notify:test'),
 });
 
 function subscribe(channel, callback) {
