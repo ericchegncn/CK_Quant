@@ -1,0 +1,32 @@
+# CK Quant Desktop — 本地开发目录(策略保密红线,绝不上传)
+# 桌面版代码是框架能力可开源;策略逻辑/文档/数据全部本地保留
+
+# 依赖与构建产物
+node_modules/
+dist/
+pnpm-lock.yaml
+pnpm-workspace.yaml
+
+# 运行时数据(密钥/策略/回测结果/审计)
+data/
+
+# 厂商授权私钥与已签发注册码（绝不进入安装包或 GitHub）
+private/
+license-codes/
+
+# 开发文档(含 CK_Trend 策略逻辑描述,本地专用)
+docs/
+
+# 本地回测数据缓存
+cache/
+
+# 打包图标例外(根 .gitignore 的 build/ 规则会误伤,打包必需)
+!build/
+build/*
+!build/icon.ico
+!build/icon.png
+
+# 客户端验签公钥必须随安装包发布；私钥仍由上面的 private/ 隔离
+!resources/
+resources/*
+!resources/license-public-key.pem

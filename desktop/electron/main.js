@@ -1,8 +1,9 @@
 // CK Quant Desktop - Electron 主进程
-const { app, BrowserWindow, ipcMain, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { LicenseService, registerLicenseHandlers } = require('./licensing/service');
 
 // ============ 数据存储（JSON + 加密） ============
 const DATA_DIR = path.join(app.getPath('userData'), 'data');
@@ -285,8 +286,6 @@ async function deployRobot(ssh, config, onLog) {
           parsed.telegram.token = config.telegramToken;
           parsed.telegram.chat_id = config.telegramChatId || parsed.telegram.chat_id;
         }
-        // 免费版强制模拟盘
-        if (session?.plan === 'free') parsed.dry_run = true;
         // 读取 api_server 配置（端口 + 真实用户名/密码，供隧道和自动登录）
         if (parsed.api_server) {
           if (parsed.api_server.listen_port) {
@@ -309,6 +308,8 @@ async function deployRobot(ssh, config, onLog) {
       log('④ 写入默认 config.json...');
       const cfg = buildFreqtradeConfig(config);
       config.apiPort = cfg.api_server.listen_port || 8080;
+      config.apiUsername = cfg.api_server.username;
+      config.apiPassword = cfg.api_server.password;
       await ssh.writeFile(remote('~/CK_Quant/user_data/config.json'), JSON.stringify(cfg, null, 2));
       log('✅ 默认 config.json 已写入');
     }
@@ -363,7 +364,7 @@ function buildFreqtradeConfig(cfg) {
       listen_ip_address: '0.0.0.0',
       listen_port: 8080,
       username: cfg.apiUsername || 'ckquant',
-      password: cfg.apiPassword || 'ckquant123',
+      password: cfg.apiPassword || crypto.randomBytes(18).toString('base64url'),
       jwt_secret_key: crypto.randomBytes(32).toString('hex'),
       ws_token: crypto.randomBytes(32).toString('hex'),
     },
@@ -389,19 +390,25 @@ async function streamLogs(ssh, onData, onClose) {
 // ============ 窗口 ============
 let mainWindow;
 function createWindow() {
+  const screenshotMode = process.env.CKD_SCREENSHOT === '1';
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
     minWidth: 960,
     minHeight: 640,
     title: 'CK Quant Desktop',
+    icon: path.join(__dirname, '../build/icon.ico'),
+    show: !screenshotMode,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
+      offscreen: screenshotMode,
     },
   });
+  Menu.setApplicationMenu(null);
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.loadFile(path.join(__dirname, '../src/index.html'));
 }
 
@@ -410,18 +417,42 @@ function createWindow() {
 let session = null;
 let sshCache = new Map(); // serverId -> SSHClient
 
-ipcMain.handle('auth:register', (e, { username, password }) => registerUser(username, password));
-ipcMain.handle('auth:login', (e, { username, password }) => {
-  const r = loginUser(username, password);
-  if (r.ok) session = { username, ...r };
-  return r;
+const licenseService = new LicenseService({
+  dataDir: DATA_DIR,
+  publicKeyPath: path.join(__dirname, '../resources/license-public-key.pem'),
+  safeStorage,
+});
+
+function setLicenseSession(status) {
+  session = status?.valid
+    ? { username: status.payload.customer || '授权用户', plan: 'lifetime', licenseId: status.payload.licenseId }
+    : null;
+}
+
+registerLicenseHandlers(ipcMain, licenseService, setLicenseSession);
+
+ipcMain.handle('auth:register', () => ({ ok: false, error: '新版采用机器码终身授权，无需注册账号' }));
+ipcMain.handle('auth:login', () => {
+  const licensed = licenseService.verify();
+  if (licensed.valid) {
+    setLicenseSession(licensed);
+    return { ok: true, ...session };
+  }
+  return { ok: false, error: '请先使用本机注册码激活终身授权' };
 });
 ipcMain.handle('auth:logout', () => { session = null; return { ok: true }; });
-ipcMain.handle('auth:session', () => session);
-ipcMain.handle('plans:list', () => PLANS);
+ipcMain.handle('auth:session', () => licenseService.verify().valid ? session : null);
+ipcMain.handle('plans:list', () => ({ lifetime: { label: '终身授权', priceU: 10000, live: true } }));
+
+function isLicensed() {
+  const status = licenseService.verify();
+  if (status.valid && !session) setLicenseSession(status);
+  return status.valid;
+}
 
 // 服务器管理
 ipcMain.handle('server:list', () => {
+  if (!isLicensed()) return [];
   const servers = readJson(SERVERS_FILE, {});
   // 解密返回（脱敏）；status 持久化，重启后依然显示已部署
   return Object.entries(servers).map(([id, s]) => ({
@@ -430,7 +461,7 @@ ipcMain.handle('server:list', () => {
   }));
 });
 ipcMain.handle('server:save', (e, data) => {
-  if (!session) return { ok: false, error: '未登录' };
+  if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
   const servers = readJson(SERVERS_FILE, {});
   const id = data.id || crypto.randomBytes(8).toString('hex');
   servers[id] = {
@@ -444,16 +475,27 @@ ipcMain.handle('server:save', (e, data) => {
   return { ok: true, id };
 });
 ipcMain.handle('server:delete', (e, id) => {
+  if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
   const servers = readJson(SERVERS_FILE, {});
   delete servers[id];
   writeJson(SERVERS_FILE, servers);
   return { ok: true };
 });
 ipcMain.handle('server:get', (e, id) => {
+  if (!isLicensed()) return null;
   const servers = readJson(SERVERS_FILE, {});
   const s = servers[id];
   if (!s) return null;
-  return { ...s, password: decryptSecret(s.password), apiSecret: decryptSecret(s.apiSecret), telegramToken: decryptSecret(s.telegramToken), apiPassword: s.apiPassword ? decryptSecret(s.apiPassword) : 'ckquant123' };
+  return {
+    id,
+    name: s.name,
+    host: s.host,
+    port: s.port,
+    username: s.username,
+    exchange: s.exchange,
+    status: s.status,
+    lastDeployAt: s.lastDeployAt,
+  };
 });
 
 // 部署
@@ -487,7 +529,7 @@ function updateServerStatus(serverId, status) {
 }
 
 ipcMain.handle('deploy:run', async (e, { serverId, config }) => {
-  if (!session) return { ok: false, error: '未登录' };
+  if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
   const servers = readJson(SERVERS_FILE, {});
   const s = servers[serverId];
   if (!s) return { ok: false, error: '服务器不存在' };
@@ -508,15 +550,16 @@ ipcMain.handle('deploy:run', async (e, { serverId, config }) => {
   if (result.ok) {
     const servers2 = readJson(SERVERS_FILE, {});
     if (servers2[serverId]) {
-      servers2[serverId].apiUsername = config.apiUsername || servers2[serverId].apiUsername || 'ckquant';
-      servers2[serverId].apiPassword = encryptSecret(config.apiPassword || 'ckquant123');
-      servers2[serverId].apiPort = config.apiPort || servers2[serverId].apiPort || 8080;
+      servers2[serverId].apiUsername = merged.apiUsername || servers2[serverId].apiUsername || 'ckquant';
+      servers2[serverId].apiPassword = encryptSecret(merged.apiPassword);
+      servers2[serverId].apiPort = merged.apiPort || servers2[serverId].apiPort || 8080;
       writeJson(SERVERS_FILE, servers2);
     }
   }
   return result;
 });
 ipcMain.handle('deploy:disconnect', (e, serverId) => {
+  if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
   const ssh = sshCache.get(serverId);
   if (ssh) { ssh.close(); sshCache.delete(serverId); }
   return { ok: true };
@@ -554,12 +597,13 @@ async function robotAction(serverId, action) {
 }
 
 ipcMain.handle('robot:action', async (e, { serverId, action }) => {
-  if (!session) return { ok: false, error: '未登录' };
+  if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
   return await robotAction(serverId, action);
 });
 
 // 读取远程 config.json（用于在线编辑）
 ipcMain.handle('config:read', async (e, serverId) => {
+  if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
   const ssh = await ensureConnection(serverId);
   if (!ssh) return { ok: false, error: '无法连接服务器' };
   const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
@@ -570,6 +614,7 @@ ipcMain.handle('config:read', async (e, serverId) => {
 
 // 保存远程 config.json（编辑后写回 + 重载）
 ipcMain.handle('config:save', async (e, { serverId, content }) => {
+  if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
   const ssh = await ensureConnection(serverId);
   if (!ssh) return { ok: false, error: '无法连接服务器' };
   const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
@@ -581,6 +626,7 @@ ipcMain.handle('config:save', async (e, { serverId, content }) => {
 // ============ 策略编辑 ============
 // 读取策略目录列表 + 策略内容
 ipcMain.handle('strategy:list', async (e, serverId) => {
+  if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
   const ssh = await ensureConnection(serverId);
   if (!ssh) return { ok: false, error: '无法连接服务器' };
   const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
@@ -591,6 +637,7 @@ ipcMain.handle('strategy:list', async (e, serverId) => {
 });
 
 ipcMain.handle('strategy:read', async (e, { serverId, filename }) => {
+  if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
   const ssh = await ensureConnection(serverId);
   if (!ssh) return { ok: false, error: '无法连接服务器' };
   const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
@@ -601,6 +648,7 @@ ipcMain.handle('strategy:read', async (e, { serverId, filename }) => {
 });
 
 ipcMain.handle('strategy:save', async (e, { serverId, filename, content }) => {
+  if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
   const ssh = await ensureConnection(serverId);
   if (!ssh) return { ok: false, error: '无法连接服务器' };
   const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
@@ -612,6 +660,7 @@ ipcMain.handle('strategy:save', async (e, { serverId, filename, content }) => {
 
 // 日志流
 ipcMain.handle('logs:start', async (e, serverId) => {
+  if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
   const ssh = await ensureConnection(serverId);
   if (!ssh) return { ok: false, error: '无法连接服务器' };
   streamLogs(ssh, (data) => {
@@ -625,6 +674,7 @@ const net = require('net');
 const tunnelServers = new Map(); // serverId -> { server, ssh }
 
 ipcMain.handle('tunnel:start', async (e, serverId) => {
+  if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
   const ssh = await ensureConnection(serverId);
   if (!ssh) return { ok: false, error: '无法连接服务器（请检查 SSH 配置）' };
   // 远程 api_server 实际端口（部署时持久化，默认 8080）
@@ -667,6 +717,7 @@ ipcMain.handle('tunnel:start', async (e, serverId) => {
 });
 
 ipcMain.handle('tunnel:stop', (e, serverId) => {
+  if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
   const t = tunnelServers.get(serverId);
   if (t) { t.server.close(); tunnelServers.delete(serverId); }
   return { ok: true };
@@ -674,6 +725,7 @@ ipcMain.handle('tunnel:stop', (e, serverId) => {
 
 // 获取 WebUI 自动登录凭据（部署时保存，加密存储；缺省时从服务器 config 实时读取）
 ipcMain.handle('webui:getCredentials', async (e, serverId) => {
+  if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
   const servers = readJson(SERVERS_FILE, {});
   const s = servers[serverId];
   if (!s) return { ok: false, error: '服务器不存在' };
@@ -707,13 +759,15 @@ ipcMain.handle('webui:getCredentials', async (e, serverId) => {
     } catch (e) { /* 静默 */ }
   }
   return {
-    ok: true,
-    apiUsername: apiUsername || 'ckquant',
-    apiPassword: apiPassword || 'ckquant123',
+    ok: Boolean(apiUsername && apiPassword),
+    apiUsername: apiUsername || '',
+    apiPassword: apiPassword || '',
+    error: apiUsername && apiPassword ? undefined : '未找到 WebUI 登录凭据，请检查服务器配置',
   };
 });
 
 app.whenReady().then(() => {
+  setLicenseSession(licenseService.verify());
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

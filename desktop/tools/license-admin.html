@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'">
+  <title>CK Quant 注册码签发控制台</title>
+  <style>
+    *{box-sizing:border-box} body{margin:0;background:#0d1117;color:#e6edf3;font-family:"Segoe UI","Microsoft YaHei",sans-serif}
+    main{max-width:680px;margin:40px auto;padding:28px;background:#161b22;border:1px solid #30363d;border-radius:14px}
+    h1{font-size:23px;margin:0 0 8px}.sub{color:#8b949e;margin:0 0 26px;line-height:1.7}label{display:block;color:#8b949e;font-size:13px;margin:16px 0 6px}
+    input,textarea{width:100%;border:1px solid #30363d;border-radius:8px;background:#0d1117;color:#e6edf3;padding:12px;font:14px Consolas,monospace}textarea{height:150px;resize:vertical}
+    input:focus,textarea:focus{outline:none;border-color:#58a6ff}button{border:0;border-radius:8px;background:#2f81f7;color:white;padding:12px 18px;font-size:14px;cursor:pointer}button.secondary{background:transparent;border:1px solid #30363d}
+    .actions{display:flex;gap:10px;margin-top:18px}.status{min-height:22px;margin-top:14px;color:#8b949e}.ok{color:#3fb950}.err{color:#f85149}.warning{margin-top:24px;padding:14px;border:1px solid #d29922;border-radius:8px;color:#d29922;font-size:13px;line-height:1.7}
+  </style>
+</head>
+<body><main>
+  <h1>CK Quant 注册码签发控制台</h1>
+  <p class="sub">仅供 CK Quant 厂商内部使用。客户付款并提供机器码后，在这里签发绑定该设备的终身注册码。</p>
+  <label for="customer">客户名称或订单备注</label><input id="customer" placeholder="例如：客户王先生 / 订单 CK-20260820-001">
+  <label for="machine">客户机器码</label><input id="machine" placeholder="CKQ-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" spellcheck="false">
+  <div class="actions"><button id="issue">生成终身注册码</button><button id="copy" class="secondary" disabled>复制注册码</button></div>
+  <label for="code">注册码</label><textarea id="code" readonly placeholder="生成后显示在这里"></textarea>
+  <div id="status" class="status"></div>
+  <div class="warning">请离线备份 <b>desktop/private/license-private-key.pem</b>。任何人获得该私钥都能伪造注册码；私钥绝不能发给客户、上传 GitHub 或放入安装包。</div>
+</main><script>
+  const $=s=>document.querySelector(s); let last='';
+  $('#issue').onclick=async()=>{ $('#issue').disabled=true; $('#status').className='status'; $('#status').textContent='正在签发…'; const r=await window.licenseAdmin.issue($('#machine').value,$('#customer').value); $('#issue').disabled=false; if(!r.ok){$('#status').className='status err';$('#status').textContent=r.error;return} last=r.code;$('#code').value=r.code;$('#copy').disabled=false;$('#status').className='status ok';$('#status').textContent=`签发成功 · 授权ID ${r.licenseId}`; };
+  $('#copy').onclick=()=>{window.licenseAdmin.copy(last);$('#status').className='status ok';$('#status').textContent='注册码已复制';};
+  window.licenseAdmin.status().then(r=>{if(!r.ready){$('#status').className='status err';$('#status').textContent='授权密钥未初始化，请先运行 npm run license:init';$('#issue').disabled=true;}});
+</script></body></html>
