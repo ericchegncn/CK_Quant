@@ -1,6 +1,6 @@
 {
   "name": "ck-quant-desktop",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "CK Quant Desktop - 面向普通用户的智能量化工作台",
   "main": "electron/main.js",
   "private": true,
