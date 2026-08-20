@@ -1275,6 +1275,22 @@ class Telegram(RPCHandler):
         )
         output += (f" `, {starting_cap_fiat}`.\n") if result["starting_capital_fiat"] > 0 else ".\n"
 
+        # Keep this value on exactly the same mark-to-market basis as the
+        # dashboard's "ROI: All trades" card and the /profit command:
+        # closed profit + current profit of every filled open trade.
+        profit_stats = self._rpc._rpc_trade_statistics(
+            self._config["stake_currency"], self._config.get("fiat_display_currency", "")
+        )
+        all_trades_profit = profit_stats["profit_all_coin"]
+        total_funds = result["starting_capital"] + all_trades_profit
+        stake_currency = self._config["stake_currency"]
+        output += (
+            "\n*Total Funds (Closed + Open Trades):*\n"
+            f"\t`{stake_currency}: {fmt_coin(total_funds, stake_currency, False)}`\n"
+            f"\t`All Trades PnL: {fmt_coin(all_trades_profit, stake_currency, False)} "
+            f"({format_pct(profit_stats['profit_all_ratio'])})`\n"
+        )
+
         total_dust_balance = 0
         total_dust_currencies = 0
         for curr in result["currencies"]:

@@ -1095,6 +1095,11 @@ async def test_telegram_balance_handle(default_conf, update, mocker, rpc_balance
 
     telegram, freqtradebot, msg_mock = get_telegram_testobject(mocker, default_conf)
     patch_get_signal(freqtradebot)
+    mocker.patch.object(
+        telegram._rpc,
+        "_rpc_trade_statistics",
+        return_value={"profit_all_coin": 2.0, "profit_all_ratio": 0.2},
+    )
 
     await telegram._balance(update=update, context=MagicMock())
     context = MagicMock()
@@ -1119,6 +1124,10 @@ async def test_telegram_balance_handle(default_conf, update, mocker, rpc_balance
     assert "BTC: 0.00000309" in result
     assert "*Estimated Value*:" in result_full
     assert "*Estimated Value (Bot managed assets only)*:" in result
+    assert "*Total Funds (Closed + Open Trades):*" in result
+    assert "BTC: 13.88" in result
+    assert "All Trades PnL: 2" in result
+    assert "(20.00%)" in result
 
 
 async def test_telegram_balance_handle_futures(
