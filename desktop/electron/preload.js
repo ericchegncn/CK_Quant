@@ -72,6 +72,15 @@ contextBridge.exposeInMainWorld('ckQuant', {
   onBacktestProgress: (cb) => subscribe('backtest:progress', cb),
   onBacktestDone: (cb) => subscribe('backtest:done', cb),
   onBacktestFailed: (cb) => subscribe('backtest:failed', cb),
+
+  // 本地策略库（私有代码仅保存在本机应用数据目录）
+  listLocalStrategies: () => ipcRenderer.invoke('strategy:localList'),
+  readLocalStrategy: (name) => ipcRenderer.invoke('strategy:localRead', { name }),
+  saveLocalStrategy: (input) => ipcRenderer.invoke('strategy:localSave', input),
+  deleteLocalStrategy: (name) => ipcRenderer.invoke('strategy:localDelete', { name }),
+  importLocalStrategy: (locked) => ipcRenderer.invoke('strategy:localImport', { locked }),
+  validateLocalStrategy: (name, code, strictTemplate) => ipcRenderer.invoke('strategy:validate', { name, code, strictTemplate }),
+  setLocalStrategyStatus: (name, status) => ipcRenderer.invoke('strategy:setStatus', { name, status }),
 });
 
 function subscribe(channel, callback) {
