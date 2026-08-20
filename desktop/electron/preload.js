@@ -81,6 +81,16 @@ contextBridge.exposeInMainWorld('ckQuant', {
   importLocalStrategy: (locked) => ipcRenderer.invoke('strategy:localImport', { locked }),
   validateLocalStrategy: (name, code, strictTemplate) => ipcRenderer.invoke('strategy:validate', { name, code, strictTemplate }),
   setLocalStrategyStatus: (name, status) => ipcRenderer.invoke('strategy:setStatus', { name, status }),
+
+  // 监控巡检、诊断和受控自愈
+  getMonitorOverview: () => ipcRenderer.invoke('monitor:overview'),
+  inspectRobots: () => ipcRenderer.invoke('monitor:inspect'),
+  diagnoseRobot: (serverId) => ipcRenderer.invoke('ops:diag', { serverId }),
+  getOpsReport: () => ipcRenderer.invoke('ops:report'),
+  getOpsSettings: () => ipcRenderer.invoke('ops:getSettings'),
+  saveOpsSettings: (input) => ipcRenderer.invoke('ops:saveSettings', input),
+  onMonitorUpdate: (cb) => subscribe('monitor:update', cb),
+  onMonitorAlert: (cb) => subscribe('monitor:alert', cb),
 });
 
 function subscribe(channel, callback) {

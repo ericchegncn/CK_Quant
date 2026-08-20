@@ -282,7 +282,50 @@ async function deployNow() {
 }
 
 // ============ 监控 ============
+let currentMonitorSnapshot = { robots: [], generatedAt: null };
+
+function renderMonitorSnapshot(snapshot) {
+  currentMonitorSnapshot = snapshot || { robots: [] };
+  const robots = currentMonitorSnapshot.robots || [];
+  const running = robots.filter((robot) => robot.state === 'running').length;
+  const apiOk = robots.filter((robot) => robot.api?.state === 'ok').length;
+  const totalProfit = robots.reduce((sum, robot) => sum + (Number(robot.profit?.totalProfit) || 0), 0);
+  $('#monitorSummary').innerHTML = `<div class="report-metric"><span>已管理机器人</span><strong>${robots.length}</strong></div><div class="report-metric"><span>正在运行</span><strong>${running}</strong></div><div class="report-metric"><span>API 正常</span><strong>${apiOk}</strong></div><div class="report-metric"><span>总收益</span><strong>${totalProfit.toFixed(2)} U</strong></div>`;
+  if (!robots.length) { $('#monitorCards').innerHTML = '<div class="chat-empty">尚无已部署服务器，或还没有巡检记录</div>'; return; }
+  const stateLabels = { running: '运行中', exited: '已退出', restarting: '重启中', not_found: '未找到容器', unknown: '未知' };
+  $('#monitorCards').innerHTML = robots.map((robot) => {
+    const tone = robot.error || !['running'].includes(robot.state) ? 'error' : robot.api?.state !== 'ok' || robot.errors?.length ? 'warn' : 'ok';
+    const state = robot.desiredState === 'stopped' ? '用户要求停止' : stateLabels[robot.state] || robot.state;
+    return `<div class="robot-card ${tone}"><div class="robot-card-head"><div><div class="job-title">${esc(robot.serverName)}</div><div class="job-meta">${esc(robot.host || '')}</div></div><span class="robot-state">${esc(state)}</span></div><div class="robot-facts"><div><span>机器人 API</span>${robot.api?.state === 'ok' ? '正常' : esc(robot.api?.state || '未知')}</div><div><span>重启次数</span>${Number(robot.restartCount) || 0}</div><div><span>累计收益</span>${Number(robot.profit?.totalProfit || 0).toFixed(2)} U</div><div><span>未平仓</span>${Number(robot.profit?.openTrades) || 0}</div><div><span>最大回撤</span>${robot.profit?.maxDrawdown == null ? '-' : pct(robot.profit.maxDrawdown)}</div><div><span>磁盘占用</span>${robot.diskPercent == null ? '-' : `${robot.diskPercent}%`}</div></div>${robot.error ? `<div class="ops-warning">${esc(robot.error)}</div>` : robot.errors?.length ? `<div class="ops-warning">最近发现 ${robot.errors.length} 条错误日志，敏感内容已隐藏。</div>` : ''}<button class="btn btn-ghost btn-sm ops-diag-btn" data-server-id="${esc(robot.serverId)}" style="width:auto;margin-top:10px">查看诊断</button></div>`;
+  }).join('');
+  document.querySelectorAll('.ops-diag-btn').forEach((button) => button.addEventListener('click', async () => {
+    const result = await api.diagnoseRobot(button.dataset.serverId);
+    if (!result.ok) { toast(result.error); return; }
+    const report = result.report;
+    alert(`${report.summary}\n\n容器：${report.facts.containerState}\nAPI：${report.facts.apiState}\n重启次数：${report.facts.restartCount}\n错误日志：${report.facts.logTail.length} 条\n\n建议：${report.suggestedActions.map((item) => item.reason).join('；') || '继续观察'}`);
+  }));
+}
+
+async function loadMonitorOverview() {
+  const result = await api.getMonitorOverview();
+  if (result.ok) renderMonitorSnapshot(result.snapshot);
+}
+
+async function loadOpsSettings() {
+  const result = await api.getOpsSettings();
+  if (!result.ok) return;
+  const settings = result.settings;
+  $('#opsInterval').value = settings.intervalMinutes;
+  $('#opsDailyLoss').value = settings.dailyLossLimit;
+  $('#opsDrawdown').value = settings.drawdownLimit;
+  $('#opsAutoHeal').checked = settings.autoHeal;
+  $('#opsAutoHeal').dataset.original = String(settings.autoHeal);
+}
+
 async function renderMonitor() {
+  servers = await api.listServers();
+  await loadMonitorOverview();
+  await loadOpsSettings();
   const deployed = servers.filter((s) => s.status === '已部署');
   const sel = $('#m_server');
   sel.innerHTML = deployed.length
@@ -379,6 +422,41 @@ async function renderMonitor() {
   };
   $('#strategyCancel').onclick = () => { $('#strategyEditorWrap').style.display = 'none'; };
 }
+
+$('#opsInspectBtn').addEventListener('click', async () => {
+  const button = $('#opsInspectBtn');
+  button.disabled = true; button.textContent = '巡检中…';
+  const result = await api.inspectRobots();
+  button.disabled = false; button.textContent = '立即巡检';
+  if (!result.ok) { toast(result.error || '巡检失败'); return; }
+  renderMonitorSnapshot(result.snapshot);
+  toast('巡检完成；未开启自愈时不会自动操作机器人');
+});
+$('#opsSettingsBtn').addEventListener('click', () => $('#opsSettingsPanel').classList.toggle('show'));
+$('#opsSaveSettingsBtn').addEventListener('click', async () => {
+  const wasEnabled = $('#opsAutoHeal').dataset.original === 'true';
+  const willEnable = $('#opsAutoHeal').checked;
+  if (!wasEnabled && willEnable && !confirm('启用后，机器人崩溃、API 连续失联或超过风控阈值时，软件可以自动重启或暂停机器人。确定启用吗？')) {
+    $('#opsAutoHeal').checked = false; return;
+  }
+  const result = await api.saveOpsSettings({ intervalMinutes: Number($('#opsInterval').value), dailyLossLimit: Number($('#opsDailyLoss').value), drawdownLimit: Number($('#opsDrawdown').value), autoHeal: willEnable, desktopNotifications: true });
+  if (!result.ok) { toast(result.error || '设置保存失败'); return; }
+  $('#opsAutoHeal').dataset.original = String(result.settings.autoHeal);
+  toast(result.settings.autoHeal ? '受控自愈已启用' : '设置已保存；当前只巡检和告警');
+});
+$('#opsReportBtn').addEventListener('click', async () => {
+  const result = await api.getOpsReport();
+  if (!result.ok) { toast(result.error); return; }
+  const report = result.report;
+  alert(`CK Quant 今日简报\n\n机器人：${report.robots} 台\n运行：${report.running} 台\n停止：${report.stopped} 台\n今日收益：${Number(report.dailyProfit).toFixed(2)} U\n累计收益：${Number(report.totalProfit).toFixed(2)} U\n\n数据时间：${new Date(report.generatedAt).toLocaleString('zh-CN')}`);
+});
+api.onMonitorUpdate((payload) => {
+  const robots = [...(currentMonitorSnapshot.robots || [])];
+  const index = robots.findIndex((robot) => robot.serverId === payload.robot.serverId);
+  if (index >= 0) robots[index] = payload.robot; else robots.push(payload.robot);
+  renderMonitorSnapshot({ ...currentMonitorSnapshot, robots, generatedAt: payload.ts });
+});
+api.onMonitorAlert((alertInfo) => toast(`${alertInfo.serverName}：${alertInfo.message}`));
 
 // ============ WebUI（软件内嵌） ============
 async function renderWebUI() {
