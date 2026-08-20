@@ -8,6 +8,7 @@ const { registerAIHandlers } = require('./ai');
 const { registerBacktestHandlers } = require('./backtest');
 const { registerStrategyLibraryHandlers } = require('./strategy');
 const { registerOpsHandlers } = require('./ops');
+const { registerNotifyHandlers } = require('./notify');
 
 // ============ 数据存储（JSON + 加密） ============
 const DATA_DIR = path.join(app.getPath('userData'), 'data');
@@ -842,6 +843,14 @@ const strategyLibrary = registerStrategyLibraryHandlers(ipcMain, {
   dialog,
   getWindow: () => mainWindow,
 });
+const notifyRuntime = registerNotifyHandlers(ipcMain, {
+  dataDir: DATA_DIR,
+  safeStorage,
+  isLicensed,
+  desktopNotify: ({ title, message }) => {
+    if (Notification.isSupported()) new Notification({ title, body: message }).show();
+  },
+});
 const opsRuntime = registerOpsHandlers(ipcMain, {
   dataDir: DATA_DIR,
   isLicensed,
@@ -854,9 +863,7 @@ const opsRuntime = registerOpsHandlers(ipcMain, {
   send: (channel, payload) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
   },
-  notify: (alert) => {
-    if (Notification.isSupported()) new Notification({ title: `CK Quant · ${alert.level === 'critical' ? '严重告警' : '运行提醒'}`, body: `${alert.serverName}: ${alert.message}` }).show();
-  },
+  notify: (alert) => notifyRuntime.send({ title: `CK Quant · ${alert.level === 'critical' ? '严重告警' : '运行提醒'}`, message: `${alert.serverName}: ${alert.message}`, level: alert.level }),
 });
 const aiRuntime = registerAIHandlers(ipcMain, {
   dataDir: DATA_DIR,

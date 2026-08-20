@@ -681,6 +681,12 @@ $('#aiApproveBtn').addEventListener('click', () => answerAIConfirmation(true));
 $('#aiRejectBtn').addEventListener('click', () => answerAIConfirmation(false));
 
 // ============ AI 设置 ============
+document.querySelectorAll('[data-settings-section]').forEach((button) => button.addEventListener('click', () => {
+  document.querySelectorAll('[data-settings-section]').forEach((item) => item.classList.toggle('active', item === button));
+  document.querySelectorAll('.settings-section').forEach((section) => section.classList.toggle('active', section.id === `settings-${button.dataset.settingsSection}`));
+  if (button.dataset.settingsSection === 'notify') loadNotifySettings();
+}));
+
 async function loadAISettings() {
   const result = await api.getAISettings();
   if (!result.ok) { $('#aiConnectionStatus').textContent = result.error || '读取设置失败'; return; }
@@ -729,6 +735,37 @@ $('#loadAIModelsBtn').addEventListener('click', async () => {
     $('#aiModelList').appendChild(option);
   }
   $('#aiConnectionStatus').textContent = `已获取 ${result.models.length} 个模型，可在模型名称中选择。`;
+});
+
+async function loadNotifySettings() {
+  const result = await api.getNotifySettings();
+  if (!result.ok) { $('#notifyStatus').textContent = result.error || '无法读取通知设置'; return; }
+  const settings = result.settings;
+  $('#notifyDesktop').checked = settings.desktopEnabled;
+  $('#notifyTelegram').checked = settings.telegramEnabled;
+  $('#notifyToken').value = '';
+  $('#notifyChatId').value = settings.chatId || '';
+  $('#notifyProxy').value = settings.proxyUrl || '';
+  $('#notifyTokenStatus').textContent = settings.hasToken ? 'Bot Token 已使用 Windows 系统加密保存；留空不会修改。' : 'Telegram Token 尚未配置';
+  $('#notifyStatus').textContent = settings.testedAt ? `Telegram 上次测试成功：${new Date(settings.testedAt).toLocaleString('zh-CN')}` : '';
+}
+
+$('#notifySaveBtn').addEventListener('click', async () => {
+  const button = $('#notifySaveBtn'); button.disabled = true;
+  const result = await api.saveNotifySettings({ desktopEnabled: $('#notifyDesktop').checked, telegramEnabled: $('#notifyTelegram').checked, telegramToken: $('#notifyToken').value.trim(), chatId: $('#notifyChatId').value.trim(), proxyUrl: $('#notifyProxy').value.trim() });
+  button.disabled = false;
+  if (!result.ok) { $('#notifyStatus').textContent = `保存失败：${result.error}`; return; }
+  toast('通知设置已保存');
+  await loadNotifySettings();
+});
+$('#notifyTestBtn').addEventListener('click', async () => {
+  const button = $('#notifyTestBtn'); button.disabled = true;
+  $('#notifyStatus').textContent = '正在发送测试通知…';
+  const result = await api.testNotifications();
+  button.disabled = false;
+  const telegram = result.channels?.telegram;
+  const desktop = result.channels?.desktop;
+  $('#notifyStatus').textContent = result.ok ? `测试完成：桌面 ${desktop?.ok ? '成功' : '未启用'}，Telegram ${telegram?.ok ? '成功' : telegram?.error || '未启用'}` : `测试失败：${telegram?.error || desktop?.error || '没有启用通知渠道'}`;
 });
 
 // ============ 回测中心 ============
