@@ -5,6 +5,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { LicenseService, registerLicenseHandlers } = require('./licensing/service');
 const { registerAIHandlers } = require('./ai');
+const { registerBacktestHandlers } = require('./backtest');
 
 // ============ 数据存储（JSON + 加密） ============
 const DATA_DIR = path.join(app.getPath('userData'), 'data');
@@ -451,6 +452,10 @@ function isLicensed() {
   return status.valid;
 }
 
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'"'"'`)}'`;
+}
+
 // 服务器管理
 ipcMain.handle('server:list', () => {
   if (!isLicensed()) return [];
@@ -464,13 +469,19 @@ ipcMain.handle('server:list', () => {
 ipcMain.handle('server:save', (e, data) => {
   if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
   const servers = readJson(SERVERS_FILE, {});
-  const id = data.id || crypto.randomBytes(8).toString('hex');
+  const id = /^[a-f0-9]{16}$/.test(String(data?.id || '')) ? String(data.id) : crypto.randomBytes(8).toString('hex');
+  const name = String(data?.name || '').trim().slice(0, 80);
+  const host = String(data?.host || '').trim();
+  const username = String(data?.username || '').trim();
+  const port = Math.min(65535, Math.max(1, Number(data?.port) || 22));
+  const exchange = ['binance', 'bybit', 'okx', 'gate'].includes(data?.exchange) ? data.exchange : 'binance';
+  if (!name || !/^[A-Za-z0-9._:-]{1,255}$/.test(host) || !/^[A-Za-z0-9._-]{1,64}$/.test(username)) {
+    return { ok: false, error: '服务器名称、地址或用户名格式不正确' };
+  }
+  const existing = servers[id] || {};
   servers[id] = {
-    ...data,
-    id,
-    password: data.password ? encryptSecret(data.password) : (servers[id]?.password || null),
-    apiSecret: data.apiSecret ? encryptSecret(data.apiSecret) : (servers[id]?.apiSecret || null),
-    telegramToken: data.telegramToken ? encryptSecret(data.telegramToken) : (servers[id]?.telegramToken || null),
+    ...existing, id, name, host, port, username, exchange,
+    password: data.password ? encryptSecret(String(data.password).slice(0, 1024)) : (existing.password || null),
   };
   writeJson(SERVERS_FILE, servers);
   return { ok: true, id };
@@ -541,7 +552,13 @@ ipcMain.handle('deploy:run', async (e, { serverId, config }) => {
   });
   sshCache.set(serverId, ssh);
 
-  const merged = { ...s, ...config, apiKey: config.apiKey || s.apiKey, apiSecret: config.apiSecret || decryptSecret(s.apiSecret), telegramToken: config.telegramToken || decryptSecret(s.telegramToken) };
+  const merged = {
+    ...s, ...config,
+    apiKey: config.apiKey || decryptSecret(s.apiKey),
+    apiSecret: config.apiSecret || decryptSecret(s.apiSecret),
+    telegramToken: config.telegramToken || decryptSecret(s.telegramToken),
+    telegramChatId: config.telegramChatId || s.telegramChatId || '',
+  };
   const result = await deployRobot(ssh, merged, (msg) => {
     mainWindow.webContents.send('deploy:log', { serverId, msg });
   });
@@ -554,6 +571,10 @@ ipcMain.handle('deploy:run', async (e, { serverId, config }) => {
       servers2[serverId].apiUsername = merged.apiUsername || servers2[serverId].apiUsername || 'ckquant';
       servers2[serverId].apiPassword = encryptSecret(merged.apiPassword);
       servers2[serverId].apiPort = merged.apiPort || servers2[serverId].apiPort || 8080;
+      if (config.apiKey) servers2[serverId].apiKey = encryptSecret(config.apiKey);
+      if (config.apiSecret) servers2[serverId].apiSecret = encryptSecret(config.apiSecret);
+      if (config.telegramToken) servers2[serverId].telegramToken = encryptSecret(config.telegramToken);
+      if (config.telegramChatId) servers2[serverId].telegramChatId = String(config.telegramChatId).slice(0, 100);
       writeJson(SERVERS_FILE, servers2);
     }
   }
@@ -585,7 +606,16 @@ async function robotAction(serverId, action) {
       break;
     case 'reload':
       // 通过 freqtrade API 热重载配置（需要 api_server 凭据）；失败则回退重启
-      r = await ssh.exec(`curl -s -X POST http://127.0.0.1:8080/api/v1/reload_config -u ckquant:ckquant123 | head -c 200`, 30000);
+      {
+        const server = readJson(SERVERS_FILE, {})[serverId] || {};
+        const apiUsername = server.apiUsername || '';
+        const apiPassword = decryptSecret(server.apiPassword) || '';
+        const apiPort = Number.isInteger(Number(server.apiPort)) ? Math.min(65535, Math.max(1, Number(server.apiPort))) : 8080;
+        if (apiUsername && apiPassword) {
+          const authorization = Buffer.from(`${apiUsername}:${apiPassword}`).toString('base64');
+          r = await ssh.exec(`curl -fsS -X POST -H ${shellQuote(`Authorization: Basic ${authorization}`)} http://127.0.0.1:${apiPort}/api/v1/reload_config | head -c 200`, 30000);
+        } else r = { code: 1, stdout: '', stderr: '未保存 WebUI 凭据' };
+      }
       if (r.code !== 0 || !r.stdout.includes('"status":"success"')) {
         r = await ssh.exec(`cd ${dir} && docker compose restart`, 120000);
       }
@@ -608,7 +638,7 @@ ipcMain.handle('config:read', async (e, serverId) => {
   const ssh = await ensureConnection(serverId);
   if (!ssh) return { ok: false, error: '无法连接服务器' };
   const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
-  const r = await ssh.exec(`cat ${home}/CK_Quant/user_data/config.json`);
+  const r = await ssh.exec(`cat ${shellQuote(`${home}/CK_Quant/user_data/config.json`)}`);
   if (r.code !== 0) return { ok: false, error: r.stderr.slice(-200) };
   return { ok: true, content: r.stdout };
 });
@@ -619,7 +649,18 @@ ipcMain.handle('config:save', async (e, { serverId, content }) => {
   const ssh = await ensureConnection(serverId);
   if (!ssh) return { ok: false, error: '无法连接服务器' };
   const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
-  await ssh.writeFile(`${home}/CK_Quant/user_data/config.json`, content);
+  const target = `${home}/CK_Quant/user_data/config.json`;
+  const temporary = `${target}.desktop-tmp-${crypto.randomBytes(4).toString('hex')}`;
+  const backup = `${target}.bak-${new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)}`;
+  await ssh.writeFile(temporary, content);
+  const containerTemporary = temporary.replace(`${home}/CK_Quant`, '/CK_Quant');
+  const checked = await ssh.exec(`docker exec CK_Quant freqtrade show-config --config ${shellQuote(containerTemporary)} >/dev/null`, 120000);
+  if (checked.code !== 0) {
+    await ssh.exec(`rm -f -- ${shellQuote(temporary)}`);
+    return { ok: false, error: `配置校验失败，原文件未改变：${checked.stderr.slice(-500)}` };
+  }
+  const replaced = await ssh.exec(`cp -p -- ${shellQuote(target)} ${shellQuote(backup)} && mv -- ${shellQuote(temporary)} ${shellQuote(target)}`, 30000);
+  if (replaced.code !== 0) return { ok: false, error: `保存失败，原文件仍可从备份恢复：${replaced.stderr.slice(-300)}` };
   const r = await robotAction(serverId, 'reload');
   return r;
 });
@@ -643,7 +684,8 @@ ipcMain.handle('strategy:read', async (e, { serverId, filename }) => {
   if (!ssh) return { ok: false, error: '无法连接服务器' };
   const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
   const safe = filename.replace(/[^a-zA-Z0-9_.-]/g, '');
-  const r = await ssh.exec(`cat ${home}/CK_Quant/user_data/strategies/${safe}`);
+  if (safe !== filename || !/^[A-Za-z_][A-Za-z0-9_.-]*\.py$/.test(safe)) return { ok: false, error: '策略文件名不合法' };
+  const r = await ssh.exec(`cat ${shellQuote(`${home}/CK_Quant/user_data/strategies/${safe}`)}`);
   if (r.code !== 0) return { ok: false, error: r.stderr.slice(-200) };
   return { ok: true, content: r.stdout };
 });
@@ -654,7 +696,18 @@ ipcMain.handle('strategy:save', async (e, { serverId, filename, content }) => {
   if (!ssh) return { ok: false, error: '无法连接服务器' };
   const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
   const safe = filename.replace(/[^a-zA-Z0-9_.-]/g, '');
-  await ssh.writeFile(`${home}/CK_Quant/user_data/strategies/${safe}`, content);
+  if (safe !== filename || !/^[A-Za-z_][A-Za-z0-9_.-]*\.py$/.test(safe)) return { ok: false, error: '策略文件名不合法' };
+  const target = `${home}/CK_Quant/user_data/strategies/${safe}`;
+  const temporary = `${target}.desktop-tmp-${crypto.randomBytes(4).toString('hex')}`;
+  const backup = `${target}.bak-${new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)}`;
+  await ssh.writeFile(temporary, content);
+  const checked = await ssh.exec(`python3 -m py_compile ${shellQuote(temporary)}`, 30000);
+  if (checked.code !== 0) {
+    await ssh.exec(`rm -f -- ${shellQuote(temporary)}`);
+    return { ok: false, error: `策略语法校验失败，原文件未改变：${checked.stderr.slice(-500)}` };
+  }
+  const replaced = await ssh.exec(`cp -p -- ${shellQuote(target)} ${shellQuote(backup)} && mv -- ${shellQuote(temporary)} ${shellQuote(target)}`, 30000);
+  if (replaced.code !== 0) return { ok: false, error: `保存失败，原文件仍可从备份恢复：${replaced.stderr.slice(-300)}` };
   const r = await robotAction(serverId, 'reload');
   return r;
 });
@@ -767,6 +820,13 @@ ipcMain.handle('webui:getCredentials', async (e, serverId) => {
   };
 });
 
+const backtestRuntime = registerBacktestHandlers(ipcMain, {
+  dataDir: DATA_DIR,
+  isLicensed,
+  send: (channel, payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+  },
+});
 const aiRuntime = registerAIHandlers(ipcMain, {
   dataDir: DATA_DIR,
   safeStorage,
@@ -777,6 +837,7 @@ const aiRuntime = registerAIHandlers(ipcMain, {
   getServers: () => Object.entries(readJson(SERVERS_FILE, {})).map(([id, server]) => ({ id, ...server })),
   ensureConnection,
   robotAction,
+  submitBacktest: (input) => backtestRuntime.submit(input),
 });
 
 app.whenReady().then(() => {
