@@ -13,54 +13,37 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// ============ 登录页 ============
+// ============ 终身授权 ============
 let session = null;
 let servers = [];
 let currentDeployServerId = null;
 
-// Tab 切换
-document.querySelectorAll('.tab').forEach((tab) => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
-    tab.classList.add('active');
-    const isLogin = tab.dataset.tab === 'login';
-    $('#loginForm').style.display = isLogin ? 'block' : 'none';
-    $('#registerForm').style.display = isLogin ? 'none' : 'block';
-    $('#authError').textContent = '';
-  });
-});
-
-async function doLogin(username, password) {
-  const r = await api.login(username, password);
-  if (r.ok) {
-    session = r;
-    $('#userName').textContent = username;
-    $('#planBadge').textContent = { free: '免费版', starter: '基础版', pro: '专业版', elite: '旗舰版', whale: '鲸鱼版' }[r.plan] || '免费版';
-    $('#loginPage').classList.remove('show');
-    $('#mainPage').classList.add('show');
-    await loadServers();
-  } else {
-    $('#authError').textContent = r.error;
-  }
+function enterLicensedApp(status) {
+  session = { username: status.payload?.customer || '授权用户', plan: 'lifetime' };
+  $('#userName').textContent = session.username;
+  $('#planBadge').textContent = '终身授权';
+  $('#licensedMachineCode').textContent = status.machineCode;
+  $('#loginPage').classList.remove('show');
+  $('#mainPage').classList.add('show');
+  loadServers();
 }
 
-$('#loginBtn').addEventListener('click', () => doLogin($('#loginUser').value.trim(), $('#loginPass').value));
-$('#loginPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin($('#loginUser').value.trim(), $('#loginPass').value); });
-
-$('#regBtn').addEventListener('click', async () => {
-  const u = $('#regUser').value.trim(), p = $('#regPass').value, p2 = $('#regPass2').value;
-  if (!u || p.length < 6) { $('#authError').textContent = '用户名不能为空，密码至少6位'; return; }
-  if (p !== p2) { $('#authError').textContent = '两次密码不一致'; return; }
-  const r = await api.register(u, p);
-  if (r.ok) { toast('注册成功，请登录'); $('#authError').textContent = ''; doLogin(u, p); }
-  else $('#authError').textContent = r.error;
+$('#copyMachineCode').addEventListener('click', () => {
+  api.copyText($('#machineCode').textContent);
+  toast('机器码已复制');
 });
 
-$('#logoutBtn').addEventListener('click', async () => {
-  await api.logout();
-  session = null;
-  $('#mainPage').classList.remove('show');
-  $('#loginPage').classList.add('show');
+$('#activateBtn').addEventListener('click', async () => {
+  const code = $('#registrationCode').value.trim();
+  if (!code) { $('#authError').textContent = '请粘贴注册码'; return; }
+  $('#activateBtn').disabled = true;
+  $('#activateBtn').textContent = '正在验证…';
+  const result = await api.activateLicense(code);
+  $('#activateBtn').disabled = false;
+  $('#activateBtn').textContent = '激活终身授权';
+  if (!result.valid) { $('#authError').textContent = result.error || '激活失败'; return; }
+  toast('终身授权激活成功');
+  enterLicensedApp(result);
 });
 
 // ============ 导航 ============
@@ -74,13 +57,17 @@ document.querySelectorAll('.nav-item').forEach((item) => {
     if (item.dataset.page === 'deploy') renderDeployWizard();
     if (item.dataset.page === 'monitor') renderMonitor();
     if (item.dataset.page === 'webui') renderWebUI();
-    if (item.dataset.page === 'plans') renderPlans();
   });
+});
+
+document.querySelectorAll('[data-go]').forEach((button) => {
+  button.addEventListener('click', () => document.querySelector(`.nav-item[data-page="${button.dataset.go}"]`)?.click());
 });
 
 // ============ 服务器管理 ============
 async function loadServers() {
   servers = await api.listServers();
+  $('#dashboardServerCount').textContent = servers.length;
   const list = $('#serverList');
   if (!servers.length) {
     list.innerHTML = '<div class="card" style="color:var(--muted)">还没有服务器，点击下方按钮添加</div>';
@@ -185,7 +172,7 @@ function renderDeployWizard() {
       <h3>3. WebUI 登录账号（用于软件内嵌 WebUI 登录）</h3>
       <div class="grid-2">
         <div><label>用户名</label><input id="d_apiuser" value="ckquant" placeholder="WebUI 登录用户名"></div>
-        <div><label>密码</label><input id="d_apipass" value="ckquant123" placeholder="WebUI 登录密码"></div>
+        <div><label>密码</label><input id="d_apipass" type="password" placeholder="留空将自动生成高强度密码"></div>
       </div>
       <p style="color:var(--muted);font-size:12px;margin-top:4px">💡 这些将写入 config.json 的 api_server 配置，内嵌 WebUI 时自动登录，无需手动输入</p>
     </div>
@@ -262,7 +249,7 @@ async function deployNow() {
     dryRunWallet: parseFloat($('#d_wallet').value) || 10000,
     autoInstallDocker: $('#d_autodocker').checked,
     apiUsername: $('#d_apiuser').value.trim() || 'ckquant',
-    apiPassword: $('#d_apipass').value.trim() || 'ckquant123',
+    apiPassword: $('#d_apipass').value.trim(),
     configContent,
     strategyContent: strategyContent || null,
     tradingMode: 'futures',
@@ -417,9 +404,18 @@ async function renderWebUI() {
     }
     // 获取自动登录凭据
     const cred = await api.getCredentials(sid);
+    if (!cred.ok) {
+      btn.disabled = false;
+      btn.textContent = '🔗 连接 WebUI';
+      toast('❌ ' + (cred.error || '无法读取 WebUI 登录凭据'));
+      return;
+    }
     $('#webuiFrameWrap').style.display = 'block';
     const view = document.getElementById('webuiView');
     const url = `http://127.0.0.1:${r.localPort}`;
+    const loginUrl = JSON.stringify(url);
+    const loginUser = JSON.stringify(cred.apiUsername);
+    const loginPassword = JSON.stringify(cred.apiPassword);
 
     // 加载 WebUI
     view.src = url;
@@ -444,9 +440,9 @@ async function renderWebUI() {
                   setter.call(el, v);
                   el.dispatchEvent(new Event('input', { bubbles: true }));
                 };
-                setVal(urlInput, '${url}');
-                if (userInput) setVal(userInput, '${cred.apiUsername || 'ckquant'}');
-                setVal(passInput, '${cred.apiPassword || 'ckquant123'}');
+                setVal(urlInput, ${loginUrl});
+                if (userInput) setVal(userInput, ${loginUser});
+                setVal(passInput, ${loginPassword});
                 if (loginBtn) loginBtn.click();
                 return true;
               }
@@ -469,30 +465,10 @@ async function renderWebUI() {
   };
 }
 
-// ============ 订阅 ============
-async function renderPlans() {
-  const plans = await api.getPlans();
-  const cards = Object.entries(plans).map(([key, p]) => `
-    <div class="plan-card ${p.monthlyU ? '' : 'highlight'}">
-      <h3>${p.label}</h3>
-      <div class="price">${p.monthlyU === 0 ? '免费' : p.monthlyU + ' U'}<span>/月</span></div>
-      <div class="desc">${p.maxCapital === 0 ? '模拟盘体验' : `管理资金 ≤ ${p.maxCapital} USDT`}${p.live ? '<br>✅ 实盘交易' : '<br>🚫 仅模拟盘'}</div>
-      <button class="btn ${p.monthlyU ? '' : 'btn-ghost'}" onclick="toast('订阅功能即将上线，敬请期待')">${session?.plan === key ? '当前方案' : '选择'}</button>
-    </div>`).join('');
-  $('#planCards').innerHTML = cards;
-}
-
 // ============ 初始化 ============
 (async () => {
-  // 检查是否已有会话
-  const s = await api.getSession();
-  if (s) {
-    session = s;
-    $('#userName').textContent = s.username;
-    $('#planBadge').textContent = { free: '免费版', starter: '基础版', pro: '专业版', elite: '旗舰版', whale: '鲸鱼版' }[s.plan] || '免费版';
-    $('#mainPage').classList.add('show');
-    await loadServers();
-  } else {
-    $('#loginPage').classList.add('show');
-  }
+  const status = await api.getLicenseStatus();
+  $('#machineCode').textContent = status.machineCode;
+  if (status.valid) enterLicensedApp(status);
+  else $('#loginPage').classList.add('show');
 })();

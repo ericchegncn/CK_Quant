@@ -13,7 +13,7 @@
     }
     body { font-family: -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
 
-    /* ===== 登录页 ===== */
+    /* ===== 激活页 ===== */
     #loginPage { display: none; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 20px; }
     #loginPage.show { display: flex; }
     .login-box { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 40px; width: 380px; }
@@ -29,13 +29,20 @@
     .btn:hover { opacity: 0.9; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .error { color: var(--danger); font-size: 13px; margin-top: 8px; min-height: 18px; }
+    .activation-logo { width: 72px; height: 72px; display: block; margin: 0 auto 16px; border-radius: 18px; }
+    .machine-code { display: flex; gap: 8px; align-items: center; margin: 6px 0 16px; }
+    .machine-code code { flex: 1; padding: 11px; border: 1px solid var(--border); border-radius: 6px; color: #79c0ff; background: #010409; text-align: center; letter-spacing: .6px; }
+    .activation-code { width: 100%; min-height: 104px; resize: vertical; padding: 10px; margin-bottom: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: Consolas, monospace; }
+    .license-price { color: var(--success); font-weight: 700; }
 
     /* ===== 主工作台 ===== */
     #mainPage { display: none; height: 100vh; }
     #mainPage.show { display: flex; }
     .sidebar { width: 210px; background: var(--panel); border-right: 1px solid var(--border); padding: 16px 0; display: flex; flex-direction: column; }
-    .sidebar .logo { padding: 0 20px 16px; font-size: 17px; font-weight: 700; }
+    .sidebar .logo { padding: 0 18px 18px; font-size: 17px; font-weight: 700; display:flex;align-items:center;gap:10px; }
+    .sidebar .logo img { width:34px;height:34px;border-radius:50%; }
     .sidebar .logo span { color: var(--accent); }
+    .nav-section { padding: 12px 20px 5px; color:#6e7681; font-size:10px; font-weight:700; letter-spacing:1.2px; }
     .nav-item { padding: 10px 20px; cursor: pointer; color: var(--muted); font-size: 14px; display: flex; align-items: center; gap: 8px; }
     .nav-item:hover { background: rgba(255,255,255,0.04); color: var(--text); }
     .nav-item.active { color: var(--accent); border-left: 3px solid var(--accent); background: rgba(47,129,247,0.08); }
@@ -47,6 +54,14 @@
     .page { display: none; }
     .page.active { display: block; }
     .page h2 { font-size: 20px; margin-bottom: 16px; }
+    .page-lead { color:var(--muted);font-size:14px;line-height:1.7;margin:-8px 0 20px; }
+    .hero { position:relative;overflow:hidden;padding:28px;border:1px solid rgba(88,166,255,.38);background:linear-gradient(135deg,rgba(22,27,34,.98),rgba(13,35,61,.92));border-radius:14px;margin-bottom:18px; }
+    .hero:after { content:"";position:absolute;width:240px;height:240px;border-radius:50%;background:rgba(47,129,247,.12);right:-80px;top:-100px; }
+    .hero h2 { font-size:26px;margin:0 0 8px; }.hero p{max-width:670px;color:#b1bac4;line-height:1.8;font-size:14px}.hero-actions{display:flex;gap:10px;margin-top:20px}.hero-actions .btn{width:auto}
+    .metric-card { background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:17px;transition:border-color .2s,transform .2s; }
+    .metric-card:hover{border-color:var(--accent);transform:translateY(-1px)}.metric-label{color:var(--muted);font-size:12px}.metric-value{font-size:25px;font-weight:700;margin-top:7px}.metric-note{font-size:12px;color:var(--muted);margin-top:5px}
+    .steps { display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px }.step-card{position:relative;border:1px solid var(--border);border-radius:10px;padding:17px;background:#0d1117}.step-number{width:27px;height:27px;border-radius:50%;display:grid;place-items:center;background:rgba(47,129,247,.16);color:#79c0ff;font-weight:700;font-size:12px;margin-bottom:12px}.step-card.done .step-number{background:rgba(63,185,80,.16);color:var(--success)}.step-card h4{font-size:14px;margin-bottom:7px}.step-card p{font-size:12px;line-height:1.6;color:var(--muted)}
+    .coming-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.feature-card{border:1px solid var(--border);border-radius:12px;padding:22px;background:var(--panel)}.feature-icon{font-size:25px;margin-bottom:12px}.feature-card h3{margin-bottom:8px}.feature-card p{color:var(--muted);font-size:13px;line-height:1.7}.phase-badge{display:inline-block;margin-top:13px;padding:4px 9px;border-radius:999px;background:rgba(210,153,34,.12);color:var(--warn);font-size:11px}
 
     /* 卡片 */
     .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
@@ -96,31 +111,18 @@
 </head>
 <body>
 
-<!-- ===== 登录页 ===== -->
+<!-- ===== 终身授权激活页 ===== -->
 <div id="loginPage">
-  <div class="login-box">
-    <h1>🚀 CK Quant Desktop</h1>
-    <p class="sub">量化机器人部署与管理工作台</p>
-    <div class="tabs">
-      <div class="tab active" data-tab="login">登录</div>
-      <div class="tab" data-tab="register">注册</div>
-    </div>
-    <div id="loginForm">
-      <label>用户名</label>
-      <input id="loginUser" placeholder="请输入用户名">
-      <label>密码</label>
-      <input id="loginPass" type="password" placeholder="请输入密码">
-      <button class="btn" id="loginBtn">登 录</button>
-    </div>
-    <div id="registerForm" style="display:none">
-      <label>用户名</label>
-      <input id="regUser" placeholder="设置用户名">
-      <label>密码</label>
-      <input id="regPass" type="password" placeholder="设置密码（至少6位）">
-      <label>确认密码</label>
-      <input id="regPass2" type="password" placeholder="再次输入密码">
-      <button class="btn" id="regBtn">注 册</button>
-    </div>
+  <div class="login-box" style="width:520px">
+    <img class="activation-logo" src="../build/icon.png" alt="CK Quant">
+    <h1 style="text-align:center">CK Quant Desktop</h1>
+    <p class="sub" style="text-align:center">一次购买，当前设备终身使用 · <span class="license-price">10,000 USDT</span></p>
+    <label>本机机器码</label>
+    <div class="machine-code"><code id="machineCode">正在读取…</code><button class="btn btn-ghost btn-sm" id="copyMachineCode" style="width:auto">复制</button></div>
+    <label>注册码</label>
+    <textarea class="activation-code" id="registrationCode" placeholder="请把机器码发送给 CK Quant，收到注册码后粘贴到这里"></textarea>
+    <button class="btn" id="activateBtn">激活终身授权</button>
+    <p style="color:var(--muted);font-size:12px;line-height:1.7;margin-top:12px">注册码仅适用于当前设备。更换主要硬件或电脑时，请联系客服申请授权迁移。软件不会在未经确认的情况下启动实盘或调整资金。</p>
     <div class="error" id="authError"></div>
   </div>
 </div>
@@ -128,23 +130,56 @@
 <!-- ===== 主工作台 ===== -->
 <div id="mainPage">
   <div class="sidebar">
-    <div class="logo">CK Quant <span>Desktop</span></div>
-    <div class="nav-item active" data-page="servers">🖥️ 我的服务器</div>
-    <div class="nav-item" data-page="deploy">⚙️ 部署机器人</div>
-    <div class="nav-item" data-page="monitor">📊 运行监控</div>
+    <div class="logo"><img src="../build/icon.png" alt="CK"><div>CK Quant<br><span>Desktop</span></div></div>
+    <div class="nav-section">开始</div>
+    <div class="nav-item active" data-page="dashboard">▣ 工作台</div>
+    <div class="nav-item" data-page="autopilot">▶ 一键自主运行</div>
+    <div class="nav-item" data-page="chat">💬 AI 助手</div>
+    <div class="nav-section">研究与交易</div>
+    <div class="nav-item" data-page="backtest">🧪 回测中心</div>
+    <div class="nav-item" data-page="strategies">📚 策略库</div>
+    <div class="nav-item" data-page="monitor">🖥 监控大屏</div>
+    <div class="nav-section">管理</div>
+    <div class="nav-item" data-page="servers">🗄 服务器</div>
+    <div class="nav-item" data-page="deploy">🚀 部署机器人</div>
     <div class="nav-item" data-page="webui">🌐 WebUI</div>
-    <div class="nav-item" data-page="plans">💎 订阅方案</div>
+    <div class="nav-item" data-page="settings">⚙ 设置</div>
+    <div class="nav-item" data-page="license">🔐 授权信息</div>
     <div class="spacer"></div>
     <div class="user">
       <div><span id="userName">-</span><span class="plan-badge" id="planBadge">免费版</span></div>
-      <div style="margin-top:8px"><a id="logoutBtn" style="cursor:pointer;color:var(--muted);font-size:12px">退出登录</a></div>
+      <div style="margin-top:8px;color:var(--success);font-size:12px">● 本机已授权</div>
     </div>
   </div>
 
   <div class="content">
+    <!-- 小白用户首屏 -->
+    <div class="page active" id="page-dashboard">
+      <div class="hero">
+        <h2>欢迎使用 CK Quant</h2>
+        <p>不需要学习 Linux、Docker 或策略代码。先连接一台服务器并部署模拟盘，CK Quant 会把复杂步骤转换成清晰的操作和可验证的数据。</p>
+        <div class="hero-actions"><button class="btn" data-go="servers">添加服务器</button><button class="btn btn-ghost" data-go="deploy">开始部署</button></div>
+      </div>
+      <div class="grid-3">
+        <div class="metric-card"><div class="metric-label">已连接服务器</div><div class="metric-value" id="dashboardServerCount">0</div><div class="metric-note">集中管理本地与远程机器人</div></div>
+        <div class="metric-card"><div class="metric-label">运行中的机器人</div><div class="metric-value" id="dashboardRobotCount">0</div><div class="metric-note">巡检接入后实时更新</div></div>
+        <div class="metric-card"><div class="metric-label">当前风险状态</div><div class="metric-value" style="color:var(--success);font-size:20px">暂无告警</div><div class="metric-note">资金操作始终需要你确认</div></div>
+      </div>
+      <div class="card" style="margin-top:18px"><h3>三步开始使用</h3><div class="steps">
+        <div class="step-card done"><div class="step-number">✓</div><h4>激活终身授权</h4><p>当前设备已完成授权，可以使用全部功能。</p></div>
+        <div class="step-card"><div class="step-number">2</div><h4>连接量化服务器</h4><p>填写 IP、用户名和密码，软件会安全保存并自动连接。</p></div>
+        <div class="step-card"><div class="step-number">3</div><h4>先运行模拟盘</h4><p>确认运行稳定和策略表现后，再由你决定是否开启实盘。</p></div>
+      </div></div>
+    </div>
+
+    <div class="page" id="page-autopilot"><h2>一键自主运行</h2><p class="page-lead">AI 将按研究、生成、回测、评估、模拟部署和跟踪的顺序工作，任何实盘资金决策都由你最终确认。</p><div class="feature-card"><div class="feature-icon">▶</div><h3>自主研究流程正在接入</h3><p>授权与数据安全基础已经完成。下一阶段将接入可暂停、可恢复、全程有证据记录的状态机。</p><span class="phase-badge">开发阶段 M3</span></div></div>
+    <div class="page" id="page-chat"><h2>AI 助手</h2><p class="page-lead">用自然语言查询机器人状态、日志和回测结果。涉及写入或资金的操作会先弹出确认。</p><div class="feature-card"><div class="feature-icon">💬</div><h3>对话服务尚未配置</h3><p>请先在设置中配置你自己的 OpenAI 兼容模型服务。API Key 只会加密保存在本机。</p><span class="phase-badge">开发阶段 M2</span></div></div>
+    <div class="page" id="page-backtest"><h2>回测中心</h2><p class="page-lead">所有报告都会显示手续费、滑点、样本范围和门禁结论，不美化结果。</p><div class="feature-card"><div class="feature-icon">🧪</div><h3>暂无回测任务</h3><p>回测队列将采用单任务串行模式，保护低配电脑和正在运行的机器人。</p><span class="phase-badge">开发阶段 M2.5</span></div></div>
+    <div class="page" id="page-strategies"><h2>策略库</h2><p class="page-lead">私有策略只保存在本机和你指定的服务器，不会进入 GitHub、公开镜像或 AI 公网请求。</p><div class="feature-card"><div class="feature-icon">📚</div><h3>本地策略库为空</h3><p>后续可导入策略、查看验证状态，并以只读方式保护核心模板。</p><span class="phase-badge">开发阶段 M2.5</span></div></div>
+
     <!-- 服务器列表 -->
-    <div class="page active" id="page-servers">
-      <h2>我的服务器</h2>
+    <div class="page" id="page-servers">
+      <h2>服务器管理</h2><p class="page-lead">这里保存机器人运行位置。密码使用 Windows 系统加密，不显示明文。</p>
       <div id="serverList"></div>
       <button class="btn" id="addServerBtn" style="width:auto">+ 添加服务器</button>
     </div>
@@ -214,22 +249,15 @@
       </div>
     </div>
 
-    <!-- 订阅 -->
-    <div class="page" id="page-plans">
-      <h2>订阅方案</h2>
-      <div class="grid-3" id="planCards"></div>
-      <div class="card" style="margin-top:20px">
-        <h3>订阅说明</h3>
-        <p style="color:var(--muted);font-size:14px;line-height:1.8">
-          💰 订阅费用根据管理的资金大小决定：<br>
-          · 1000 USDT 及以内：10 USDT/月（季度/年度有优惠）<br>
-          · 1万 USDT 及以上：30 USDT/月<br>
-          · 10万 USDT 及以上：100 USDT/月<br>
-          · 50万 USDT 及以上：200 USDT/月<br><br>
-          🆓 免费版仅支持模拟盘（dry_run），付费版解锁实盘交易。
-        </p>
+    <!-- 授权 -->
+    <div class="page" id="page-license">
+      <h2>授权信息</h2>
+      <div class="card">
+        <h3>CK Quant Desktop 终身授权</h3>
+        <p style="color:var(--muted);font-size:14px;line-height:1.9">授权状态：<span style="color:var(--success)">● 已激活</span><br>授权方式：当前设备终身买断<br>价格：10,000 USDT<br>机器码：<code id="licensedMachineCode">-</code></p>
       </div>
     </div>
+    <div class="page" id="page-settings"><h2>设置</h2><p class="page-lead">模型、回测、风控和通知设置将在这里统一管理。</p><div class="coming-grid"><div class="feature-card"><div class="feature-icon">🤖</div><h3>LLM 服务</h3><p>配置 Base URL、模型和本机加密 API Key。</p><span class="phase-badge">正在开发</span></div><div class="feature-card"><div class="feature-icon">🛡</div><h3>风险控制</h3><p>设置单日亏损熔断、最大回撤和自动暂停规则。</p><span class="phase-badge">正在开发</span></div><div class="feature-card"><div class="feature-icon">🔔</div><h3>通知</h3><p>桌面通知、Telegram 和每日简报时间。</p><span class="phase-badge">正在开发</span></div><div class="feature-card"><div class="feature-icon">ℹ</div><h3>关于</h3><p>CK Quant Desktop 0.2.0 · 当前设备终身授权。</p></div></div></div>
   </div>
 </div>
 

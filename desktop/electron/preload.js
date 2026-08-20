@@ -1,7 +1,15 @@
 // CK Quant Desktop - 预加载脚本（安全桥接）
 const { contextBridge, ipcRenderer } = require('electron');
+const { clipboard } = require('electron');
 
 contextBridge.exposeInMainWorld('ckQuant', {
+  // 终身授权
+  getLicenseStatus: () => ipcRenderer.invoke('license:status'),
+  getMachineCode: () => ipcRenderer.invoke('license:machineCode'),
+  activateLicense: (code) => ipcRenderer.invoke('license:activate', { code }),
+  removeLicense: () => ipcRenderer.invoke('license:remove'),
+  copyText: (text) => clipboard.writeText(String(text || '')),
+
   // 认证
   register: (username, password) => ipcRenderer.invoke('auth:register', { username, password }),
   login: (username, password) => ipcRenderer.invoke('auth:login', { username, password }),
