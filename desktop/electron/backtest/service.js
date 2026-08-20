@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { parseResultFile } = require('./parser');
+const { evaluate } = require('./eval');
 
 const TIMEFRAMES = new Set(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '1d']);
 
@@ -19,11 +20,15 @@ function validateSubmit(input = {}) {
   if (!/^\/CK_Quant\/user_data\/[A-Za-z0-9_.\/-]+\.json$/.test(configPath) || configPath.includes('..')) throw new Error('配置文件必须位于容器 /CK_Quant/user_data 下');
   const container = String(input.container || 'CK_Quant').trim();
   if (!/^[A-Za-z0-9_.-]{1,128}$/.test(container)) throw new Error('Docker 容器名称不合法');
+  const pairs = [...new Set((Array.isArray(input.pairs) ? input.pairs : []).map((pair) => String(pair || '').trim()).filter(Boolean))];
+  if (pairs.length > 100 || pairs.some((pair) => !/^[A-Z0-9._-]+\/[A-Z0-9._-]+(?::[A-Z0-9._-]+)?$/.test(pair))) {
+    throw new Error('交易对列表不合法');
+  }
   return {
     strategy, timeframe, timerange, configPath, container,
     fee: Math.max(0, Math.min(0.01, Number(input.fee ?? 0.0004))),
     slippage: Math.max(0, Math.min(0.02, Number(input.slippage ?? 0.0005))),
-    detail1m: Boolean(input.detail1m),
+    detail1m: Boolean(input.detail1m), pairs,
   };
 }
 
@@ -46,13 +51,15 @@ function runDocker(args, onLine = () => {}, childRef = () => {}) {
 }
 
 class BacktestService {
-  constructor({ store, dataDir, send, runner = runDocker }) {
+  constructor({ store, dataDir, send, runner = runDocker, strategyResolver = () => null }) {
     this.store = store;
     this.dataDir = dataDir;
     this.send = send;
     this.runner = runner;
+    this.strategyResolver = strategyResolver;
     this.running = null;
     this.pumping = false;
+    this.waiters = new Map();
     fs.mkdirSync(path.join(dataDir, 'results'), { recursive: true });
     this.recoverInterrupted();
   }
@@ -93,6 +100,7 @@ class BacktestService {
       jobId, strategy: options.strategy, status: 'queued', createdAt: now(),
       timeframe: options.timeframe, timerange: options.timerange, configPath: options.configPath,
       container: options.container, fee: options.fee, slippage: options.slippage, detail1m: options.detail1m,
+      pairs: options.pairs,
       stages: { download: 0, run: 0, parse: 0, eval: 0 }, resultRef: null, evalResult: null, error: null,
     };
     this.store.update('jobs', { _schema: 1, jobs: [] }, (data) => { data.jobs.push(job); return data; });
@@ -122,8 +130,25 @@ class BacktestService {
     if (!['queued', 'running'].includes(job.status)) return { ok: false, error: '该任务已经结束，不能取消' };
     if (this.running?.jobId === jobId && this.running.child) this.running.child.kill();
     this.update(jobId, { status: 'cancelled', endedAt: now(), error: null });
+    this.resolveWaiters(jobId);
     this.store.appendAudit({ actor: 'user', action: 'backtest.cancel', params: {}, result: 'ok', jobId });
     return { ok: true };
+  }
+
+  wait(jobId) {
+    const current = this.get(jobId);
+    if (!current) return Promise.reject(new Error('回测任务不存在'));
+    if (['done', 'failed', 'cancelled'].includes(current.status)) return Promise.resolve(current);
+    return new Promise((resolve) => {
+      const list = this.waiters.get(jobId) || [];
+      list.push(resolve); this.waiters.set(jobId, list);
+    });
+  }
+
+  resolveWaiters(jobId) {
+    const job = this.get(jobId);
+    for (const resolve of this.waiters.get(jobId) || []) resolve(job);
+    this.waiters.delete(jobId);
   }
 
   progress(job, stage, progress, message) {
@@ -148,11 +173,21 @@ class BacktestService {
     this.running = { jobId: job.jobId, child: null };
     try {
       this.progress(job, 'download', 1, '使用容器中已有历史数据；缺少数据时 Freqtrade 会明确报错');
+      const localStrategy = this.strategyResolver(job.strategy);
+      if (localStrategy?.code) {
+        const runtimeDirectory = path.join(this.dataDir, 'runtime');
+        fs.mkdirSync(runtimeDirectory, { recursive: true });
+        const localFile = path.join(runtimeDirectory, `${job.strategy}.py`);
+        fs.writeFileSync(localFile, localStrategy.code, { encoding: 'utf8', mode: 0o600 });
+        const copiedStrategy = await this.runner(['cp', localFile, `${job.container}:/CK_Quant/user_data/strategies/${job.strategy}.py`]);
+        if (copiedStrategy.code !== 0) throw new Error(`无法把本机私有策略同步到回测容器：${copiedStrategy.stderr.slice(-500)}`);
+      }
       const outputBase = `/CK_Quant/user_data/backtest_results/desktop_${job.jobId}`;
       const args = ['exec', job.container, 'freqtrade', 'backtesting', '--config', job.configPath, '--strategy', job.strategy,
         '--timeframe', job.timeframe, '--fee', String(job.fee), '--export', 'trades', '--export-filename', outputBase];
       if (job.timerange) args.push('--timerange', job.timerange);
       if (job.detail1m && job.timeframe !== '1m') args.push('--timeframe-detail', '1m');
+      if (job.pairs?.length) args.push('--pairs', ...job.pairs);
       let lineCount = 0;
       const executed = await this.runner(args, (line) => {
         lineCount += 1;
@@ -179,11 +214,13 @@ class BacktestService {
       this.update(job.jobId, { status: 'done', endedAt: now(), resultRef, evalResult: result.evalResult, stages: { download: 1, run: 1, parse: 1, eval: 1 } });
       this.store.appendAudit({ actor: 'system', action: 'backtest.done', params: { strategy: job.strategy }, result: 'ok', jobId: job.jobId });
       this.send('backtest:done', { jobId: job.jobId, resultRef, evalResult: result.evalResult, ts: now() });
+      this.resolveWaiters(job.jobId);
     } catch (error) {
       if (this.get(job.jobId)?.status !== 'cancelled') {
         this.update(job.jobId, { status: 'failed', endedAt: now(), error: error.message });
         this.store.appendAudit({ actor: 'system', action: 'backtest.failed', params: { strategy: job.strategy }, result: 'error', jobId: job.jobId });
         this.send('backtest:failed', { jobId: job.jobId, error: error.message, ts: now() });
+        this.resolveWaiters(job.jobId);
       }
     } finally { this.running = null; }
   }
@@ -196,6 +233,17 @@ class BacktestService {
     ];
     const valueAt = (object, key) => key.split('.').reduce((value, part) => value?.[part], object);
     return metrics.map(([label, key]) => ({ metric: label, values: Object.fromEntries(jobs.map((job) => [job.jobId, valueAt(job.result, key)])) }));
+  }
+
+  reevaluate(jobId, evidence = {}) {
+    const job = this.get(jobId);
+    if (!job?.result || !job.resultRef) return { ok: false, error: '回测结果不存在' };
+    const evalResult = evaluate(job.result, evidence);
+    const result = { ...job.result, evalResult };
+    fs.writeFileSync(path.join(this.dataDir, job.resultRef), `${JSON.stringify(result, null, 2)}\n`, 'utf8');
+    this.update(jobId, { evalResult });
+    this.store.appendAudit({ actor: 'system', action: 'backtest.reevaluate', params: { evidence: Object.keys(evidence) }, result: evalResult.passed ? 'passed' : 'failed', jobId });
+    return { ok: true, evalResult, result };
   }
 }
 

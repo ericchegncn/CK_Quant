@@ -6,11 +6,31 @@ function now() { return new Date().toISOString(); }
 function validName(name) { return /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(String(name || '')); }
 
 class StrategyLibraryService {
-  constructor({ store, dataDir, validateImpl = validateStrategy }) {
+  constructor({ store, dataDir, validateImpl = validateStrategy, publicTemplatePath = path.join(__dirname, '../../resources/ckq_public_template.py') }) {
     this.store = store;
     this.validateImpl = validateImpl;
     this.directory = path.join(dataDir, 'strategies');
     fs.mkdirSync(this.directory, { recursive: true });
+    this.ensurePublicTemplate(publicTemplatePath);
+  }
+
+  ensurePublicTemplate(publicTemplatePath) {
+    if (!fs.existsSync(publicTemplatePath)) return;
+    const name = 'CKQPublicTemplate';
+    const filename = `${name}.py`;
+    const target = path.join(this.directory, filename);
+    const code = fs.readFileSync(publicTemplatePath, 'utf8');
+    if (!fs.existsSync(target) || fs.readFileSync(target, 'utf8') !== code) fs.writeFileSync(target, code, { encoding: 'utf8', mode: 0o600 });
+    this.store.update('strategy_index', { _schema: 1, strategies: [] }, (data) => {
+      const current = data.strategies.find((item) => item.name === name);
+      const record = {
+        ...(current || {}), name, file: filename, source: 'official', base: 'Freqtrade SampleStrategy', status: current?.status || 'draft',
+        locked: true, createdAt: current?.createdAt || now(), updatedAt: now(), backtestIds: current?.backtestIds || [], evalId: current?.evalId || null,
+        warnings: [], notes: '基于 Freqtrade 官方公开 SampleStrategy 的 15m 教学模板；不含任何私人策略逻辑。',
+      };
+      if (current) Object.assign(current, record); else data.strategies.unshift(record);
+      return data;
+    });
   }
 
   load() { return this.store.read('strategy_index', { _schema: 1, strategies: [] }); }
@@ -89,6 +109,21 @@ class StrategyLibraryService {
     this.store.update('strategy_index', { _schema: 1, strategies: [] }, (data) => {
       const item = data.strategies.find((strategy) => strategy.name === name);
       if (item) { item.status = status; item.updatedAt = now(); found = true; }
+      return data;
+    });
+    return found ? { ok: true } : { ok: false, error: '策略不存在' };
+  }
+
+  linkBacktest(name, jobId, status = null) {
+    let found = false;
+    this.store.update('strategy_index', { _schema: 1, strategies: [] }, (data) => {
+      const item = data.strategies.find((strategy) => strategy.name === name);
+      if (item) {
+        item.backtestIds = [...new Set([...(item.backtestIds || []), jobId])].slice(-50);
+        if (status) item.status = status;
+        item.updatedAt = now();
+        found = true;
+      }
       return data;
     });
     return found ? { ok: true } : { ok: false, error: '策略不存在' };

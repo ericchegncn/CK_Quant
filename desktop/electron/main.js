@@ -9,10 +9,10 @@ const { registerBacktestHandlers } = require('./backtest');
 const { registerStrategyLibraryHandlers } = require('./strategy');
 const { registerOpsHandlers } = require('./ops');
 const { registerNotifyHandlers } = require('./notify');
+const { registerAutopilotHandlers } = require('./autopilot');
 
 // ============ 数据存储（JSON + 加密） ============
 const DATA_DIR = path.join(app.getPath('userData'), 'data');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SERVERS_FILE = path.join(DATA_DIR, 'servers.json');
 
 function ensureDataDir() {
@@ -44,45 +44,6 @@ function decryptSecret(enc) {
     return safeStorage.decryptString(Buffer.from(enc, 'base64'));
   } catch (e) { return ''; }
 }
-
-// 密码哈希（PBKDF2 + salt）
-function hashPassword(password, salt) {
-  return crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
-}
-
-// ============ 登录 / 订阅 ============
-function registerUser(username, password) {
-  const users = readJson(USERS_FILE, {});
-  if (users[username]) return { ok: false, error: '用户名已存在' };
-  const salt = crypto.randomBytes(16).toString('hex');
-  users[username] = {
-    salt,
-    hash: hashPassword(password, salt),
-    // 订阅：free / starter / pro / elite（对应 10U/30U/100U/200U 档）
-    plan: 'free',
-    planExpires: null,
-    createdAt: new Date().toISOString(),
-  };
-  writeJson(USERS_FILE, users);
-  return { ok: true };
-}
-
-function loginUser(username, password) {
-  const users = readJson(USERS_FILE, {});
-  const u = users[username];
-  if (!u) return { ok: false, error: '用户名或密码错误' };
-  if (u.hash !== hashPassword(password, u.salt)) return { ok: false, error: '用户名或密码错误' };
-  return { ok: true, plan: u.plan, planExpires: u.planExpires };
-}
-
-// 订阅档位：free 只能模拟盘；付费解锁实盘
-const PLANS = {
-  free:   { label: '免费版', maxCapital: 0,    monthlyU: 0,    live: false },
-  starter:{ label: '基础版', maxCapital: 1000,  monthlyU: 10,   live: true },
-  pro:    { label: '专业版', maxCapital: 10000, monthlyU: 30,   live: true },
-  elite:  { label: '旗舰版', maxCapital: 100000,monthlyU: 100,  live: true },
-  whale:  { label: '鲸鱼版', maxCapital: 500000,monthlyU: 200,  live: true },
-};
 
 // ============ SSH 部署引擎（ssh2） ============
 const { Client } = require('ssh2');
@@ -303,6 +264,10 @@ async function deployRobot(ssh, config, onLog) {
             config.apiPassword = parsed.api_server.password;
           }
         }
+        if (config.forceDryRun) {
+          parsed.dry_run = true;
+          if (parsed.dry_run_wallet == null) parsed.dry_run_wallet = config.dryRunWallet || 10000;
+        }
         userCfg = JSON.stringify(parsed, null, 2);
       } catch (e) {
         log('⚠️ 用户 config 解析失败，原样上传: ' + e.message);
@@ -418,8 +383,6 @@ function createWindow() {
 }
 
 // ============ IPC ============
-// 当前会话状态
-let session = null;
 let sshCache = new Map(); // serverId -> SSHClient
 
 const licenseService = new LicenseService({
@@ -428,31 +391,10 @@ const licenseService = new LicenseService({
   safeStorage,
 });
 
-function setLicenseSession(status) {
-  session = status?.valid
-    ? { username: status.payload.customer || '授权用户', plan: 'lifetime', licenseId: status.payload.licenseId }
-    : null;
-}
-
-registerLicenseHandlers(ipcMain, licenseService, setLicenseSession);
-
-ipcMain.handle('auth:register', () => ({ ok: false, error: '新版采用机器码终身授权，无需注册账号' }));
-ipcMain.handle('auth:login', () => {
-  const licensed = licenseService.verify();
-  if (licensed.valid) {
-    setLicenseSession(licensed);
-    return { ok: true, ...session };
-  }
-  return { ok: false, error: '请先使用本机注册码激活终身授权' };
-});
-ipcMain.handle('auth:logout', () => { session = null; return { ok: true }; });
-ipcMain.handle('auth:session', () => licenseService.verify().valid ? session : null);
-ipcMain.handle('plans:list', () => ({ lifetime: { label: '终身授权', priceU: 10000, live: true } }));
+registerLicenseHandlers(ipcMain, licenseService);
 
 function isLicensed() {
-  const status = licenseService.verify();
-  if (status.valid && !session) setLicenseSession(status);
-  return status.valid;
+  return licenseService.verify().valid;
 }
 
 function shellQuote(value) {
@@ -543,8 +485,7 @@ function updateServerStatus(serverId, status) {
   }
 }
 
-ipcMain.handle('deploy:run', async (e, { serverId, config }) => {
-  if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
+async function performDeployment(serverId, config = {}) {
   const servers = readJson(SERVERS_FILE, {});
   const s = servers[serverId];
   if (!s) return { ok: false, error: '服务器不存在' };
@@ -582,6 +523,28 @@ ipcMain.handle('deploy:run', async (e, { serverId, config }) => {
     }
   }
   return result;
+}
+
+async function deployPaperStrategy({ serverId, strategy, code }) {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(String(serverId || '')) || !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(String(strategy || ''))) {
+    return { ok: false, error: '模拟盘部署参数不合法' };
+  }
+  const servers = readJson(SERVERS_FILE, {});
+  const server = servers[serverId];
+  if (!server) return { ok: false, error: '所选模拟盘服务器不存在' };
+  const ssh = await ensureConnection(serverId);
+  if (!ssh) return { ok: false, error: '无法连接模拟盘服务器' };
+  const home = (await ssh.exec('echo $HOME')).stdout.trim() || '/root';
+  const existing = await ssh.exec(`cat ${shellQuote(`${home}/CK_Quant/user_data/config.json`)}`, 30000);
+  return performDeployment(serverId, {
+    strategy, strategyContent: code, configContent: existing.code === 0 ? existing.stdout : null,
+    exchange: server.exchange || 'binance', dryRun: true, forceDryRun: true, dryRunWallet: 10000,
+  });
+}
+
+ipcMain.handle('deploy:run', async (e, { serverId, config }) => {
+  if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
+  return performDeployment(serverId, config);
 });
 ipcMain.handle('deploy:disconnect', (e, serverId) => {
   if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
@@ -830,18 +793,19 @@ ipcMain.handle('webui:getCredentials', async (e, serverId) => {
   };
 });
 
-const backtestRuntime = registerBacktestHandlers(ipcMain, {
-  dataDir: DATA_DIR,
-  isLicensed,
-  send: (channel, payload) => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
-  },
-});
 const strategyLibrary = registerStrategyLibraryHandlers(ipcMain, {
   dataDir: DATA_DIR,
   isLicensed,
   dialog,
   getWindow: () => mainWindow,
+});
+const backtestRuntime = registerBacktestHandlers(ipcMain, {
+  dataDir: DATA_DIR,
+  isLicensed,
+  strategyResolver: (name) => strategyLibrary.read(name),
+  send: (channel, payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+  },
 });
 const notifyRuntime = registerNotifyHandlers(ipcMain, {
   dataDir: DATA_DIR,
@@ -851,6 +815,7 @@ const notifyRuntime = registerNotifyHandlers(ipcMain, {
     if (Notification.isSupported()) new Notification({ title, body: message }).show();
   },
 });
+let autopilotRuntime = null;
 const opsRuntime = registerOpsHandlers(ipcMain, {
   dataDir: DATA_DIR,
   isLicensed,
@@ -862,6 +827,7 @@ const opsRuntime = registerOpsHandlers(ipcMain, {
   robotAction,
   send: (channel, payload) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+    if (channel === 'monitor:update') autopilotRuntime?.observe(payload);
   },
   notify: (alert) => notifyRuntime.send({ title: `CK Quant · ${alert.level === 'critical' ? '严重告警' : '运行提醒'}`, message: `${alert.serverName}: ${alert.message}`, level: alert.level }),
 });
@@ -877,9 +843,19 @@ const aiRuntime = registerAIHandlers(ipcMain, {
   robotAction,
   submitBacktest: (input) => backtestRuntime.submit(input),
 });
+autopilotRuntime = registerAutopilotHandlers(ipcMain, {
+  dataDir: DATA_DIR,
+  isLicensed,
+  backtests: backtestRuntime,
+  strategies: strategyLibrary,
+  notify: (message) => notifyRuntime.send(message),
+  deployPaper: deployPaperStrategy,
+  send: (channel, payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+  },
+});
 
 app.whenReady().then(() => {
-  setLicenseSession(licenseService.verify());
   createWindow();
   opsRuntime.start();
   app.on('activate', () => {

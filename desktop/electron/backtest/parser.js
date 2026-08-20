@@ -72,6 +72,7 @@ function parseResult(raw, options = {}) {
     expectedValue: mean(ratios),
     evCi95,
     annualReturn,
+    marketChange: finite(block.market_change, NaN),
     totalProfitRatio: ratios.reduce((sum, value) => sum + value, 0),
     totalProfitAbs: finite(block.profit_total_abs) - trades.reduce((sum, trade) => sum + finite(trade.stake_amount) * 2 * slippage, 0),
     maxDrawdown,
@@ -92,7 +93,10 @@ function parseResult(raw, options = {}) {
     ],
     notes: [],
   };
-  result.evalResult = evaluate(result, options.evidence || {});
+  const automaticEvidence = Number.isFinite(result.marketChange) && result.backtestDays > 0
+    ? { buyHoldAnnualReturn: Math.pow(Math.max(0.000001, 1 + result.marketChange), 365 / result.backtestDays) - 1 }
+    : {};
+  result.evalResult = evaluate(result, { ...automaticEvidence, ...(options.evidence || {}) });
   return result;
 }
 

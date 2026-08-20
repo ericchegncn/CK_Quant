@@ -2,7 +2,7 @@ const { JsonStore } = require('../core/store');
 const { BacktestService } = require('./service');
 
 function registerBacktestHandlers(ipcMain, ctx) {
-  const service = new BacktestService({ store: new JsonStore(ctx.dataDir), dataDir: ctx.dataDir, send: ctx.send });
+  const service = new BacktestService({ store: new JsonStore(ctx.dataDir), dataDir: ctx.dataDir, send: ctx.send, strategyResolver: ctx.strategyResolver });
   const guard = () => ctx.isLicensed() ? null : { ok: false, error: '软件尚未激活' };
   ipcMain.handle('backtest:submit', (_event, input) => guard() || service.submit(input));
   ipcMain.handle('backtest:list', (_event, input) => guard() || { ok: true, jobs: service.list(input?.limit) });

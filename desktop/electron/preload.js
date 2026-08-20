@@ -10,13 +10,6 @@ contextBridge.exposeInMainWorld('ckQuant', {
   removeLicense: () => ipcRenderer.invoke('license:remove'),
   copyText: (text) => clipboard.writeText(String(text || '')),
 
-  // 认证
-  register: (username, password) => ipcRenderer.invoke('auth:register', { username, password }),
-  login: (username, password) => ipcRenderer.invoke('auth:login', { username, password }),
-  logout: () => ipcRenderer.invoke('auth:logout'),
-  getSession: () => ipcRenderer.invoke('auth:session'),
-  getPlans: () => ipcRenderer.invoke('plans:list'),
-
   // 服务器管理
   listServers: () => ipcRenderer.invoke('server:list'),
   saveServer: (data) => ipcRenderer.invoke('server:save', data),
@@ -72,6 +65,16 @@ contextBridge.exposeInMainWorld('ckQuant', {
   onBacktestProgress: (cb) => subscribe('backtest:progress', cb),
   onBacktestDone: (cb) => subscribe('backtest:done', cb),
   onBacktestFailed: (cb) => subscribe('backtest:failed', cb),
+
+  // 一键自主运行（可暂停、恢复，所有状态持久化）
+  startAutopilot: (input) => ipcRenderer.invoke('autopilot:start', input),
+  getAutopilotStatus: () => ipcRenderer.invoke('autopilot:status'),
+  pauseAutopilot: () => ipcRenderer.invoke('autopilot:pause'),
+  resumeAutopilot: () => ipcRenderer.invoke('autopilot:resume'),
+  getAutopilotHistory: (limit) => ipcRenderer.invoke('autopilot:history', { limit }),
+  decideAutopilot: (decision, params) => ipcRenderer.invoke('autopilot:decide', { decision, params }),
+  onAutopilotEvent: (cb) => subscribe('autopilot:event', cb),
+  onAutopilotAwaitingUser: (cb) => subscribe('autopilot:awaitingUser', cb),
 
   // 本地策略库（私有代码仅保存在本机应用数据目录）
   listLocalStrategies: () => ipcRenderer.invoke('strategy:localList'),
