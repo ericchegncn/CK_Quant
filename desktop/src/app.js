@@ -61,6 +61,7 @@ document.querySelectorAll('.nav-item').forEach((item) => {
     if (item.dataset.page === 'settings') loadAISettings();
     if (item.dataset.page === 'backtest') loadBacktests();
     if (item.dataset.page === 'strategies') loadLocalStrategies();
+    if (item.dataset.page === 'autopilot') renderAutopilot();
   });
 });
 
@@ -190,7 +191,7 @@ function renderDeployWizard() {
     <div class="card">
       <h3>5. 策略与配置</h3>
       <div class="grid-2">
-        <div><label>策略名称（类名）</label><input id="d_strategy" value="CK_Trend_15m" placeholder="如：CK_Trend_15m"></div>
+        <div><label>策略名称（类名）</label><input id="d_strategy" value="" placeholder="如：MyPrivateStrategy"></div>
         <div><label>每笔金额 (USDT) 或本金百分比（如 10%）</label><input id="d_stake" value="100"></div>
         <div><label>最大同时持仓</label><input id="d_maxopen" value="10"></div>
         <div><label>运行模式</label>
@@ -994,6 +995,92 @@ $('#strategyImportLockedBtn').addEventListener('click', async () => {
 $('#strategyNewBtn').addEventListener('click', () => {
   renderLocalStrategyEditor(null, BLANK_STRATEGY);
 });
+
+// ============ 一键自主运行 ============
+const AUTO_ORDER = ['RESEARCHING', 'GENERATING', 'BACKTESTING', 'EVALUATING', 'SIM_DEPLOYING', 'SIM_TRACKING', 'AWAITING_USER'];
+const AUTO_LABELS = { RESEARCHING: '研究行情', GENERATING: '生成变体', BACKTESTING: '串行回测', EVALUATING: '统计评估', SIM_DEPLOYING: '部署模拟盘', SIM_TRACKING: '模拟跟踪', AWAITING_USER: '等待你的决定', PAUSED: '已安全暂停', COMPLETED: '本轮已完成', FAILED: '运行失败' };
+let currentAutopilot = null;
+
+function appendAutopilotLog(detail, ts = new Date().toISOString()) {
+  const log = $('#autoLog');
+  if (!log || !detail) return;
+  if (log.textContent.startsWith('点击“一键')) log.textContent = '';
+  const time = new Date(ts).toLocaleTimeString('zh-CN', { hour12: false });
+  log.textContent += `${log.textContent ? '\n' : ''}[${time}] ${detail}`;
+  log.scrollTop = log.scrollHeight;
+}
+
+function renderAutopilotRun(run) {
+  currentAutopilot = run;
+  const state = run?.state || 'IDLE';
+  const activeIndex = AUTO_ORDER.indexOf(state === 'PAUSED' ? run?.pausedFrom : state);
+  document.querySelectorAll('.autopilot-stage').forEach((node, index) => {
+    node.classList.toggle('active', index === activeIndex);
+    node.classList.toggle('done', activeIndex > index || state === 'COMPLETED');
+  });
+  $('#autoStateText').textContent = AUTO_LABELS[state] || '尚未开始';
+  $('#autoDetailText').textContent = run?.current?.detail || '';
+  $('#autoProgress').style.width = `${Math.round((run?.current?.progress || 0) * 100)}%`;
+  const running = ['RESEARCHING', 'GENERATING', 'BACKTESTING', 'EVALUATING', 'SIM_DEPLOYING', 'SIM_TRACKING', 'LIVE_TRACKING', 'IMPROVING'].includes(state);
+  $('#autoStartBtn').disabled = Boolean(run);
+  $('#autoStartBtn').textContent = running ? '⏳ 正在自主运行…' : run ? '本轮流程进行中' : '▶ 一键自主运行';
+  $('#autoPauseBtn').disabled = !running;
+  $('#autoResumeBtn').disabled = state !== 'PAUSED';
+  const artifacts = run?.artifacts || {};
+  const research = artifacts.researchReport;
+  const report = artifacts.evalReport;
+  $('#autoArtifacts').innerHTML = run ? `
+    <div class="artifact-card"><span>研究报告</span><strong>${research ? `${research.candidates?.length || 0} 个候选 / 扫描 ${research.scanned || 0}` : '待生成'}</strong></div>
+    <div class="artifact-card"><span>本机私有变体</span><strong>${artifacts.strategies?.length || 0} 个</strong></div>
+    <div class="artifact-card"><span>串行回测</span><strong>${artifacts.backtestJobs?.length || 0} 个任务</strong></div>
+    <div class="artifact-card"><span>门禁结论</span><strong>${esc(report?.conclusion || '待评估')}</strong></div>` : '';
+  const confirmBox = $('#autoConfirm');
+  if (state === 'AWAITING_USER' && run.awaitingUser) {
+    confirmBox.classList.add('show');
+    const improving = run.awaitingUser.type === 'improve_confirm';
+    $('#autoConfirmTitle').textContent = improving ? '完整门禁未通过' : '模拟验证建议';
+    $('#autoConfirmText').textContent = report?.conclusion || '请查看本轮证据后决定。';
+    $('#autoConfirmBtn').textContent = improving ? '确认结果并安全结束' : '确认进入下一阶段';
+  } else confirmBox.classList.remove('show');
+}
+
+async function loadAutopilotTemplates() {
+  const response = await api.listLocalStrategies();
+  if (!response.ok) return;
+  const official = (response.strategies || []).filter((item) => item.source === 'official');
+  $('#autoTemplate').innerHTML = official.map((item) => `<option value="${esc(item.name)}">🌐 ${esc(item.name)}（Freqtrade 公开模板）</option>`).join('') || '<option value="">公开模板不可用</option>';
+  $('#autoPaperServer').innerHTML = '<option value="">暂不自动部署</option>' + servers.map((server) => `<option value="${esc(server.id)}">${esc(server.name)}（${esc(server.host)}）</option>`).join('');
+}
+
+async function renderAutopilot() {
+  await loadAutopilotTemplates();
+  const response = await api.getAutopilotStatus();
+  if (response.ok) renderAutopilotRun(response.run);
+}
+
+$('#autoStartBtn').addEventListener('click', async () => {
+  if (!confirm('将使用 Freqtrade 官方公开模板读取本机行情、生成参数变体并依次回测。不会读取你的私人策略作为模板。过程可能持续较久，确定开始吗？')) return;
+  $('#autoLog').textContent = '';
+  const response = await api.startAutopilot({
+    template: $('#autoTemplate').value, timerange: $('#autoTimerange').value.trim(), variantCount: Number($('#autoVariantCount').value),
+    container: $('#autoContainer').value.trim(), configPath: '/CK_Quant/user_data/config.json', timeframe: '15m', detail1m: $('#autoDetail1m').checked,
+    paperServerId: $('#autoPaperServer').value, fee: 0.0004, slippage: 0.0005,
+  });
+  if (!response.ok) { toast(response.error || '无法启动'); return; }
+  appendAutopilotLog('自主流程已启动'); await renderAutopilot();
+});
+$('#autoPauseBtn').addEventListener('click', async () => { const response = await api.pauseAutopilot(); if (!response.ok) toast(response.error); else appendAutopilotLog('已请求在安全检查点暂停'); });
+$('#autoResumeBtn').addEventListener('click', async () => { const response = await api.resumeAutopilot(); if (!response.ok) toast(response.error); else appendAutopilotLog('流程已恢复'); });
+$('#autoConfirmBtn').addEventListener('click', async () => { const response = await api.decideAutopilot('confirm', {}); if (!response.ok) toast(response.error); else { toast('已记录你的决定'); await renderAutopilot(); } });
+$('#autoRejectBtn').addEventListener('click', async () => { const response = await api.decideAutopilot('reject', {}); if (!response.ok) toast(response.error); else { toast('本轮已结束'); await renderAutopilot(); } });
+$('#autoHistoryBtn').addEventListener('click', async () => {
+  const panel = $('#autoHistoryPanel'); panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  if (panel.style.display === 'none') return;
+  const response = await api.getAutopilotHistory(20);
+  $('#autoHistoryList').innerHTML = response.ok && response.runs?.length ? response.runs.map((run) => `<div class="job-item"><div><div class="job-title">${esc(run.runId)}</div><div class="job-meta">${new Date(run.startedAt).toLocaleString('zh-CN')} · ${esc(run.outcome || run.current?.detail || '')}</div></div><span class="job-status ${run.state === 'COMPLETED' ? 'done' : run.state === 'PAUSED' ? 'queued' : 'running'}">${esc(AUTO_LABELS[run.state] || run.state)}</span></div>`).join('') : '<div class="chat-empty">暂无历史运行</div>';
+});
+api.onAutopilotEvent((event) => { appendAutopilotLog(event.detail, event.ts); renderAutopilot(); });
+api.onAutopilotAwaitingUser(() => renderAutopilot());
 
 // ============ 初始化 ============
 (async () => {

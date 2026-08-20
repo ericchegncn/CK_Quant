@@ -30,19 +30,25 @@ function gate(pass, value, threshold, detail, status = pass ? 'passed' : 'failed
 }
 
 function evaluate(result, evidence = {}) {
-  const periodCounts = Object.values(result.periods || {}).map((period) => finite(period.trades));
-  const hasThreeRegimes = periodCounts.length >= 3 && periodCounts.every((count) => count >= 30);
+  const derivedBuyHold = Number.isFinite(result.marketChange) && finite(result.backtestDays) > 0
+    ? Math.pow(Math.max(0.000001, 1 + result.marketChange), 365 / result.backtestDays) - 1
+    : null;
+  const buyHoldAnnualReturn = evidence.buyHoldAnnualReturn ?? derivedBuyHold;
+  const regimes = Array.isArray(evidence.regimes) ? evidence.regimes : [];
+  const periodCounts = regimes.map((period) => finite(period.trades));
+  const regimeKinds = new Set(regimes.map((period) => period.regime));
+  const hasThreeRegimes = periodCounts.length >= 3 && periodCounts.every((count) => count >= 30) && ['bull', 'bear', 'range'].every((kind) => regimeKinds.has(kind));
   const spanOk = finite(result.backtestDays) >= 730;
-  const g2Ready = periodCounts.length >= 3;
+  const g2Ready = regimes.length >= 3;
   const gates = {
     G1: gate(result.trades >= 300, result.trades, '>= 300', `共 ${result.trades} 笔交易`),
     G2: g2Ready
       ? gate(spanOk && hasThreeRegimes, `${result.backtestDays} 天`, '>= 2 年且三种市场各 >= 30 笔', '历史跨度和市场状态覆盖')
-      : gate(spanOk, `${result.backtestDays} 天`, '>= 2 年且覆盖牛熊震荡', '缺少市场状态标注，按规格记为警告', 'warning'),
+      : gate(false, `${result.backtestDays} 天`, '>= 2 年且覆盖牛熊震荡', '缺少可验证的牛市、熊市和震荡样本证据', 'not_evaluated'),
     G3: gate(result.expectedValue > 0 && result.evCi95[0] > 0, result.expectedValue, '均值 > 0 且 95%CI 下界 > 0', `95%CI [${result.evCi95.map((v) => v.toFixed(6)).join(', ')}]`),
-    G4: evidence.buyHoldAnnualReturn == null
+    G4: buyHoldAnnualReturn == null
       ? gate(false, result.annualReturn, '> 同池买入持有基准', '尚未计算买入持有基准', 'not_evaluated')
-      : gate(result.annualReturn > 0 && result.annualReturn > evidence.buyHoldAnnualReturn, result.annualReturn, `> ${evidence.buyHoldAnnualReturn}`, '与同池买入持有年化比较'),
+      : gate(result.annualReturn > 0 && result.annualReturn > buyHoldAnnualReturn, result.annualReturn, `> ${buyHoldAnnualReturn}`, '与同池买入持有年化比较'),
     G5: gate(result.maxDrawdown < 0.30, result.maxDrawdown, '< 0.30', `最大回撤 ${(result.maxDrawdown * 100).toFixed(2)}%`),
     G6: gate(result.profitFactor >= 1, result.profitFactor, '>= 1.0', `利润因子 ${result.profitFactor.toFixed(3)}`),
     G7: evidence.walkForward?.pass == null
@@ -56,7 +62,7 @@ function evaluate(result, evidence = {}) {
       ? gate(false, '未执行', '策略期望 >= 2x 随机基线', '需要随机入场基线回测', 'not_evaluated')
       : gate(result.expectedValue >= 2 * evidence.randomBaselineEv, result.expectedValue, `>= ${2 * evidence.randomBaselineEv}`, `随机基线 ${evidence.randomBaselineEv}`),
   };
-  const required = Object.values(gates).filter((item) => item.status !== 'warning');
+  const required = Object.values(gates);
   const passed = required.every((item) => item.pass);
   const evaluated = required.filter((item) => item.status !== 'not_evaluated').length;
   return {

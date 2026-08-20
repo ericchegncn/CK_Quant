@@ -10,14 +10,14 @@ const { BacktestService, validateSubmit } = require('../electron/backtest/servic
 
 function fixture(strategy = 'TestStrategy', count = 400) {
   const trades = Array.from({ length: count }, (_, index) => ({
-    pair: index % 3 === 0 ? 'BTC/USDT:USDT' : index % 3 === 1 ? 'ETH/USDT:USDT' : 'SOL/USDT:USDT',
+    pair: index % 4 === 0 ? 'BTC/USDT:USDT' : index % 4 === 1 ? 'ETH/USDT:USDT' : index % 4 === 2 ? 'SOL/USDT:USDT' : 'BNB/USDT:USDT',
     close_date: `2025-${String((index % 12) + 1).padStart(2, '0')}-15 00:00:00`,
-    profit_ratio: index % 3 === 0 ? -0.004 : 0.006,
-    profit_abs: index % 3 === 0 ? -0.4 : 0.6,
+    profit_ratio: index % 4 === 0 ? -0.004 : 0.006,
+    profit_abs: index % 4 === 0 ? -0.4 : 0.6,
     stake_amount: 100,
-    exit_reason: index % 3 === 0 ? 'stop_loss' : 'custom_exit',
+    exit_reason: index % 4 === 0 ? 'stop_loss' : 'custom_exit',
   }));
-  return { strategy: { [strategy]: { trades, timeframe: '15m', timerange: '20240101-20260101', backtest_days: 731, cagr: 0.2, max_drawdown_account: 0.12, profit_total_abs: 80, sharpe: 1.2, calmar: 1.6 } } };
+  return { strategy: { [strategy]: { trades, timeframe: '15m', timerange: '20240101-20260101', backtest_days: 731, cagr: 0.2, market_change: 0.10, max_drawdown_account: 0.12, profit_total_abs: 80, sharpe: 1.2, calmar: 1.6 } } };
 }
 
 test('backtest parser recalculates metrics and explicitly marks incomplete gates', () => {
@@ -29,18 +29,32 @@ test('backtest parser recalculates metrics and explicitly marks incomplete gates
   assert.equal(result.assumptions.some((item) => item.includes('资金费率')), true);
   assert.equal(result.evalResult.complete, false);
   assert.equal(result.evalResult.gates.G7.status, 'not_evaluated');
+  assert.notEqual(result.evalResult.gates.G4.status, 'not_evaluated');
 });
 
-test('G1-G10 evaluation cannot pass when required evidence is absent', () => {
+test('G1-G10 evaluation cannot pass when extended evidence is absent', () => {
   const result = parseResult(fixture(), { strategy: 'TestStrategy', slippage: 0 });
   const evaluated = evaluate(result, {});
   assert.equal(evaluated.passed, false);
-  assert.equal(evaluated.gates.G4.pass, false);
+  assert.notEqual(evaluated.gates.G4.status, 'not_evaluated');
   assert.equal(evaluated.gates.G10.pass, false);
 });
 
+test('G1-G10 passes only when every deterministic evidence item passes', () => {
+  const result = parseResult(fixture(), { strategy: 'TestStrategy', slippage: 0 });
+  const evaluated = evaluate(result, {
+    regimes: [{ regime: 'bull', trades: 120 }, { regime: 'bear', trades: 120 }, { regime: 'range', trades: 120 }],
+    walkForward: { pass: true, summary: '3/3 段通过' },
+    robustness: { positiveShare: 1, detail: '3/3 邻域为正' },
+    randomBaselineEv: 0,
+  });
+  assert.equal(evaluated.complete, true);
+  assert.equal(evaluated.passed, true);
+  assert.equal(Object.values(evaluated.gates).every((gate) => gate.pass), true);
+});
+
 test('backtest submission validates all command-bound fields', () => {
-  assert.equal(validateSubmit({ strategy: 'CK_Trend_15m' }).timeframe, '15m');
+  assert.equal(validateSubmit({ strategy: 'CKQPublicTemplate' }).timeframe, '15m');
   assert.throws(() => validateSubmit({ strategy: 'Bad; rm' }), /策略名称/);
   assert.throws(() => validateSubmit({ strategy: 'Good', configPath: '/tmp/config.json' }), /配置文件/);
   assert.throws(() => validateSubmit({ strategy: 'Good', container: 'bad name' }), /容器名称/);
@@ -66,9 +80,31 @@ test('backtest queue runs one job and stores the parsed report', async (t) => {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   const job = service.get(submitted.jobId);
-  assert.equal(job.status, 'done');
+  assert.equal(job.status, 'done', job.error);
   assert.equal(job.result.trades, 40);
   const command = calls.find((args) => args.includes('backtesting'));
   assert.equal(command.includes('--timeframe-detail'), true);
   assert.equal(command.includes('--fee'), true);
+});
+
+test('private local strategy is copied into the container without being stored in jobs json', async (t) => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ckq-private-backtest-'));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const privateCode = '# private alpha\nclass PrivateStrategy: pass\n';
+  const calls = [];
+  const runner = async (args) => {
+    calls.push(args);
+    if (args[0] === 'cp' && String(args[2]).startsWith('CK_Quant:')) return { code: 0, stdout: '', stderr: '' };
+    if (args[0] === 'exec' && args.includes('sh')) return { code: 0, stdout: '/CK_Quant/user_data/backtest_results/result.json\n', stderr: '' };
+    if (args[0] === 'cp') { fs.writeFileSync(args[2], JSON.stringify(fixture('PrivateStrategy', 10))); return { code: 0, stdout: '', stderr: '' }; }
+    return { code: 0, stdout: '', stderr: '' };
+  };
+  const store = new JsonStore(temp);
+  const service = new BacktestService({ store, dataDir: temp, send: () => {}, runner, strategyResolver: () => ({ code: privateCode }) });
+  const submitted = service.submit({ strategy: 'PrivateStrategy', pairs: ['BTC/USDT:USDT'] });
+  const job = await service.wait(submitted.jobId);
+  assert.equal(job.status, 'done', job.error);
+  assert.equal(calls.some((args) => args[0] === 'cp' && args[2].includes('/strategies/PrivateStrategy.py')), true);
+  assert.equal(calls.find((args) => args.includes('backtesting')).includes('--pairs'), true);
+  assert.equal(JSON.stringify(store.read('jobs')).includes(privateCode), false);
 });

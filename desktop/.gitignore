@@ -14,7 +14,7 @@ data/
 private/
 license-codes/
 
-# 开发文档(含 CK_Trend 策略逻辑描述,本地专用)
+# 开发文档可能包含私人策略逻辑，仅限本机
 docs/
 
 # 本地回测数据缓存
@@ -30,3 +30,4 @@ build/*
 !resources/
 resources/*
 !resources/license-public-key.pem
+!resources/ckq_public_template.py
