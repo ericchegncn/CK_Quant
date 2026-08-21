@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 const botStore = useBotStore();
 const pairlistStore = usePairlistConfigStore();
+const { t } = useI18n();
 
 const whitelist = ref<{ enabled: boolean; pair: string }[]>([]);
 
@@ -52,7 +55,7 @@ watch(
       </div>
     </div>
     <div v-else>
-      <p>Evaluation returned 0 pairs</p>
+      <p>{{ t('research.evaluationReturnedNoPairs') }}</p>
     </div>
   </div>
 </template>

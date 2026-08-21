@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import type { BacktestPayload } from '@/types';
+import { useI18n } from 'vue-i18n';
 
 const botStore = useBotStore();
 const btStore = useBtStore();
+const { t } = useI18n();
 
 function clickBacktest() {
   const btPayload: BacktestPayload = {
@@ -49,7 +51,7 @@ function clickBacktest() {
 
 <template>
   <div class="mb-2">
-    <span>Strategy</span>
+    <span>{{ t('research.strategy') }}</span>
     <StrategySelect v-model="btStore.strategy"></StrategySelect>
   </div>
   <div
@@ -57,13 +59,13 @@ function clickBacktest() {
     :disabled="botStore.activeBot.backtestRunning"
   >
     <!-- Backtesting parameters -->
-    <h3 class="font-bold mb-2 col-span-2 text-center">Backtesting parameters</h3>
-    <label for="timeframe-select">Timeframe:</label>
+    <h3 class="font-bold mb-2 col-span-2 text-center">{{ t('research.backtestingParameters') }}</h3>
+    <label for="timeframe-select">{{ t('research.timeframe') }}:</label>
     <TimeframeSelect id="timeframe-select" v-model="btStore.selectedTimeframe" />
     <label for="timeframe-detail-select" class="flex justify-end items-center gap-2"
-      >Detail Timeframe:
+      >{{ t('research.detailTimeframe') }}:
       <InfoBox
-        hint="Detail timeframe, to simulate intra-candle results. Not setting this will not use this functionality."
+        :hint="t('research.detailTimeframeHint')"
       />
     </label>
     <TimeframeSelect
@@ -72,19 +74,19 @@ function clickBacktest() {
       :below-timeframe="btStore.selectedTimeframe"
     />
 
-    <label for="max-open-trades">Max open trades:</label>
+    <label for="max-open-trades">{{ t('research.maxOpenTrades') }}:</label>
     <UInputNumber
       id="max-open-trades"
       v-model="btStore.maxOpenTrades"
-      placeholder="Use strategy default"
+      :placeholder="t('research.useStrategyDefault')"
       :increment="false"
       :decrement="false"
     ></UInputNumber>
-    <label for="starting-capital">Starting capital:</label>
+    <label for="starting-capital">{{ t('research.startingCapital') }}:</label>
     <UInputNumber
       id="starting-capital"
       v-model="btStore.startingCapital"
-      placeholder="Use config default"
+      :placeholder="t('research.useConfigDefault')"
       :increment="false"
       :decrement="false"
       :step="10"
@@ -94,15 +96,15 @@ function clickBacktest() {
         maximumFractionDigits: 5,
       }"
     ></UInputNumber>
-    <label for="stake-amount-bool">Stake amount:</label>
+    <label for="stake-amount-bool">{{ t('research.stakeAmount') }}:</label>
     <div class="flex items-center">
       <BaseCheckbox class="basis-1/3" id="stake-amount-bool" v-model="btStore.stakeAmountUnlimited"
-        >Unlimited stake</BaseCheckbox
+        >{{ t('research.unlimitedStake') }}</BaseCheckbox
       >
       <UInputNumber
         id="stake-amount"
         v-model="btStore.stakeAmount"
-        placeholder="Use strategy default"
+        :placeholder="t('research.useStrategyDefault')"
         class="w-full"
         :step="10"
         :stepSnapping="false"
@@ -116,10 +118,10 @@ function clickBacktest() {
       ></UInputNumber>
     </div>
 
-    <label for="enable-protections">Enable Protections:</label>
+    <label for="enable-protections">{{ t('research.enableProtections') }}:</label>
     <BaseCheckbox id="enable-protections" v-model="btStore.enableProtections"></BaseCheckbox>
     <template v-if="botStore.activeBot.botFeatures.backtestFreqAI">
-      <label for="enable-cache">Cache Backtest results:</label>
+      <label for="enable-cache">{{ t('research.cacheResults') }}:</label>
       <BaseCheckbox id="enable-cache" v-model="btStore.allowCache"></BaseCheckbox>
     </template>
 
@@ -132,7 +134,7 @@ function clickBacktest() {
     <TimeRangeSelect v-model="btStore.timerange" class="mx-auto mt-2 col-span-2"></TimeRangeSelect>
   </div>
 
-  <h3 class="mt-3 font-bold text-2xl">Backtesting summary</h3>
+  <h3 class="mt-3 font-bold text-2xl">{{ t('research.backtestingSummary') }}</h3>
   <div class="flex flex-wrap md:flex-nowrap justify-between md:justify-center mt-2">
     <UButton
       id="start-backtest"
@@ -146,7 +148,7 @@ function clickBacktest() {
       class="mx-1"
       @click="clickBacktest"
     >
-      Start backtest
+      {{ t('research.startBacktest') }}
     </UButton>
     <UButton
       color="neutral"
@@ -155,7 +157,7 @@ function clickBacktest() {
       class="mx-1"
       @click="botStore.activeBot.pollBacktest()"
     >
-      Load backtest result
+      {{ t('research.loadBacktestResult') }}
     </UButton>
     <UButton
       color="neutral"
@@ -164,7 +166,7 @@ function clickBacktest() {
       :disabled="!botStore.activeBot.backtestRunning"
       @click="botStore.activeBot.stopBacktest()"
     >
-      Stop Backtest
+      {{ t('research.stopBacktest') }}
     </UButton>
     <UButton
       color="neutral"
@@ -173,7 +175,7 @@ function clickBacktest() {
       :disabled="botStore.activeBot.backtestRunning || !botStore.activeBot.canRunBacktest"
       @click="botStore.activeBot.removeBacktest()"
     >
-      Reset Backtest
+      {{ t('research.resetBacktest') }}
     </UButton>
   </div>
 </template>

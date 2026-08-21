@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld('ckQuant', {
 
   // AI 助手与 BYOK 设置
   getAISettings: () => ipcRenderer.invoke('ai:getSettings'),
+  getAIProviders: () => ipcRenderer.invoke('ai:getProviders'),
+  connectAIProvider: (provider) => ipcRenderer.invoke('ai:oauthConnect', { provider }),
   saveAISettings: (settings) => ipcRenderer.invoke('ai:saveSettings', settings),
   testAIConnection: () => ipcRenderer.invoke('ai:testConnection'),
   listAIModels: () => ipcRenderer.invoke('ai:listModels'),

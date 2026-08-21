@@ -1,7 +1,9 @@
 import { workspaceMessages } from './workspace';
+import { researchMessages } from './research';
 
 export default {
   workspace: workspaceMessages['zh-TW'],
+  research: researchMessages['zh-TW'],
   language: {
     label: '語言',
     auto: '系統語言',

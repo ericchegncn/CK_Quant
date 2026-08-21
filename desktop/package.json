@@ -1,6 +1,6 @@
 {
   "name": "ck-quant-desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CK Quant Desktop - 面向普通用户的智能量化工作台",
   "main": "electron/main.js",
   "private": true,
@@ -30,6 +30,7 @@
     },
     "nsis": {
       "oneClick": false,
+      "selectPerMachineByDefault": true,
       "allowToChangeInstallationDirectory": true,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",

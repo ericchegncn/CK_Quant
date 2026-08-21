@@ -89,24 +89,36 @@ async function loadServers() {
       </div>
       <div class="server-actions">
         <span class="status ${statusClass}">${esc(s.status || '未部署')}</span>
-        <button class="btn btn-ghost btn-sm" onclick="editServer('${s.id}')">编辑</button>
-        <button class="btn btn-danger btn-sm" onclick="delServer('${s.id}')">删除</button>
+        <button class="btn btn-ghost btn-sm" data-server-action="edit" data-server-id="${esc(s.id)}">编辑</button>
+        <button class="btn btn-danger btn-sm" data-server-action="delete" data-server-id="${esc(s.id)}">删除</button>
       </div>
     </div>`;
   }).join('');
 }
 
-window.editServer = async (id) => {
-  const s = await api.getServer(id);
-  if (!s) return;
-  openServerForm(s);
-};
-window.delServer = async (id) => {
-  if (!confirm('确定删除该服务器？')) return;
-  await api.deleteServer(id);
-  toast('已删除');
-  loadServers();
-};
+$('#serverList').addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-server-action][data-server-id]');
+  if (!button || !event.currentTarget.contains(button)) return;
+  const { serverAction: action, serverId: id } = button.dataset;
+  button.disabled = true;
+  try {
+    if (action === 'edit') {
+      const server = await api.getServer(id);
+      if (!server) { toast('服务器不存在或已经被删除'); return; }
+      openServerForm(server);
+      return;
+    }
+    if (action === 'delete') {
+      if (!confirm('确定删除该服务器？此操作只删除本机保存的服务器记录，不会删除远程机器人。')) return;
+      const result = await api.deleteServer(id);
+      if (!result?.ok) { toast(result?.error || '删除失败'); return; }
+      await loadServers();
+      toast('已删除服务器记录');
+    }
+  } finally {
+    if (button.isConnected) button.disabled = false;
+  }
+});
 
 $('#addServerBtn').addEventListener('click', () => openServerForm(null));
 
@@ -151,10 +163,18 @@ function openServerForm(server) {
     };
     if (!data.name || !data.host || !data.username) { toast('请填写名称/IP/用户名'); return; }
     const r = await api.saveServer(data);
-    if (r.ok) { toast(isEdit ? '已更新' : '已添加'); loadServers(); $('#deployWizard').innerHTML = ''; }
+    if (r.ok) {
+      await loadServers();
+      $('#deployWizard').innerHTML = '';
+      document.querySelector('.nav-item[data-page="servers"]')?.click();
+      toast(isEdit ? '已更新' : '已添加');
+    }
     else toast(r.error || '保存失败');
   });
-  $('#f_cancel').addEventListener('click', () => { $('#deployWizard').innerHTML = ''; });
+  $('#f_cancel').addEventListener('click', () => {
+    $('#deployWizard').innerHTML = '';
+    document.querySelector('.nav-item[data-page="servers"]')?.click();
+  });
 }
 
 // ============ 部署向导 ============
@@ -682,6 +702,102 @@ $('#aiApproveBtn').addEventListener('click', () => answerAIConfirmation(true));
 $('#aiRejectBtn').addEventListener('click', () => answerAIConfirmation(false));
 
 // ============ AI 设置 ============
+let aiProviders = [];
+
+function mountAIProviderControls() {
+  if ($('#aiProvider')) return;
+  const description = $('#settings-llm .page-lead');
+  if (description) description.textContent = '选择模型厂商后自动填写正确接口。支持 OpenAI、Claude、DeepSeek、Gemini、Grok、OpenRouter、国内模型和本机模型。';
+  const baseInput = $('#aiBaseUrl');
+  const baseLabel = baseInput?.previousElementSibling;
+  if (!baseInput || !baseLabel) return;
+  const providerLabel = document.createElement('label');
+  providerLabel.textContent = '模型厂商';
+  const providerSelect = document.createElement('select');
+  providerSelect.id = 'aiProvider';
+  const hint = document.createElement('div');
+  hint.id = 'aiProviderHint';
+  hint.className = 'field-help';
+  hint.textContent = '请选择 API Key 所属厂商；Key 与厂商不匹配会返回 401。';
+  const protocolWrap = document.createElement('div');
+  protocolWrap.id = 'aiProtocolWrap';
+  protocolWrap.style.display = 'none';
+  protocolWrap.innerHTML = '<label>接口协议</label><select id="aiProtocol"><option value="openai">OpenAI 兼容协议</option><option value="anthropic">Anthropic Messages 协议</option></select>';
+  baseLabel.before(providerLabel, providerSelect, hint, protocolWrap);
+  const oauthButton = document.createElement('button');
+  oauthButton.id = 'aiOAuthBtn';
+  oauthButton.className = 'btn btn-ghost';
+  oauthButton.textContent = '使用 OAuth 登录';
+  oauthButton.style.display = 'none';
+  $('#saveAISettingsBtn').parentElement.appendChild(oauthButton);
+  providerSelect.addEventListener('change', () => applyAIProvider(providerSelect.value));
+  oauthButton.addEventListener('click', connectAIProviderOAuth);
+}
+
+function refreshAIModelHints(provider, selectedModel = '') {
+  $('#aiModelList').innerHTML = '';
+  for (const model of provider?.models || []) {
+    const option = document.createElement('option');
+    option.value = model;
+    $('#aiModelList').appendChild(option);
+  }
+  if (selectedModel) $('#aiModel').value = selectedModel;
+}
+
+function applyAIProvider(providerId, preserveValues = false) {
+  const provider = aiProviders.find((item) => item.id === providerId);
+  if (!provider) return;
+  $('#aiProviderHint').textContent = provider.hint || '';
+  if (!preserveValues) {
+    if (provider.baseUrl) $('#aiBaseUrl').value = provider.baseUrl;
+    $('#aiModel').value = provider.models?.[0] || '';
+  }
+  $('#aiBaseUrl').readOnly = provider.id !== 'custom' && !['qwen'].includes(provider.id);
+  $('#aiProtocolWrap').style.display = provider.id === 'custom' ? '' : 'none';
+  if (provider.id !== 'custom') $('#aiProtocol').value = provider.protocol;
+  $('#aiApiKey').placeholder = provider.requiresKey ? `${provider.label} API Key` : '本机模型无需 API Key';
+  $('#aiOAuthBtn').style.display = provider.authMethods?.includes('oauth_pkce') ? '' : 'none';
+  refreshAIModelHints(provider, preserveValues ? $('#aiModel').value : (provider.models?.[0] || ''));
+}
+
+async function connectAIProviderOAuth() {
+  const provider = aiProviders.find((item) => item.id === $('#aiProvider').value);
+  if (!provider?.authMethods?.includes('oauth_pkce')) return;
+  const button = $('#aiOAuthBtn');
+  button.disabled = true;
+  button.textContent = '请在浏览器完成登录…';
+  $('#aiConnectionStatus').textContent = `正在连接 ${provider.label}，授权完成后会自动返回软件。`;
+  const result = await api.connectAIProvider(provider.id);
+  button.disabled = false;
+  button.textContent = '使用 OAuth 登录';
+  if (!result.ok) {
+    $('#aiConnectionStatus').textContent = `OAuth 登录失败：${result.error || '未知错误'}`;
+    return;
+  }
+  toast(`${provider.label} OAuth 登录成功`);
+  await loadAISettings();
+  $('#aiConnectionStatus').textContent = `${provider.label} 已连接，可点击“测试连接”。`;
+}
+
+function collectAISettings() {
+  return {
+    provider: $('#aiProvider')?.value || 'custom',
+    protocol: $('#aiProtocol')?.value || 'openai',
+    baseUrl: $('#aiBaseUrl').value.trim(), model: $('#aiModel').value.trim(), apiKey: $('#aiApiKey').value.trim(),
+    temperature: Number($('#aiTemperature').value), maxTokens: Number($('#aiMaxTokens').value),
+  };
+}
+
+async function persistAISettings(showSuccess = true) {
+  const result = await api.saveAISettings(collectAISettings());
+  if (!result.ok) {
+    $('#aiConnectionStatus').textContent = `保存失败：${result.error}`;
+    return result;
+  }
+  if (showSuccess) toast('AI 设置已保存');
+  return result;
+}
+
 document.querySelectorAll('[data-settings-section]').forEach((button) => button.addEventListener('click', () => {
   document.querySelectorAll('[data-settings-section]').forEach((item) => item.classList.toggle('active', item === button));
   document.querySelectorAll('.settings-section').forEach((section) => section.classList.toggle('active', section.id === `settings-${button.dataset.settingsSection}`));
@@ -689,14 +805,22 @@ document.querySelectorAll('[data-settings-section]').forEach((button) => button.
 }));
 
 async function loadAISettings() {
+  mountAIProviderControls();
+  const providersResult = await api.getAIProviders();
+  if (!providersResult.ok) { $('#aiConnectionStatus').textContent = providersResult.error || '读取模型厂商失败'; return; }
+  aiProviders = providersResult.providers || [];
+  $('#aiProvider').innerHTML = aiProviders.map((provider) => `<option value="${esc(provider.id)}">${esc(provider.label)}</option>`).join('');
   const result = await api.getAISettings();
   if (!result.ok) { $('#aiConnectionStatus').textContent = result.error || '读取设置失败'; return; }
   const settings = result.settings;
+  $('#aiProvider').value = settings.provider || 'custom';
+  $('#aiProtocol').value = settings.protocol || 'openai';
   $('#aiBaseUrl').value = settings.baseUrl || '';
   $('#aiModel').value = settings.model || '';
   $('#aiTemperature').value = settings.temperature ?? 0.3;
   $('#aiMaxTokens').value = settings.maxTokens ?? 4096;
   $('#aiApiKey').value = '';
+  applyAIProvider($('#aiProvider').value, true);
   $('#aiKeyStatus').textContent = settings.hasKey ? 'API Key 已使用 Windows 系统加密保存；留空不会修改。' : 'API Key 尚未配置';
   $('#aiConnectionStatus').textContent = settings.testedAt ? `上次连接成功：${new Date(settings.testedAt).toLocaleString('zh-CN')} · ${settings.lastLatencyMs || '-'} ms` : '';
 }
@@ -704,19 +828,17 @@ async function loadAISettings() {
 $('#saveAISettingsBtn').addEventListener('click', async () => {
   const button = $('#saveAISettingsBtn');
   button.disabled = true;
-  const result = await api.saveAISettings({
-    baseUrl: $('#aiBaseUrl').value.trim(), model: $('#aiModel').value.trim(), apiKey: $('#aiApiKey').value.trim(),
-    temperature: Number($('#aiTemperature').value), maxTokens: Number($('#aiMaxTokens').value),
-  });
+  const result = await persistAISettings();
   button.disabled = false;
-  if (!result.ok) { $('#aiConnectionStatus').textContent = `保存失败：${result.error}`; return; }
-  toast('AI 设置已保存');
+  if (!result.ok) return;
   await loadAISettings();
 });
 
 $('#testAIConnectionBtn').addEventListener('click', async () => {
   const button = $('#testAIConnectionBtn');
   button.disabled = true;
+  const saved = await persistAISettings(false);
+  if (!saved.ok) { button.disabled = false; return; }
   $('#aiConnectionStatus').textContent = '正在测试模型连接…';
   const result = await api.testAIConnection();
   button.disabled = false;
@@ -726,6 +848,8 @@ $('#testAIConnectionBtn').addEventListener('click', async () => {
 $('#loadAIModelsBtn').addEventListener('click', async () => {
   const button = $('#loadAIModelsBtn');
   button.disabled = true;
+  const saved = await persistAISettings(false);
+  if (!saved.ok) { button.disabled = false; return; }
   const result = await api.listAIModels();
   button.disabled = false;
   if (!result.ok || !result.models?.length) { $('#aiConnectionStatus').textContent = result.error || '服务商未提供模型列表，请手动填写模型名称。'; return; }
@@ -735,7 +859,15 @@ $('#loadAIModelsBtn').addEventListener('click', async () => {
     option.value = model;
     $('#aiModelList').appendChild(option);
   }
-  $('#aiConnectionStatus').textContent = `已获取 ${result.models.length} 个模型，可在模型名称中选择。`;
+  // Chromium filters a datalist against the input's current value.  Keeping
+  // the previously selected model here would therefore make a two-model list
+  // look like it only contains that one model.  Clear the field so opening the
+  // picker shows the complete provider response; users can still type a custom
+  // model name when required.
+  $('#aiModel').value = '';
+  $('#aiModel').placeholder = '请选择模型或手动输入模型名称';
+  $('#aiModel').focus();
+  $('#aiConnectionStatus').textContent = `已获取 ${result.models.length} 个模型。请在“模型名称”中选择一个模型。`;
 });
 
 async function loadNotifySettings() {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { BacktestResultInMemory } from '@/types';
+import { useI18n } from 'vue-i18n';
 
 withDefaults(
   defineProps<{
@@ -12,6 +13,7 @@ withDefaults(
     canUseModify: false,
   },
 );
+const { t } = useI18n();
 </script>
 
 <template>
@@ -20,8 +22,12 @@ withDefaults(
       {{ backtestResult.metadata.strategyName }} - {{ backtestResult.strategy.timeframe }}
     </div>
     <div class="text-sm font-normal">
-      TradeCount: {{ backtestResult.strategy.total_trades }} - Profit:
-      {{ formatPercent(backtestResult.strategy.profit_total) }}
+      {{
+        t('research.tradeCountAndProfit', {
+          count: backtestResult.strategy.total_trades,
+          profit: formatPercent(backtestResult.strategy.profit_total),
+        })
+      }}
     </div>
     <div v-if="canUseModify" class="text-sm font-normal" style="white-space: pre-wrap">
       {{ backtestResult.metadata.notes }}

@@ -1,7 +1,9 @@
 import { workspaceMessages } from './workspace';
+import { researchMessages } from './research';
 
 export default {
   workspace: workspaceMessages.ja,
+  research: researchMessages.ja,
   language: {
     label: '言語',
     auto: 'システム言語',

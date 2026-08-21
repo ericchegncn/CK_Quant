@@ -6,6 +6,7 @@ const settingsStore = useSettingsStore();
 const colorStore = useColorStore();
 const layoutStore = useLayoutStore();
 const { t } = useI18n();
+const localizedBacktestMetricOptions = computed(() => localizeBacktestMetricOptions(t));
 
 const timezoneOptions = ['UTC', Intl.DateTimeFormat().resolvedOptions().timeZone];
 const openTradesOptions = computed(() => [
@@ -216,7 +217,7 @@ const resetDynamicLayout = () => {
             multiple
             id="backtestMetrics"
             v-model="settingsStore.backtestAdditionalMetrics"
-            :items="availableBacktestMetrics"
+            :items="localizedBacktestMetricOptions"
             label-key="header"
             value-key="field"
             class="w-full"
