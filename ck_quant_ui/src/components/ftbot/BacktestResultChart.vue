@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ChartSliderPosition, StrategyBacktestResult, Trade } from '@/types';
+import { useI18n } from 'vue-i18n';
 
 const props = defineProps<{
   timeframe: string;
@@ -9,6 +10,7 @@ const props = defineProps<{
   backtestResult: StrategyBacktestResult;
 }>();
 const botStore = useBotStore();
+const { t } = useI18n();
 const isBarVisible = ref({ right: true, left: true });
 const sliderPosition = ref<ChartSliderPosition>();
 
@@ -46,8 +48,8 @@ onMounted(() => {
     <div class="flex flex-row mb-1 items-center">
       <div class="me-2">
         <UButton
-          aria-label="Close"
-          title="Pair Navigation"
+          :aria-label="t('research.close')"
+          :title="t('research.pairNavigation')"
           color="neutral"
           variant="outline"
           :icon="isBarVisible.left ? 'mdi:chevron-left' : 'mdi:chevron-right'"
@@ -55,14 +57,14 @@ onMounted(() => {
         />
       </div>
       <span class="grow">
-        Graph will always show the latest values for the selected strategy. <br />
-        Timerange: {{ timerange }} - {{ strategy }}
+        {{ t('research.chartLatestValuesHint') }} <br />
+        {{ t('research.timerange') }}: {{ timerange }} - {{ strategy }}
       </span>
       <div class="text-end">
         <UButton
-          aria-label="Close"
+          :aria-label="t('research.close')"
           variant="outline"
-          title="Trade Navigation"
+          :title="t('research.tradeNavigation')"
           color="neutral"
           :icon="isBarVisible.right ? 'mdi:chevron-right' : 'mdi:chevron-left'"
           @click="isBarVisible.right = !isBarVisible.right"
@@ -106,7 +108,7 @@ onMounted(() => {
         />
       </Transition>
     </div>
-    <DraggableContainer header="Single trades" class="row mt-2 w-full">
+    <DraggableContainer :header="t('research.singleTrades')" class="row mt-2 w-full">
       <TradeList
         class="row trade-history mt-2 w-full"
         :trades="backtestResult.trades"

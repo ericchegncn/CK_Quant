@@ -40,3 +40,46 @@ test('LLM preserves malformed tool arguments without crashing', async () => {
   const result = await llm.chat({ messages: [], tools: [{}] });
   assert.deepEqual(result.toolCalls[0].arguments, { _raw: '{bad' });
 });
+
+test('LLM supports local Ollama without an API key', async () => {
+  let authorization;
+  const llm = new LLM({ provider: 'ollama', baseUrl: 'http://127.0.0.1:11434/v1', model: 'qwen3:8b', apiKey: '', timeoutMs: 2000 }, async (_url, options) => {
+    authorization = options.headers.Authorization;
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'OK' } }], model: 'qwen3:8b' }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  });
+  const result = await llm.test();
+  assert.equal(result.ok, true);
+  assert.equal(authorization, undefined);
+});
+
+test('LLM converts OpenAI tool definitions and results for Anthropic', async () => {
+  let requestBody;
+  const llm = new LLM({ provider: 'anthropic', baseUrl: 'https://api.anthropic.com/v1', model: 'claude-sonnet-4-6', apiKey: 'claude-key', timeoutMs: 2000 }, async (_url, options) => {
+    requestBody = JSON.parse(options.body);
+    return new Response(JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      content: [{ type: 'text', text: '正在查询' }, { type: 'tool_use', id: 'tool-1', name: 'robot_status', input: {} }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  });
+  const result = await llm.chat({
+    messages: [{ role: 'system', content: '系统' }, { role: 'user', content: '状态' }],
+    tools: [{ type: 'function', function: { name: 'robot_status', description: '状态', parameters: { type: 'object' } } }],
+  });
+  assert.equal(requestBody.system, '系统');
+  assert.equal(requestBody.tools[0].input_schema.type, 'object');
+  assert.equal(result.content, '正在查询');
+  assert.deepEqual(result.toolCalls, [{ id: 'tool-1', name: 'robot_status', arguments: {} }]);
+});
+
+test('LLM authentication errors explain provider mismatch without exposing the key', async () => {
+  const apiKey = 'sk-secret-value-1234567890';
+  const llm = new LLM({ provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1-mini', apiKey, timeoutMs: 2000 }, async () => new Response(`invalid ${apiKey}`, { status: 401 }));
+  await assert.rejects(() => llm.test(), (error) => {
+    assert.equal(error.code, 'LLM_AUTH_ERROR');
+    assert.match(error.message, /Key 与所选模型厂商不匹配/);
+    assert.equal(error.message.includes(apiKey), false);
+    return true;
+  });
+});

@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { CalendarDate } from '@internationalized/date';
+import { useI18n } from 'vue-i18n';
 
 const now = new Date();
 const maxDateNow = new CalendarDate(now.getFullYear(), now.getMonth() + 1, now.getDate());
 const maxDateTomorrow = maxDateNow.add({ days: 1 });
 
 const timeRangeModel = defineModel<string>({ required: true });
+const { t } = useI18n();
 
 const dateFromText = ref('');
 const dateToText = ref('');
@@ -104,7 +106,7 @@ onMounted(() => {
 <template>
   <div>
     <div class="flex gap-2">
-      <UFormField label="Start Date">
+      <UFormField :label="t('research.startDate')">
         <UInput id="dateFrom" v-model="dateFromText" placeholder="yyyy-mm-dd" class="flex-1">
           <template #trailing>
             <UButton
@@ -113,7 +115,7 @@ onMounted(() => {
               color="neutral"
               variant="ghost"
               size="xs"
-              title="Clear start date"
+              :title="t('research.clearStartDate')"
               @click="dateFromText = ''"
             />
             <UPopover v-model:open="popoverFromOpen">
@@ -129,7 +131,7 @@ onMounted(() => {
           </template>
         </UInput>
       </UFormField>
-      <UFormField label="End Date">
+      <UFormField :label="t('research.endDate')">
         <UInput id="dateTo" v-model="dateToText" placeholder="yyyy-mm-dd" class="flex-1">
           <template #trailing>
             <UButton
@@ -138,7 +140,7 @@ onMounted(() => {
               color="neutral"
               variant="ghost"
               size="xs"
-              title="Clear end date"
+              :title="t('research.clearEndDate')"
               @click="dateToText = ''"
             />
             <UPopover v-model:open="popoverToOpen">
@@ -157,7 +159,7 @@ onMounted(() => {
     </div>
 
     <div class="mt-1 text-start">
-      Timerange: <b>{{ timeRange }}</b>
+      {{ t('research.timerange') }}: <b>{{ timeRange }}</b>
     </div>
   </div>
 </template>

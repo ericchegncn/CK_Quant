@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 const pairlistStore = usePairlistConfigStore();
+const { t } = useI18n();
 const copyFromConfig = ref('');
 
 const configNames = computed(() =>
@@ -7,13 +10,13 @@ const configNames = computed(() =>
 );
 </script>
 <template>
-  <BaseCollapsible title="Blacklist">
+  <BaseCollapsible :title="t('research.blacklist')">
     <div class="pb-1 p-2">
       <div class="flex mb-4 items-center gap-2">
-        <span class="col-auto">Copy from:</span>
+        <span class="col-auto">{{ t('research.copyFrom') }}:</span>
         <USelect v-model="copyFromConfig" size="sm" class="grow" :items="configNames" />
         <UButton
-          title="Copy"
+          :title="t('research.copy')"
           size="sm"
           color="neutral"
           icon="mdi:content-copy"
@@ -22,7 +25,7 @@ const configNames = computed(() =>
       </div>
       <USeparator class="mb-2" />
       <div class="flex flex-col w-full items-center">
-        <h3>Blacklisted Pairs</h3>
+        <h3>{{ t('research.blacklistedPairs') }}</h3>
         <div
           v-for="(item, i) in pairlistStore.config.blacklist"
           :key="i"
@@ -42,7 +45,7 @@ const configNames = computed(() =>
       <UButton
         icon="mdi:plus"
         variant="solid"
-        label="Add"
+        :label="t('research.add')"
         @click="pairlistStore.addToBlacklist()"
       />
     </div>

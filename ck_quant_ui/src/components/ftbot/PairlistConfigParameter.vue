@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import type { PairlistParameter } from '@/types';
 import { PairlistParamType } from '@/types';
+import { localizePairlistText } from '@/i18n/pairlistText';
+import { useI18n } from 'vue-i18n';
 
 const props = defineProps<{
   param: PairlistParameter;
 }>();
+const { locale } = useI18n();
 
 // TODO: type should really be PairlistParamValue
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -20,9 +23,9 @@ const options = computed(() => {
 
 <template>
   <div class="pb-1 flex flex-row text-start">
-    <label class="w-2/5"> {{ param.description }}</label>
+    <label class="w-2/5">{{ localizePairlistText(param.description, locale) }}</label>
     <div class="flex flex-col w-full">
-      <UFormField :help="param.help">
+      <UFormField :help="localizePairlistText(param.help, locale)">
         <UInput
           v-if="param.type === PairlistParamType.string || param.type === PairlistParamType.number"
           v-model="paramValue"

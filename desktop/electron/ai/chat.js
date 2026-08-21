@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { LLM } = require('./llm');
 const { READ_TOOLS, WRITE_TOOLS } = require('./tools');
+const { getProvider } = require('./providers');
 
 const SYSTEM_PROMPT = `你是 CK Quant 智能助手，服务不懂代码的中文用户。
 规则：
@@ -79,7 +80,10 @@ class ChatService {
     let finalText = '';
     try {
       const settings = this.settings.getWithSecret();
-      if (!settings.apiKey) throw Object.assign(new Error('请先在设置中配置模型 API Key'), { code: 'LLM_NOT_CONFIGURED' });
+      const provider = getProvider(settings.provider);
+      if (provider.requiresKey && !settings.apiKey) {
+        throw Object.assign(new Error(`请先在设置中配置 ${provider.label} API Key`), { code: 'LLM_NOT_CONFIGURED' });
+      }
       const llm = new LLM(settings);
       const messages = [{ role: 'system', content: SYSTEM_PROMPT }, ...session.messages.slice(-30).map(({ role, content, toolCallId, name }) => ({ role, content, tool_call_id: toolCallId, name }))];
       for (let round = 0; round < 8; round += 1) {

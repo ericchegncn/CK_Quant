@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ExitReasonResults, PairResult } from '@/types';
+import { useI18n } from 'vue-i18n';
 
 type ResultsType = PairResult | ExitReasonResults;
 type ResultsTypeWithKey = ResultsType & { key?: string | string[] };
@@ -17,6 +18,7 @@ const props = withDefaults(
     keyHeaders: () => [],
   },
 );
+const { t } = useI18n();
 
 const tableItems = computed<ResultsTypeWithKey[]>(() =>
   props.results.map((v) => {
@@ -58,9 +60,10 @@ const perTagReason = computed(() => {
 });
 
 const settingsStore = useSettingsStore();
+const localizedMetricOptions = computed(() => localizeBacktestMetricOptions(t));
 
 const metrics = computed(() =>
-  availableBacktestMetrics.value.filter(
+  localizedMetricOptions.value.filter(
     (metric) =>
       metric.field !== 'key' && settingsStore.backtestAdditionalMetrics.includes(metric.field),
   ),
@@ -80,25 +83,25 @@ const tableColumns = computed(() => {
   });
 
   // Fixed metric columns
-  cols.push({ accessorKey: 'trades', header: 'Trades' });
+  cols.push({ accessorKey: 'trades', header: t('research.trades') });
   cols.push({
     id: 'profit_mean',
-    header: 'Avg Profit %',
+    header: t('research.averageProfitPercent'),
     cell: ({ row }) => formatPercent(row.original.profit_mean, 2),
   });
   cols.push({
     id: 'profit_total_abs',
-    header: `Tot Profit ${props.stakeCurrency}`,
+    header: t('research.totalProfitCurrency', { currency: props.stakeCurrency }),
     cell: ({ row }) => formatPrice(row.original.profit_total_abs, props.stakeCurrencyDecimals),
   });
   cols.push({
     id: 'profit_total',
-    header: 'Tot Profit %',
+    header: t('research.totalProfitPercent'),
     cell: ({ row }) => formatPercent(row.original.profit_total, 2),
   });
-  cols.push({ accessorKey: 'wins', header: 'Wins' });
-  cols.push({ accessorKey: 'draws', header: 'Draws' });
-  cols.push({ accessorKey: 'losses', header: 'Losses' });
+  cols.push({ accessorKey: 'wins', header: t('research.wins') });
+  cols.push({ accessorKey: 'draws', header: t('research.draws') });
+  cols.push({ accessorKey: 'losses', header: t('research.losses') });
 
   // Dynamic additional metric columns
   metrics.value.forEach((col) => {
@@ -121,12 +124,12 @@ const tableColumns = computed(() => {
       <div class="flex flex-row w-full justify-between items-center text-">
         {{ title }}
         <div>
-          Shown metrics:
+          {{ t('research.shownMetrics') }}:
           <USelectMenu
             multiple
             id="backtestMetrics"
             v-model="settingsStore.backtestAdditionalMetrics"
-            :items="availableBacktestMetrics"
+            :items="localizedMetricOptions"
             label-key="header"
             value-key="field"
           />

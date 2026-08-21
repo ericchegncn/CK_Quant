@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { BacktestHistoryEntry } from '@/types';
+import { useI18n } from 'vue-i18n';
 import type { TableColumn } from '@nuxt/ui';
 import type { TableMeta, Row } from '@tanstack/vue-table';
 
 const botStore = useBotStore();
 const { confirm } = useConfirmBox();
+const { t } = useI18n();
 const filterText = ref('');
 const filterTextDebounced = refDebounced(filterText, 350, { maxWait: 1000 });
 
@@ -15,8 +17,8 @@ onMounted(() => {
 async function deleteBacktestResult(result: BacktestHistoryEntry) {
   if (
     await confirm({
-      title: 'Delete result',
-      message: `Delete result ${result.filename} from disk?`,
+      title: t('research.deleteResult'),
+      message: t('research.deleteResultQuestion', { filename: result.filename }),
     })
   ) {
     botStore.activeBot.deleteBacktestHistoryResult(result);
@@ -30,13 +32,13 @@ const filteredList = computed(() =>
       r.strategy.toLowerCase().includes(filterTextDebounced.value.toLowerCase()),
   ),
 );
-const columns: TableColumn<BacktestHistoryEntry>[] = [
-  { accessorKey: 'strategy', header: 'Strategy' },
-  { accessorKey: 'timeframe', header: 'Details' },
-  { accessorKey: 'backtest_start_time', header: 'Backtest Time' },
-  { accessorKey: 'filename', header: 'Filename' },
-  { id: 'actions', header: 'Actions' },
-];
+const columns = computed<TableColumn<BacktestHistoryEntry>[]>(() => [
+  { accessorKey: 'strategy', header: t('research.strategy') },
+  { accessorKey: 'timeframe', header: t('research.details') },
+  { accessorKey: 'backtest_start_time', header: t('research.backtestTime') },
+  { accessorKey: 'filename', header: t('research.filename') },
+  { id: 'actions', header: t('research.actions') },
+]);
 
 function isRowLoaded(row: Row<BacktestHistoryEntry>) {
   return row.original.run_id in botStore.activeBot.backtestHistory;
@@ -58,24 +60,23 @@ const meta: TableMeta<BacktestHistoryEntry> = {
   <div>
     <UButton
       class="float-end"
-      title="Refresh"
-      aria-label="Refresh"
+      :title="t('research.refresh')"
+      :aria-label="t('research.refresh')"
       variant="outline"
       color="neutral"
       icon="mdi:refresh"
       @click="botStore.activeBot.getBacktestHistory"
     />
     <p>
-      Load Historic results from disk. You can click on multiple results to load all of them into
-      freqUI.
+      {{ t('research.historicResultsHint') }}
     </p>
     <div v-if="botStore.activeBot.backtestHistoryList.length > 0" class="flex align-center">
       <UInput
         id="trade-filter"
         v-model="filterText"
         type="text"
-        placeholder="Filter results"
-        title="Filter results"
+        :placeholder="t('research.filterResults')"
+        :title="t('research.filterResults')"
       />
     </div>
     <UTable
@@ -110,7 +111,7 @@ const meta: TableMeta<BacktestHistoryEntry> = {
             v-if="botStore.activeBot.botFeatures.backtestDelete && !isRowLoaded(row)"
             size="sm"
             variant="solid"
-            title="Load this Result"
+            :title="t('research.loadThisResult')"
             color="primary"
             icon="mdi:arrow-right"
             :disabled="isRowLoaded(row)"
@@ -118,7 +119,7 @@ const meta: TableMeta<BacktestHistoryEntry> = {
           />
           <UButton
             v-if="isRowLoaded(row)"
-            title="Unload this Result from the UI (will remain on disk)"
+            :title="t('research.unloadThisResult')"
             icon="mdi:close"
             size="sm"
             variant="solid"
@@ -129,7 +130,7 @@ const meta: TableMeta<BacktestHistoryEntry> = {
             v-if="botStore.activeBot.botFeatures.backtestDelete"
             size="sm"
             color="neutral"
-            title="Delete this Result from Disk"
+            :title="t('research.deleteThisResult')"
             icon="mdi:delete"
             :disabled="isRowLoaded(row)"
             @click.stop="deleteBacktestResult(row.original)"

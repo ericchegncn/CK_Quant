@@ -27,6 +27,10 @@ ck_quant_ui/dist/
 ck_quant_ui/.vite/
 ck_quant_ui/android/
 artifacts/
+desktop/
+docker-images/
+.codex-release-objects/
+build_helpers/
 *.apk
 
 *.yml
@@ -52,10 +56,7 @@ scripts/
 *.key
 *credentials*
 *secrets*
-<<<<<<< HEAD
-=======
 Freqtrade*.txt
->>>>>>> origin/main
 .env
 .env.*
 

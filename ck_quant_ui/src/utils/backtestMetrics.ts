@@ -1,5 +1,53 @@
 import type { StrategyBacktestResult, Trade } from '@/types';
 
+type Translate = (key: string, values?: Record<string, unknown>) => string;
+
+const BACKTEST_LABEL_KEYS: Record<string, string> = {
+  'Total Profit': 'totalProfit', 'Long / Short': 'longShort', 'Total profit Long': 'totalProfitLong',
+  'Total profit Short': 'totalProfitShort', '--- Wallet Balance metrics ---': 'walletBalanceMetrics',
+  'Max Drawdown': 'maxDrawdown', 'Max Drawdown abs': 'maxDrawdownAbs', 'Drawdown duration': 'drawdownDuration',
+  'Profit at Drawdown start | end': 'profitAtDrawdown', 'Drawdown start': 'drawdownStart', 'Drawdown end': 'drawdownEnd',
+  'System Quality Number (SQN)': 'systemQualityNumber', 'Mean profit p-value': 'meanProfitPValue', Expectancy: 'expectancy',
+  'Expectancy (ratio)': 'expectancyRatio', 'Profit factor': 'profitFactor', 'Total trades / Daily Avg Trades': 'totalTradesDailyAverage',
+  'Best day': 'bestDay', 'Worst day': 'worstDay', 'Win/Draw/Loss': 'winDrawLoss', 'Days win/draw/loss': 'daysWinDrawLoss',
+  'Min. Duration winners': 'minWinnerDuration', 'Avg. Duration winners': 'averageWinnerDuration', 'Max. Duration winners': 'maxWinnerDuration',
+  'Min. Duration Losers': 'minLoserDuration', 'Avg. Duration Losers': 'averageLoserDuration', 'Max. Duration Losers': 'maxLoserDuration',
+  'Max Consecutive Wins / Loss': 'maxConsecutiveWinsLosses', 'Rejected entry signals': 'rejectedEntrySignals',
+  'Entry/Exit timeouts': 'entryExitTimeouts', 'Canceled Trade Entries': 'canceledTradeEntries', 'Canceled Entry Orders': 'canceledEntryOrders',
+  'Replaced Entry Orders': 'replacedEntryOrders', 'Min/Max balance (closed trades)': 'minMaxClosedBalance',
+  'Min/Max balance (wallet balance)': 'minMaxWalletBalance', 'Market change': 'marketChange', 'Max Drawdown (Account)': 'maxDrawdownAccount',
+  'Max Drawdown ABS': 'maxDrawdownAbs', 'Best Pair': 'bestPair', 'Worst Pair': 'worstPair', 'Best single Trade': 'bestSingleTrade',
+  'Worst single Trade': 'worstSingleTrade', 'Backtesting from': 'backtestingFrom', 'Backtesting to': 'backtestingTo',
+  'Trading Mode': 'tradingMode', 'BT execution time': 'executionTime', 'Max open trades': 'maxOpenTrades', Timeframe: 'timeframe',
+  'Timeframe Detail': 'timeframeDetail', Timerange: 'timerange', Stoploss: 'stoploss', 'Trailing Stoploss': 'trailingStoploss',
+  'Trail only when offset is reached': 'trailAfterOffset', 'Trailing Stop positive': 'trailingStopPositive',
+  'Trailing stop positive offset': 'trailingStopOffset', 'Custom Stoploss': 'customStoploss', 'Use Exit Signal': 'useExitSignal',
+  'Exit profit only': 'exitProfitOnly', 'Exit profit offset': 'exitProfitOffset', 'Enable protections': 'enableProtections',
+  'Starting balance': 'startingBalance', 'Final balance': 'finalBalance', 'Avg. stake amount': 'averageStakeAmount',
+  'Total trade volume': 'totalTradeVolume',
+};
+
+export function localizeBacktestRows(
+  rows: Record<string, string | number | boolean | undefined>[],
+  t: Translate,
+) {
+  return rows.map((row) => {
+    const entry = Object.entries(row)[0];
+    if (!entry) return row;
+    const [rawLabel, value] = entry;
+    if (/^_+$/.test(rawLabel.trim())) return row;
+    const walletSuffix = ' (wallet balance)';
+    const baseLabel = rawLabel.endsWith(walletSuffix) ? rawLabel.slice(0, -walletSuffix.length) : rawLabel;
+    const key = BACKTEST_LABEL_KEYS[baseLabel];
+    if (!key) return row;
+    const label = t(`research.${key}`);
+    const localizedLabel = rawLabel.endsWith(walletSuffix)
+      ? `${label}（${t('research.walletBalanceSuffix')}）`
+      : label;
+    return { [localizedLabel]: value };
+  });
+}
+
 function getSortedTrades(trades: Trade[]): Trade[] {
   const sortedTrades = trades.slice().sort((a, b) => (a.profit_ratio ?? 0) - (b.profit_ratio ?? 0));
   return sortedTrades;
@@ -327,3 +375,15 @@ export const availableBacktestMetrics = ref([
   { field: 'sortino', header: 'Sortino' },
   { field: 'max_drawdown_account', header: 'Max Drawdown', is_ratio: true },
 ]);
+
+const METRIC_OPTION_KEYS: Record<string, string> = {
+  p_value: 'meanProfitPValue', expectancy: 'expectancy', profit_factor: 'profitFactor',
+  max_drawdown_account: 'maxDrawdown',
+};
+
+export function localizeBacktestMetricOptions(t: Translate) {
+  return availableBacktestMetrics.value.map((metric) => ({
+    ...metric,
+    header: METRIC_OPTION_KEYS[metric.field] ? t(`research.${METRIC_OPTION_KEYS[metric.field]}`) : metric.header,
+  }));
+}

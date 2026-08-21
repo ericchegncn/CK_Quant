@@ -1,7 +1,9 @@
 import { workspaceMessages } from './workspace';
+import { researchMessages } from './research';
 
 export default {
   workspace: workspaceMessages.en,
+  research: researchMessages.en,
   language: {
     label: 'Language',
     auto: 'System language',

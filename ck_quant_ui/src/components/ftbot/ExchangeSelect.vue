@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { ExchangeSelection } from '@/types';
+import { useI18n } from 'vue-i18n';
 import type { SelectMenuItem } from '@nuxt/ui';
 
 const exchangeModel = defineModel<ExchangeSelection>({ required: true });
 
 const botStore = useBotStore();
+const { t } = useI18n();
 
 const exchangeList = computed<SelectMenuItem[]>(() => {
   const supported = botStore.activeBot.exchangeList
@@ -17,11 +19,11 @@ const exchangeList = computed<SelectMenuItem[]>(() => {
 
   return [
     [
-      { label: 'Supported', type: 'label' },
+      { label: t('research.supported'), type: 'label' },
       ...supported.map((e) => ({ value: e.classname ?? e.name, label: e.name })),
     ],
     [
-      { label: 'Unsupported', type: 'label' },
+      { label: t('research.unsupported'), type: 'label' },
       ...unsupported.map((e) => ({ value: e.classname ?? e.name, label: e.name })),
     ],
   ];

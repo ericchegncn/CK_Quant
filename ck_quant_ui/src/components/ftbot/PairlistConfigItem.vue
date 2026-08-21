@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import type { Pairlist } from '@/types';
+import { localizePairlistText } from '@/i18n/pairlistText';
+import { useI18n } from 'vue-i18n';
 
 const pairlistStore = usePairlistConfigStore();
+const { locale } = useI18n();
 
 defineProps<{
   index: number;
@@ -36,7 +39,7 @@ function toggleVisible() {
           @click="toggleVisible"
         >
           <span class="font-bold">{{ pairlist.name }}</span>
-          <span class="text-sm">{{ pairlist.description }}</span>
+          <span class="text-sm">{{ localizePairlistText(pairlist.description, locale) }}</span>
         </div>
       </div>
       <i-mdi-close

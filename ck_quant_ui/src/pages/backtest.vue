@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 enum BtRunModes {
   run = 'run',
   results = 'results',
@@ -10,6 +12,7 @@ enum BtRunModes {
 
 const botStore = useBotStore();
 const btStore = useBtStore();
+const { t } = useI18n();
 
 const hasBacktestResult = computed(() =>
   botStore.activeBot.backtestHistory
@@ -76,7 +79,7 @@ const backtestTabs = computed(() => {
     tabs.push({
       slot: 'historic-results',
       value: BtRunModes.historicresults,
-      label: 'Load Results',
+      label: t('research.loadResults'),
       icon: 'i-mdi-cloud-download',
       disabled: !botStore.activeBot.canRunBacktest,
     });
@@ -84,14 +87,14 @@ const backtestTabs = computed(() => {
   tabs.push({
     slot: 'run',
     value: BtRunModes.run,
-    label: 'Run backtest',
+    label: t('research.runBacktest'),
     icon: 'i-mdi-run-fast',
     disabled: !botStore.activeBot.canRunBacktest,
   });
   tabs.push({
     slot: 'results',
     value: BtRunModes.results,
-    label: 'Analyze result',
+    label: t('research.analyzeResult'),
     icon: 'i-mdi-table-eye',
     disabled: !hasBacktestResult.value,
   });
@@ -99,7 +102,7 @@ const backtestTabs = computed(() => {
     tabs.push({
       slot: 'compare-results',
       value: BtRunModes.compareresults,
-      label: 'Compare results',
+      label: t('research.compareResults'),
       icon: 'i-mdi-compare-horizontal',
       disabled: !hasMultiBacktestResult.value,
     });
@@ -107,14 +110,14 @@ const backtestTabs = computed(() => {
   tabs.push({
     slot: 'visualize-summary',
     value: BtRunModes.visualizesummary,
-    label: 'Visualize summary',
+    label: t('research.visualizeSummary'),
     icon: 'i-mdi-chart-bell-curve-cumulative',
     disabled: !hasBacktestResult.value,
   });
   tabs.push({
     slot: 'visualize',
     value: BtRunModes.visualize,
-    label: 'Visualize result',
+    label: t('research.visualizeResult'),
     icon: 'i-mdi-chart-timeline-variant-shimmer',
     disabled: !hasBacktestResult.value,
   });
@@ -135,7 +138,7 @@ const backtestTabs = computed(() => {
       <div class="flex flex-col fixed">
         <UButton
           class="self-start"
-          aria-label="Close"
+          :aria-label="t('research.close')"
           color="neutral"
           variant="outline"
           :icon="showLeftBar ? 'mdi:chevron-left' : 'mdi:chevron-right'"
@@ -156,9 +159,9 @@ const backtestTabs = computed(() => {
       <!-- End Left bar -->
     </div>
     <div class="flex flex-col w-full">
-      <h2 class="ms-5 text-3xl font-bold">Backtesting</h2>
+      <h2 class="ms-5 text-3xl font-bold">{{ t('research.backtesting') }}</h2>
       <p v-if="!botStore.activeBot.canRunBacktest">
-        Bot must be in webserver mode to enable Backtesting.
+        {{ t('research.webserverRequired') }}
       </p>
       <div class="w-full">
         <UTabs v-model="btFormMode" :items="backtestTabs">
@@ -201,10 +204,12 @@ const backtestTabs = computed(() => {
           </template>
         </UTabs>
 
-        <small v-show="botStore.activeBot.backtestRunning" class="text-end bt-running-label"
-          >Backtest running: {{ botStore.activeBot.backtestStep }}
-          {{ formatPercent(botStore.activeBot.backtestProgress, 2) }}</small
-        >
+        <small v-show="botStore.activeBot.backtestRunning" class="text-end bt-running-label">{{
+          t('research.backtestRunning', {
+            step: botStore.activeBot.backtestStep,
+            progress: formatPercent(botStore.activeBot.backtestProgress, 2),
+          })
+        }}</small>
       </div>
     </div>
   </div>

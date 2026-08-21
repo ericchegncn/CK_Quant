@@ -1,3 +1,5 @@
+const { getProvider } = require('./providers');
+
 class LLMError extends Error {
   constructor(code, message, status = null) {
     super(message);
@@ -33,13 +35,46 @@ function retryable(error) {
 class LLM {
   constructor(settings, fetchImpl = globalThis.fetch) {
     this.settings = settings;
+    this.provider = getProvider(settings.provider);
+    this.protocol = ['openai', 'anthropic'].includes(settings.protocol) ? settings.protocol : this.provider.protocol;
     this.fetch = fetchImpl;
     if (!fetchImpl) throw new Error('当前运行环境不支持 fetch');
   }
 
   headers() {
-    if (!this.settings.apiKey) throw new LLMError('LLM_NOT_CONFIGURED', '请先在设置中填写模型 API Key');
-    return { 'Content-Type': 'application/json', Authorization: `Bearer ${this.settings.apiKey}` };
+    if (!this.settings.apiKey && this.provider.requiresKey) {
+      throw new LLMError('LLM_NOT_CONFIGURED', `请先填写 ${this.provider.label} API Key`);
+    }
+    if (this.protocol === 'anthropic') {
+      return {
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+        ...(this.settings.apiKey ? { 'x-api-key': this.settings.apiKey } : {}),
+      };
+    }
+    return {
+      'Content-Type': 'application/json',
+      ...(this.settings.apiKey ? { Authorization: `Bearer ${this.settings.apiKey}` } : {}),
+      ...(this.provider.id === 'openrouter' ? { 'X-OpenRouter-Title': 'CK Quant Desktop' } : {}),
+    };
+  }
+
+  safeErrorDetail(detail) {
+    let safe = String(detail || '');
+    if (this.settings.apiKey) safe = safe.split(this.settings.apiKey).join('[API Key 已隐藏]');
+    return safe.replace(/(?:sk|key|token)-[A-Za-z0-9_-]{12,}/gi, '[API Key 已隐藏]').slice(0, 500);
+  }
+
+  httpError(response, detail) {
+    if (response.status === 401 || response.status === 403) {
+      return new LLMError(
+        'LLM_AUTH_ERROR',
+        `${this.provider.label} 认证失败：API Key 无效、已失效，或 Key 与所选模型厂商不匹配。请重新复制该厂商开放平台的 API Key。`,
+        response.status,
+      );
+    }
+    const code = response.status === 429 ? 'LLM_RATE_LIMIT' : 'LLM_HTTP_ERROR';
+    return new LLMError(code, `模型服务返回 ${response.status}: ${this.safeErrorDetail(detail) || response.statusText}`, response.status);
   }
 
   async request(url, options, timeoutMs = this.settings.timeoutMs || 120000) {
@@ -50,9 +85,8 @@ class LLM {
       try {
         const response = await this.fetch(url, { ...options, signal: controller.signal });
         if (!response.ok) {
-          const detail = (await response.text()).slice(0, 500);
-          const code = response.status === 429 ? 'LLM_RATE_LIMIT' : 'LLM_HTTP_ERROR';
-          throw new LLMError(code, `模型服务返回 ${response.status}: ${detail || response.statusText}`, response.status);
+          const detail = await response.text();
+          throw this.httpError(response, detail);
         }
         return response;
       } catch (error) {
@@ -69,6 +103,9 @@ class LLM {
   }
 
   async chat({ messages, tools = [], temperature, maxTokens, onDelta = () => {} }) {
+    if (this.protocol === 'anthropic') {
+      return this.anthropicChat({ messages, tools, temperature, maxTokens, onDelta });
+    }
     const response = await this.request(endpoint(this.settings.baseUrl, 'chat/completions'), {
       method: 'POST',
       headers: this.headers(),
@@ -130,8 +167,77 @@ class LLM {
     return { content, toolCalls: parseToolCalls(calls) };
   }
 
+  toAnthropic(messages) {
+    const system = messages.filter((message) => message.role === 'system').map((message) => String(message.content || '')).join('\n\n');
+    const converted = [];
+    const append = (role, content) => {
+      const previous = converted.at(-1);
+      if (previous?.role === role && Array.isArray(previous.content) && Array.isArray(content)) previous.content.push(...content);
+      else converted.push({ role, content });
+    };
+    for (const message of messages) {
+      if (message.role === 'system') continue;
+      if (message.role === 'tool') {
+        append('user', [{ type: 'tool_result', tool_use_id: message.tool_call_id, content: String(message.content || '') }]);
+        continue;
+      }
+      const blocks = [];
+      if (message.content) blocks.push({ type: 'text', text: String(message.content) });
+      for (const call of message.tool_calls || []) {
+        blocks.push({
+          type: 'tool_use', id: call.id, name: call.function?.name,
+          input: parseArguments(call.function?.arguments),
+        });
+      }
+      append(message.role === 'assistant' ? 'assistant' : 'user', blocks.length ? blocks : [{ type: 'text', text: '' }]);
+    }
+    return { system, messages: converted };
+  }
+
+  async anthropicChat({ messages, tools = [], temperature, maxTokens, onDelta = () => {} }) {
+    const converted = this.toAnthropic(messages);
+    const response = await this.request(endpoint(this.settings.baseUrl, 'messages'), {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({
+        model: this.settings.model,
+        system: converted.system || undefined,
+        messages: converted.messages,
+        tools: tools.length ? tools.map((tool) => ({
+          name: tool.function.name,
+          description: tool.function.description,
+          input_schema: tool.function.parameters,
+        })) : undefined,
+        temperature: temperature ?? this.settings.temperature ?? 0.3,
+        max_tokens: maxTokens ?? this.settings.maxTokens ?? 4096,
+      }),
+    });
+    const json = await response.json();
+    const text = (json.content || []).filter((block) => block.type === 'text').map((block) => block.text || '').join('');
+    if (text) onDelta(text);
+    return {
+      content: text,
+      toolCalls: (json.content || []).filter((block) => block.type === 'tool_use').map((block) => ({
+        id: block.id, name: block.name, arguments: block.input || {},
+      })),
+    };
+  }
+
   async test() {
     const started = Date.now();
+    if (this.protocol === 'anthropic') {
+      const response = await this.request(endpoint(this.settings.baseUrl, 'messages'), {
+        method: 'POST', headers: this.headers(), body: JSON.stringify({
+          model: this.settings.model,
+          messages: [{ role: 'user', content: '只回复 OK' }],
+          temperature: 0,
+          max_tokens: 8,
+        }),
+      }, Math.min(this.settings.timeoutMs || 120000, 30000));
+      const json = await response.json();
+      if (!Array.isArray(json.content)) throw new LLMError('LLM_INVALID_RESPONSE', '模型连接成功，但返回格式不兼容');
+      return { ok: true, latencyMs: Date.now() - started, model: json.model || this.settings.model };
+    }
     const response = await this.request(endpoint(this.settings.baseUrl, 'chat/completions'), {
       method: 'POST', headers: this.headers(), body: JSON.stringify({
         model: this.settings.model,
@@ -150,9 +256,9 @@ class LLM {
     try {
       const response = await this.request(endpoint(this.settings.baseUrl, 'models'), { method: 'GET', headers: this.headers() }, 30000);
       const json = await response.json();
-      return (json.data || []).map((item) => item.id).filter(Boolean);
+      return (json.data || json.models || []).map((item) => typeof item === 'string' ? item : (item.id || item.name)).filter(Boolean);
     } catch (_) {
-      return [];
+      return [...this.provider.models];
     }
   }
 }

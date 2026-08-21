@@ -22,9 +22,4 @@
   <label for="code">注册码</label><textarea id="code" readonly placeholder="生成后显示在这里"></textarea>
   <div id="status" class="status"></div>
   <div class="warning">请离线备份 <b>desktop/private/license-private-key.pem</b>。任何人获得该私钥都能伪造注册码；私钥绝不能发给客户、上传 GitHub 或放入安装包。</div>
-</main><script>
-  const $=s=>document.querySelector(s); let last='';
-  $('#issue').onclick=async()=>{ $('#issue').disabled=true; $('#status').className='status'; $('#status').textContent='正在签发…'; const r=await window.licenseAdmin.issue($('#machine').value,$('#customer').value); $('#issue').disabled=false; if(!r.ok){$('#status').className='status err';$('#status').textContent=r.error;return} last=r.code;$('#code').value=r.code;$('#copy').disabled=false;$('#status').className='status ok';$('#status').textContent=`签发成功 · 授权ID ${r.licenseId}`; };
-  $('#copy').onclick=()=>{window.licenseAdmin.copy(last);$('#status').className='status ok';$('#status').textContent='注册码已复制';};
-  window.licenseAdmin.status().then(r=>{if(!r.ready){$('#status').className='status err';$('#status').textContent='授权密钥未初始化，请先运行 npm run license:init';$('#issue').disabled=true;}});
-</script></body></html>
+</main><script src="license-admin-renderer.js"></script></body></html>

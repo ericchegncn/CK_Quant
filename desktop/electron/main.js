@@ -1,5 +1,5 @@
 // CK Quant Desktop - Electron 主进程
-const { app, BrowserWindow, ipcMain, Menu, safeStorage, dialog, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, safeStorage, dialog, Notification, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -429,11 +429,23 @@ ipcMain.handle('server:save', (e, data) => {
     password: data.password ? encryptSecret(String(data.password).slice(0, 1024)) : (existing.password || null),
   };
   writeJson(SERVERS_FILE, servers);
+  if (Object.keys(existing).length) {
+    const tunnel = tunnelServers.get(id);
+    if (tunnel) { tunnel.server.close(); tunnelServers.delete(id); }
+    const cached = sshCache.get(id);
+    if (cached) { cached.close(); sshCache.delete(id); }
+  }
   return { ok: true, id };
 });
 ipcMain.handle('server:delete', (e, id) => {
   if (!isLicensed()) return { ok: false, error: '软件尚未激活' };
+  if (!/^[a-f0-9]{16}$/.test(String(id || ''))) return { ok: false, error: '服务器 ID 不合法' };
   const servers = readJson(SERVERS_FILE, {});
+  if (!servers[id]) return { ok: false, error: '服务器不存在或已经被删除' };
+  const tunnel = tunnelServers.get(id);
+  if (tunnel) { tunnel.server.close(); tunnelServers.delete(id); }
+  const cached = sshCache.get(id);
+  if (cached) { cached.close(); sshCache.delete(id); }
   delete servers[id];
   writeJson(SERVERS_FILE, servers);
   return { ok: true };
@@ -834,6 +846,7 @@ const opsRuntime = registerOpsHandlers(ipcMain, {
 const aiRuntime = registerAIHandlers(ipcMain, {
   dataDir: DATA_DIR,
   safeStorage,
+  openExternal: (url) => shell.openExternal(url),
   isLicensed,
   send: (channel, payload) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
