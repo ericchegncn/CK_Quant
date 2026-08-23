@@ -46,6 +46,7 @@ config*.json
 *.db
 *.db-*
 user_data/
+markets/
 scripts/
 **/strategies/
 **/CK_*.py
@@ -62,4 +63,6 @@ Freqtrade*.txt
 
 .vscode
 .*_cache/
+.pytest_cache/
+.ruff_cache/
 .ipynb_checkpoints
