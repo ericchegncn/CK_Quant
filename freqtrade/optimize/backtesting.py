@@ -11,10 +11,12 @@ from collections import defaultdict
 from contextlib import nullcontext
 from copy import deepcopy
 from datetime import datetime, timedelta
+from time import monotonic
 from typing import TYPE_CHECKING
 
 from numpy import isnan, nan
 from pandas import DataFrame, Series
+from rich.text import Text
 
 from freqtrade import constants
 from freqtrade.configuration import TimeRange, validate_config_consistency
@@ -311,7 +313,12 @@ class Backtesting:
         # "detail" bar tracking the progress within the current phase.
         # Only active in Backtest mode
         if self.dataprovider.runmode in (RunMode.BACKTEST, RunMode.WEBSERVER):
-            self.progress = get_progress_tracker(ft_callback=self._progress_callback)
+            self.progress = get_progress_tracker(
+                ft_callback=self._progress_callback,
+                cust_callables=(
+                    [self._render_wallet_progress] if self._progress_callback is None else None
+                ),
+            )
             self._progress_task_overall = self.progress.add_task("Backtest", total=4)
             self._progress_task = self.progress.add_task("Backtesting", total=0)
         self.abort = False
@@ -502,6 +509,17 @@ class Backtesting:
         self.canceled_exit_orders = 0
         self.replaced_exit_orders = 0
         self.wallet_captures = []
+        # Latest price reached by the backtest for each pair.  This must be populated from the
+        # row currently being processed - using the last row of an analyzed dataframe here would
+        # leak a future price into wallet equity and make the live balance display inaccurate.
+        self._wallet_mark_rates: dict[str, float] = {}
+        self._wallet_progress_text = ""
+        self._wallet_progress_last_refresh = 0.0
+        self._wallet_equity_peak = 0.0
+        self._wallet_max_drawdown_abs = 0.0
+        self._wallet_max_drawdown_pct = 0.0
+        self._wallet_current_drawdown_abs = 0.0
+        self._wallet_current_drawdown_pct = 0.0
         self.dataprovider.clear_cache()
         if enable_protections:
             self._load_protections(self.strategy)
@@ -1674,9 +1692,6 @@ class Backtesting:
             pair_detail_cache: dict[str, list[tuple]] = {}
             pair_tradedir_cache: dict[str, LongShort | None] = {}
             pairs_with_open_trades = [t.pair for t in LocalTrade.bt_trades_open]
-            # 计算未平仓持仓的浮动盈亏（用当前 K 线价格），并记录到钱包快照，
-            # 使回测余额/回撤基于"真实钱包余额"（已平仓 + 未平仓）计算
-            self._capture_wallet(current_time, self.strategy.config["stake_currency"], 1)
 
             for current_time_det, is_first, has_detail, idx, pair in self._time_pair_generator_det(
                 current_time, pairs
@@ -1751,37 +1766,81 @@ class Backtesting:
                         row = pair_detail_cache[pair][idx]
 
                 is_last_row = current_time_det == end_date
+                self._wallet_mark_rates[pair] = float(row[CLOSE_IDX])
 
                 yield current_time_det, pair, row, is_last_row, trade_dir
+            # Capture equity after all pairs for this candle have been processed.  In addition to
+            # feeding wallet-based backtest metrics, this refreshes the in-place terminal balance.
+            self._capture_wallet(current_time, self.strategy.config["stake_currency"], 1)
             self._increment_progress()
 
     def _capture_wallet(self, current_time: datetime, currency: str, price: float) -> None:
         """
         Capture the current wallet state.
 
-        修复：余额 = 已平仓余额 + 未平仓持仓的浮动盈亏（真实钱包余额）。
-        回测的 wallet 快照（以及基于它的回撤/Sharpe 等指标）因此包含未平仓浮盈，
-        比 freqtrade 原版（仅已平仓利润）更接近实盘账户权益。
+        Equity is the closed-trade wallet balance plus unrealized P/L from open positions.
+        Wallet-based drawdown and risk metrics therefore follow account equity more closely.
         """
         if not self._is_backtest_runmode:
             return
         if total := self.wallets.get_total(currency):
             if currency == self.strategy.config["stake_currency"] and LocalTrade.bt_trades_open:
-                # 加上所有未平仓持仓的浮动盈亏（用各自最新 K 线收盘价估算）
+                # Add unrealized P/L using only prices already reached by the backtest.
                 unrealized = 0.0
                 for trade in LocalTrade.bt_trades_open:
                     try:
-                        dataframe, _ = self.dataprovider.get_analyzed_dataframe(
-                            trade.pair, self.timeframe
-                        )
-                        if dataframe is not None and len(dataframe) > 0:
-                            cur_rate = float(dataframe["close"].iat[-1])
+                        if cur_rate := self._wallet_mark_rates.get(trade.pair):
                             unrealized += trade.calculate_profit(cur_rate).profit_abs
-                    except Exception:
-                        # 数据不可用时跳过该持仓的浮盈（保持原行为）
+                    except Exception as exc:
+                        # Keep the remaining wallet capture usable if one mark price is unavailable.
+                        logger.debug(
+                            "Unable to mark %s for wallet equity", trade.pair, exc_info=exc
+                        )
                         continue
                 total += unrealized
             self.wallet_captures.append((current_time, currency, price, total))
+            self._update_wallet_progress(currency, total)
+
+    def _update_wallet_progress(self, currency: str, total: float) -> None:
+        """Show current backtest equity in-place without flooding the terminal log."""
+        if (
+            self.progress is None
+            or self._progress_callback is not None
+            or currency != self.strategy.config["stake_currency"]
+        ):
+            return
+
+        profit = total - self.starting_balance
+        if self._wallet_equity_peak <= 0:
+            self._wallet_equity_peak = max(self.starting_balance, total)
+        else:
+            self._wallet_equity_peak = max(self._wallet_equity_peak, total)
+
+        self._wallet_current_drawdown_abs = max(0.0, self._wallet_equity_peak - total)
+        self._wallet_current_drawdown_pct = (
+            self._wallet_current_drawdown_abs / self._wallet_equity_peak
+            if self._wallet_equity_peak > 0
+            else 0.0
+        )
+        if self._wallet_current_drawdown_pct > self._wallet_max_drawdown_pct:
+            self._wallet_max_drawdown_pct = self._wallet_current_drawdown_pct
+            self._wallet_max_drawdown_abs = self._wallet_current_drawdown_abs
+
+        self._wallet_progress_text = (
+            f"Wallet: {total:,.2f} {currency} | P/L: {profit:+,.2f} | "
+            f"MaxDD: {self._wallet_max_drawdown_pct:.2%}/{self._wallet_max_drawdown_abs:,.2f} | "
+            f"NowDD: {self._wallet_current_drawdown_pct:.2%} | "
+            f"Open: {len(LocalTrade.bt_trades_open)}"
+        )
+        now = monotonic()
+        refresh = now - self._wallet_progress_last_refresh >= 0.25
+        if refresh:
+            self._wallet_progress_last_refresh = now
+            self.progress.refresh()
+
+    def _render_wallet_progress(self) -> Text:
+        """Render terminal-only wallet equity above the regular progress bars."""
+        return Text(self._wallet_progress_text, style="bold cyan")
 
     def backtest(
         self, processed: dict, start_date: datetime, end_date: datetime

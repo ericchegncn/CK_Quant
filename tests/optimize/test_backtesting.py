@@ -391,6 +391,72 @@ def test_backtest_abort(default_conf, mocker) -> None:
     assert backtesting.progress.tasks[backtesting._progress_task].completed == 0
 
 
+def test_capture_wallet_updates_terminal_equity_with_current_mark(default_conf, mocker) -> None:
+    patch_exchange(mocker)
+    default_conf["runmode"] = RunMode.BACKTEST
+    backtesting = Backtesting(default_conf)
+    backtesting._set_strategy(backtesting.strategylist[0])
+    backtesting.wallet_captures = []
+    backtesting._wallet_mark_rates = {"UNITTEST/BTC": 123.0}
+
+    trade = MagicMock(pair="UNITTEST/BTC")
+    trade.calculate_profit.return_value.profit_abs = 25.0
+    mocker.patch.object(LocalTrade, "bt_trades_open", [trade])
+    mocker.patch.object(backtesting.wallets, "get_total", return_value=1000.0)
+
+    backtesting._capture_wallet(dt_utc(2026, 8, 23), "BTC", 1.0)
+
+    trade.calculate_profit.assert_called_once_with(123.0)
+    assert backtesting.wallet_captures[-1][-1] == 1025.0
+    assert "Wallet: 1,025.00 BTC" in backtesting._wallet_progress_text
+    assert "P/L:" in backtesting._wallet_progress_text
+    assert "Open: 1" in backtesting._wallet_progress_text
+
+
+def test_wallet_progress_tracks_max_and_current_equity_drawdown(default_conf, mocker) -> None:
+    patch_exchange(mocker)
+    default_conf["runmode"] = RunMode.BACKTEST
+    backtesting = Backtesting(default_conf)
+    backtesting._set_strategy(backtesting.strategylist[0])
+    backtesting.starting_balance = 1000.0
+    currency = default_conf["stake_currency"]
+
+    backtesting._update_wallet_progress(currency, 1100.0)
+    assert backtesting._wallet_equity_peak == 1100.0
+    assert backtesting._wallet_max_drawdown_pct == 0.0
+
+    backtesting._update_wallet_progress(currency, 990.0)
+    assert backtesting._wallet_current_drawdown_abs == 110.0
+    assert backtesting._wallet_current_drawdown_pct == pytest.approx(0.10)
+    assert backtesting._wallet_max_drawdown_abs == 110.0
+    assert backtesting._wallet_max_drawdown_pct == pytest.approx(0.10)
+
+    backtesting._update_wallet_progress(currency, 1050.0)
+    assert backtesting._wallet_current_drawdown_pct == pytest.approx(50.0 / 1100.0)
+    assert backtesting._wallet_max_drawdown_pct == pytest.approx(0.10)
+
+    backtesting._update_wallet_progress(currency, 880.0)
+    assert backtesting._wallet_current_drawdown_pct == pytest.approx(0.20)
+    assert backtesting._wallet_max_drawdown_pct == pytest.approx(0.20)
+    assert "MaxDD: 20.00%/220.00" in backtesting._wallet_progress_text
+    assert "NowDD: 20.00%" in backtesting._wallet_progress_text
+
+
+def test_wallet_progress_does_not_change_webserver_callback(default_conf, mocker) -> None:
+    patch_exchange(mocker)
+    default_conf["runmode"] = RunMode.BACKTEST
+    callback = MagicMock()
+    backtesting = Backtesting(default_conf, progress_callback=callback)
+    backtesting._set_strategy(backtesting.strategylist[0])
+    original = backtesting.progress.tasks[backtesting._progress_task].description
+
+    backtesting._update_wallet_progress(default_conf["stake_currency"], 1025.0)
+
+    assert backtesting.progress.tasks[backtesting._progress_task].description == original
+    assert backtesting._wallet_progress_text == ""
+    callback.assert_not_called()
+
+
 def test_backtesting_start(default_conf, mocker, caplog) -> None:
     def get_timerange(input1):
         return dt_utc(2017, 11, 14, 21, 17), dt_utc(2017, 11, 14, 22, 59)
