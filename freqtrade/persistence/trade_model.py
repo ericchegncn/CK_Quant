@@ -14,6 +14,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     ScalarResult,
     Select,
@@ -80,7 +81,10 @@ class Order(ModelBase):
 
     # Uniqueness should be ensured over pair, order_id
     # its likely that order_id is unique per Pair on some exchanges.
-    __table_args__ = (UniqueConstraint("ft_pair", "order_id", name="_order_pair_order_id"),)
+    __table_args__ = (
+        UniqueConstraint("ft_pair", "order_id", name="_order_pair_order_id"),
+        Index("ix_orders_trade_status_filled", "ft_trade_id", "status", "order_filled_date"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     ft_trade_id: Mapped[int] = mapped_column(Integer, ForeignKey("trades.id"), index=True)
@@ -660,14 +664,15 @@ class LocalTrade:
             f"open_rate={round_value(self.open_rate, 8)}, open_since={open_since})"
         )
 
-    def to_json(self, minified: bool = False) -> dict[str, Any]:
+    def to_json(self, minified: bool = False, include_orders: bool = True) -> dict[str, Any]:
         """
         :param minified: If True, only return a subset of the data is returned.
                          Only used for backtesting.
         :return: Dictionary with trade data
         """
-        filled_or_open_orders = self.select_filled_or_open_orders()
+        filled_or_open_orders = self.select_filled_or_open_orders() if include_orders else []
         orders_json = [order.to_json(self.entry_side, minified) for order in filled_or_open_orders]
+        entry_fill_date = self.date_entry_fill_utc if include_orders else None
 
         return {
             "trade_id": self.id,
@@ -692,11 +697,9 @@ class LocalTrade:
             "open_date": self.open_date.strftime(DATETIME_PRINT_FORMAT),
             "open_timestamp": dt_ts_none(self.open_date_utc),
             "open_fill_date": (
-                self.date_entry_fill_utc.strftime(DATETIME_PRINT_FORMAT)
-                if self.date_entry_fill_utc
-                else None
+                entry_fill_date.strftime(DATETIME_PRINT_FORMAT) if entry_fill_date else None
             ),
-            "open_fill_timestamp": dt_ts_none(self.date_entry_fill_utc),
+            "open_fill_timestamp": dt_ts_none(entry_fill_date),
             "open_rate": self.open_rate,
             "open_rate_requested": self.open_rate_requested,
             "open_trade_value": round(self.open_trade_value, 8),
@@ -756,9 +759,9 @@ class LocalTrade:
             "precision_mode": self.precision_mode,
             "precision_mode_price": self.precision_mode_price,
             "contract_size": self.contract_size,
-            "nr_of_successful_entries": self.nr_of_successful_entries,
-            "nr_of_successful_exits": self.nr_of_successful_exits,
-            "has_open_orders": self.has_open_orders,
+            "nr_of_successful_entries": self.nr_of_successful_entries if include_orders else 0,
+            "nr_of_successful_exits": self.nr_of_successful_exits if include_orders else 0,
+            "has_open_orders": self.has_open_orders if include_orders else False,
             "orders": orders_json,
         }
 
@@ -1683,6 +1686,11 @@ class Trade(ModelBase, LocalTrade):
     """
 
     __tablename__ = "trades"
+    __table_args__ = (
+        Index("ix_trades_open_close_id", "is_open", "close_date", "id"),
+        Index("ix_trades_open_short_close", "is_open", "is_short", "close_date"),
+        Index("ix_trades_open_closed_profit", "is_open", "close_profit_abs"),
+    )
     session: ClassVar[SessionType]
 
     use_db: bool = True

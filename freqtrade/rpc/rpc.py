@@ -4,6 +4,8 @@ This module contains class to define a RPC communications
 
 import json
 import logging
+import threading
+import time
 from abc import abstractmethod
 from collections.abc import Generator, Sequence
 from datetime import UTC, date, datetime, timedelta
@@ -13,8 +15,9 @@ import psutil
 from dateutil.relativedelta import relativedelta
 from dateutil.tz import tzlocal
 from numpy import inf, isnan, mean, nan
-from pandas import DataFrame, NaT, read_sql
-from sqlalchemy import func, select
+from pandas import DataFrame, NaT, concat, read_sql
+from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy.orm import aliased
 
 from freqtrade import __version__
 from freqtrade.configuration.timerange import TimeRange
@@ -131,6 +134,24 @@ class RPC:
         """
         self._freqtrade = freqtrade
         self._config: Config = freqtrade.config
+        # Closed history is immutable during normal operation.  Keep a compact dataframe
+        # snapshot and append only newly closed trades instead of rebuilding thousands of
+        # SQLAlchemy objects for every WebUI/APK /profit request.
+        self._closed_trade_cache = DataFrame(
+            columns=[
+                "id",
+                "pair",
+                "is_short",
+                "open_date",
+                "close_date",
+                "profit_ratio",
+                "profit_abs",
+                "trading_volume",
+                "duration",
+            ]
+        )
+        self._closed_trade_cache_watermark: tuple[datetime, int] | None = None
+        self._closed_trade_cache_lock = threading.RLock()
         if self._config.get("fiat_display_currency"):
             self._fiat_converter = CryptoToFiatConverter(self._config)
 
@@ -455,32 +476,54 @@ class RPC:
             "data": data,
         }
 
-    def _rpc_trade_history(self, limit: int, offset: int = 0, order_by_id: bool = False) -> dict:
+    def _rpc_trade_history(
+        self,
+        limit: int,
+        offset: int = 0,
+        order_by_id: bool = False,
+        include_orders: bool = True,
+    ) -> dict:
         """Returns the X last trades"""
+        started = time.perf_counter()
         order_by: Any = Trade.id if order_by_id else Trade.close_date.desc()
         if limit:
             trades = Trade.session.scalars(
-                Trade.get_trades_query([Trade.is_open.is_(False)])
+                Trade.get_trades_query([Trade.is_open.is_(False)], include_orders=include_orders)
                 .order_by(order_by)
                 .limit(limit)
                 .offset(offset)
             )
         else:
             trades = Trade.session.scalars(
-                Trade.get_trades_query([Trade.is_open.is_(False)]).order_by(Trade.close_date.desc())
+                Trade.get_trades_query(
+                    [Trade.is_open.is_(False)], include_orders=include_orders
+                ).order_by(Trade.close_date.desc())
             )
 
-        output = [trade.to_json() for trade in trades]
+        output = [trade.to_json(include_orders=include_orders) for trade in trades]
         total_trades = Trade.session.scalar(
             select(func.count(Trade.id)).filter(Trade.is_open.is_(False))
         )
 
-        return {
+        result = {
             "trades": output,
             "trades_count": len(output),
             "offset": offset,
             "total_trades": total_trades,
         }
+        elapsed = time.perf_counter() - started
+        if elapsed >= 0.5:
+            logger.warning(
+                "CK Quant performance: trade history request took %.3fs "
+                "(limit=%d, offset=%d, returned=%d, total=%d, include_orders=%s).",
+                elapsed,
+                limit,
+                offset,
+                len(output),
+                total_trades,
+                include_orders,
+            )
+        return result
 
     def _rpc_stats(self) -> dict[str, Any]:
         """
@@ -516,6 +559,153 @@ class RPC:
         durations = {"wins": wins_dur, "draws": draws_dur, "losses": losses_dur}
         return {"exit_reasons": exit_reasons, "durations": durations}
 
+    def _closed_trade_frame(self) -> DataFrame:
+        """Return compact, incrementally refreshed closed-trade history.
+
+        The old statistics path materialized every Trade ORM object on every request and
+        `/profit_all` repeated that work for all/long/short.  This snapshot loads only the
+        columns used by statistics, and only rows closed after the last watermark.
+        """
+        started = time.perf_counter()
+        with self._closed_trade_cache_lock:
+            latest = Trade.session.execute(
+                select(Trade.close_date, Trade.id)
+                .where(Trade.is_open.is_(False), Trade.close_date.is_not(None))
+                .order_by(Trade.close_date.desc(), Trade.id.desc())
+                .limit(1)
+            ).first()
+            latest_watermark = (latest.close_date, latest.id) if latest else None
+            if latest_watermark == self._closed_trade_cache_watermark:
+                return self._closed_trade_cache
+
+            incremental = (
+                self._closed_trade_cache_watermark is not None and latest_watermark is not None
+            )
+            order_trade = aliased(Trade)
+            order_trade_filters = [
+                order_trade.is_open.is_(False),
+                order_trade.close_date.is_not(None),
+            ]
+            trade_filters = [Trade.is_open.is_(False), Trade.close_date.is_not(None)]
+            if incremental:
+                watermark_date, watermark_id = self._closed_trade_cache_watermark
+                order_trade_filters.append(
+                    or_(
+                        order_trade.close_date > watermark_date,
+                        and_(
+                            order_trade.close_date == watermark_date,
+                            order_trade.id > watermark_id,
+                        ),
+                    )
+                )
+                trade_filters.append(
+                    or_(
+                        Trade.close_date > watermark_date,
+                        and_(Trade.close_date == watermark_date, Trade.id > watermark_id),
+                    )
+                )
+            order_totals_by_trade = (
+                select(
+                    Order.ft_trade_id.label("trade_id"),
+                    func.coalesce(func.sum(Order.cost), 0.0).label("trading_volume"),
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (
+                                    or_(
+                                        and_(
+                                            order_trade.is_short.is_(True),
+                                            Order.ft_order_side == "sell",
+                                        ),
+                                        and_(
+                                            order_trade.is_short.is_(False),
+                                            Order.ft_order_side == "buy",
+                                        ),
+                                    ),
+                                    (
+                                        func.coalesce(Order.filled, Order.amount)
+                                        * func.coalesce(Order.average, Order.price, Order.ft_price)
+                                    )
+                                    / func.coalesce(order_trade.leverage, 1),
+                                ),
+                                else_=0.0,
+                            )
+                        ),
+                        0.0,
+                    ).label("entry_cost"),
+                )
+                .join(order_trade, order_trade.id == Order.ft_trade_id)
+                .where(Order.status == "closed", *order_trade_filters)
+                .group_by(Order.ft_trade_id)
+                .subquery()
+            )
+            query = (
+                select(
+                    Trade.id,
+                    Trade.pair,
+                    Trade.is_short,
+                    Trade.open_date,
+                    Trade.close_date,
+                    Trade.close_profit.label("profit_ratio"),
+                    Trade.close_profit_abs.label("profit_abs"),
+                    func.coalesce(order_totals_by_trade.c.trading_volume, 0.0).label(
+                        "trading_volume"
+                    ),
+                    func.coalesce(order_totals_by_trade.c.entry_cost, 0.0).label("entry_cost"),
+                )
+                .outerjoin(order_totals_by_trade, order_totals_by_trade.c.trade_id == Trade.id)
+                .where(*trade_filters)
+                .order_by(Trade.close_date, Trade.id)
+            )
+
+            rows = Trade.session.execute(query).mappings().all()
+            records = [dict(row) for row in rows]
+            frame = DataFrame.from_records(records)
+            if not frame.empty:
+                frame.loc[:, "duration"] = (
+                    frame["close_date"] - frame["open_date"]
+                ).dt.total_seconds()
+                if incremental and not self._closed_trade_cache.empty:
+                    frame = concat([self._closed_trade_cache, frame], ignore_index=True)
+                frame = frame.drop_duplicates(subset=["id"], keep="last").sort_values(
+                    ["close_date", "id"]
+                )
+            elif not incremental:
+                frame = DataFrame(
+                    columns=[
+                        "id",
+                        "pair",
+                        "is_short",
+                        "open_date",
+                        "close_date",
+                        "profit_ratio",
+                        "profit_abs",
+                        "trading_volume",
+                        "entry_cost",
+                        "duration",
+                    ]
+                )
+            else:
+                frame = self._closed_trade_cache
+
+            self._closed_trade_cache = frame
+            self._closed_trade_cache_watermark = latest_watermark
+            elapsed = time.perf_counter() - started
+            if elapsed >= 0.5:
+                logger.warning(
+                    "CK Quant performance: closed history snapshot took %.3fs "
+                    "(%d cached trades, %d new rows).",
+                    elapsed,
+                    len(frame),
+                    len(records),
+                )
+            return self._closed_trade_cache
+
+    def _invalidate_closed_trade_cache(self) -> None:
+        with self._closed_trade_cache_lock:
+            self._closed_trade_cache = self._closed_trade_cache.iloc[0:0].copy()
+            self._closed_trade_cache_watermark = None
+
     def _collect_trade_statistics_data(
         self,
         trades: Sequence["Trade"],
@@ -532,7 +722,7 @@ class RPC:
         losing_trades = 0
         winning_profit = 0.0
         losing_profit = 0.0
-# 实时（含未平仓）赢/亏 —— 仅用于 profit factor
+        # 实时（含未平仓）赢/亏 —— 仅用于 profit factor
         live_winning_profit = 0.0
         live_losing_profit = 0.0
 
@@ -573,7 +763,7 @@ class RPC:
                     profit_ratio = _profit.profit_ratio
                     profit_abs = _profit.total_profit
                     open_profit_coin.append(profit_abs)
-# 未平仓浮盈计入实时赢/亏（用于实时 profit factor）
+                    # 未平仓浮盈计入实时赢/亏（用于实时 profit factor）
                     if profit_ratio >= 0:
                         live_winning_profit += profit_abs
                     else:
@@ -593,7 +783,7 @@ class RPC:
             "losing_trades": losing_trades,
             "winning_profit": winning_profit,
             "losing_profit": losing_profit,
-"live_winning_profit": live_winning_profit,
+            "live_winning_profit": live_winning_profit,
             "live_losing_profit": live_losing_profit,
 
             "open_profit_coin": open_profit_coin,
@@ -774,48 +964,92 @@ class RPC:
         """
         Returns cumulative profit statistics, with optional direction filter (long/short)
         """
+        stats_started = time.perf_counter()
         use_full_equity_history = start_date is None and direction is None
-        start_date = datetime.fromtimestamp(0) if start_date is None else start_date
+        start_date = datetime.fromtimestamp(0, UTC) if start_date is None else start_date
 
-        trade_filter = (
-            Trade.is_open.is_(False) & (Trade.close_date >= start_date)
-        ) | Trade.is_open.is_(True)
-
+        open_filter = Trade.is_open.is_(True)
         if direction == "long":
             dir_filter = Trade.is_short.is_(False)
-            trade_filter = trade_filter & dir_filter
+            open_filter = open_filter & dir_filter
         elif direction == "short":
             dir_filter = Trade.is_short.is_(True)
-            trade_filter = trade_filter & dir_filter
+            open_filter = open_filter & dir_filter
 
-        trades: Sequence[Trade] = Trade.session.scalars(
-            Trade.get_trades_query(trade_filter, include_orders=False).order_by(Trade.id)
+        open_trades: Sequence[Trade] = Trade.session.scalars(
+            Trade.get_trades_query(open_filter).order_by(Trade.id)
         ).all()
+        closed_frame = self._closed_trade_frame()
+        if not closed_frame.empty:
+            closed_start = start_date.replace(tzinfo=None) if start_date.tzinfo else start_date
+            closed_frame = closed_frame.loc[closed_frame["close_date"] >= closed_start]
+            if direction == "long":
+                closed_frame = closed_frame.loc[~closed_frame["is_short"]]
+            elif direction == "short":
+                closed_frame = closed_frame.loc[closed_frame["is_short"]]
 
-        stats = self._collect_trade_statistics_data(trades, stake_currency, fiat_display_currency)
+        # Open positions are bounded by max_open_trades. Historical closed positions use
+        # compact numeric columns from the incremental snapshot above.
+        stats = self._collect_trade_statistics_data(
+            open_trades, stake_currency, fiat_display_currency
+        )
 
-        profit_all_coin = stats["profit_all_coin"]
-        profit_all_ratio = stats["profit_all_ratio"]
-        profit_closed_coin = stats["profit_closed_coin"]
-        profit_closed_ratio = stats["profit_closed_ratio"]
-        durations = stats["durations"]
-        winning_trades = stats["winning_trades"]
-        losing_trades = stats["losing_trades"]
-        winning_profit = stats["winning_profit"]
-        losing_profit = stats["losing_profit"]
+        profit_closed_coin = closed_frame["profit_abs"].fillna(0.0).tolist()
+        profit_closed_ratio = closed_frame["profit_ratio"].fillna(0.0).tolist()
+        durations = closed_frame["duration"].dropna().tolist()
+        winning_frame = closed_frame.loc[closed_frame["profit_ratio"].fillna(0.0) >= 0]
+        losing_frame = closed_frame.loc[closed_frame["profit_ratio"].fillna(0.0) < 0]
+        winning_trades = len(winning_frame)
+        losing_trades = len(losing_frame)
+        winning_profit = float(winning_frame["profit_abs"].fillna(0.0).sum())
+        losing_profit = float(losing_frame["profit_abs"].fillna(0.0).sum())
+        profit_all_coin = [*profit_closed_coin, *stats["profit_all_coin"]]
+        profit_all_ratio = [*profit_closed_ratio, *stats["profit_all_ratio"]]
         open_profit_coin = stats["open_profit_coin"]
 
-        closed_trade_count = len([t for t in trades if not t.is_open])
+        closed_trade_count = len(closed_frame)
+        if closed_trade_count:
+            pair_stats = (
+                closed_frame.groupby("pair", dropna=False)
+                .agg(
+                    entry_cost=("entry_cost", "sum"),
+                    profit_abs=("profit_abs", "sum"),
+                    count=("id", "count"),
+                )
+                .sort_values("profit_abs", ascending=False)
+            )
+            best_pair_row = pair_stats.iloc[0]
+            best_pair_rate = (
+                float(best_pair_row["profit_abs"] / best_pair_row["entry_cost"])
+                if best_pair_row["entry_cost"]
+                else 0.0
+            )
+            best_pair = (
+                pair_stats.index[0],
+                best_pair_rate,
+                float(best_pair_row["profit_abs"]),
+                int(best_pair_row["count"]),
+            )
+            trading_volume = float(closed_frame["trading_volume"].fillna(0.0).sum())
+        else:
+            best_pair = None
+            trading_volume = 0.0
 
-        best_pair_filters = [Trade.close_date > start_date]
-        trading_volume_filters = [Order.order_filled_date >= start_date]
-
-        if direction:
-            best_pair_filters.append(dir_filter)
-            trading_volume_filters.append(dir_filter)
-
-        best_pair = Trade.get_best_pair(best_pair_filters)
-        trading_volume = Trade.get_trading_volume(trading_volume_filters)
+        # The historical API includes filled entry/exit orders belonging to positions
+        # that are still open.  There are at most max_open_trades of these, so adding
+        # them from the already-loaded open positions keeps the original result without
+        # scanning the lifetime order table.
+        open_order_start = (
+            start_date.replace(tzinfo=UTC) if start_date.tzinfo is None else start_date
+        )
+        trading_volume += sum(
+            float(order.cost or 0.0)
+            for trade in open_trades
+            for order in trade.orders
+            if order.status == "closed"
+            and order.order_filled_utc
+            and order.order_filled_utc >= open_order_start
+        )
 
         # Prepare data to display
         profit_closed_coin_sum = round(sum(profit_closed_coin), 8)
@@ -843,7 +1077,7 @@ class RPC:
 
         profit_factor = winning_profit / abs(losing_profit) if losing_profit else float("inf")
 
-# 实时 Profit Factor（已平仓 + 未平仓浮盈）—— 机器人开着就有未平仓单，统计需实时
+        # 实时 Profit Factor（已平仓 + 未平仓浮盈）—— 机器人开着就有未平仓单，统计需实时
         live_winning = winning_profit + stats["live_winning_profit"]
         live_losing = losing_profit + stats["live_losing_profit"]
         if live_losing:
@@ -855,22 +1089,28 @@ class RPC:
 
         winrate = (winning_trades / closed_trade_count) if closed_trade_count > 0 else 0
 
-        trades_df = DataFrame(
-            [
-                {
-                    "close_date": format_date(trade.close_date),
-                    "close_date_dt": trade.close_date,
-                    "profit_abs": trade.close_profit_abs,
-                }
-                for trade in trades
-                if not trade.is_open and trade.close_date
-            ]
-        )
+        trades_df = closed_frame.loc[:, ["close_date", "profit_abs"]].copy()
+        trades_df.loc[:, "close_date_dt"] = trades_df["close_date"]
+        trades_df.loc[:, "close_date"] = trades_df["close_date"].map(format_date)
 
         expectancy, expectancy_ratio = calculate_expectancy(trades_df)
 
-        first_date = trades[0].open_date_utc if trades else None
-        last_date = trades[-1].open_date_utc if trades else None
+        # Preserve Freqtrade's historical semantics: first/latest refer to trade ID order,
+        # not the mathematically earliest/latest timestamp.
+        dated_trade_ids = [(trade.id, trade.open_date_utc) for trade in open_trades]
+        if not closed_frame.empty:
+            dated_trade_ids.extend(
+                (
+                    int(row.id),
+                    row.open_date.replace(tzinfo=UTC)
+                    if row.open_date.tzinfo is None
+                    else row.open_date,
+                )
+                for row in closed_frame.itertuples(index=False)
+            )
+        dated_trade_ids.sort(key=lambda item: item[0])
+        first_date = dated_trade_ids[0][1] if dated_trade_ids else None
+        last_date = dated_trade_ids[-1][1] if dated_trade_ids else None
         bot_start = KeyValueStore.get_datetime_value("bot_start_time")
 
         if use_full_equity_history:
@@ -929,7 +1169,7 @@ class RPC:
             days_passed=days_passed,
         )
 
-        return {
+        result = {
             "profit_closed_coin": profit_closed_coin_sum,
             "profit_closed_percent_mean": round(profit_closed_ratio_mean * 100, 2),
             "profit_closed_ratio_mean": profit_closed_ratio_mean,
@@ -946,7 +1186,7 @@ class RPC:
             "profit_all_ratio": profit_all_ratio_fromstart,
             "profit_all_percent": round(profit_all_ratio_fromstart * 100, 2),
             "profit_all_fiat": profit_all_fiat,
-            "trade_count": len(trades),
+            "trade_count": closed_trade_count + len(open_trades),
             "closed_trade_count": closed_trade_count,
             "first_trade_date": format_date(first_date),
             "first_trade_humanized": dt_humanize_delta(first_date) if first_date else "",
@@ -987,6 +1227,17 @@ class RPC:
             "bot_start_timestamp": dt_ts_def(bot_start, 0),
             "bot_start_date": format_date(bot_start),
         }
+        stats_elapsed = time.perf_counter() - stats_started
+        if stats_elapsed >= 0.5:
+            logger.warning(
+                "CK Quant performance: profit statistics took %.3fs "
+                "(%d closed, %d open, direction=%s).",
+                stats_elapsed,
+                closed_trade_count,
+                len(open_trades),
+                direction or "all",
+            )
+        return result
 
     def _rpc_get_historic_balance(self) -> tuple[DataFrame, int]:
         """
@@ -1482,6 +1733,7 @@ class RPC:
                         pass
             trade_pair = trade.pair
             trade.delete()
+            self._invalidate_closed_trade_cache()
             self._freqtrade.wallets.update()
             return {
                 "result": "success",

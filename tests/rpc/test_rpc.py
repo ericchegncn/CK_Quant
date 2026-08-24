@@ -378,6 +378,42 @@ def test_rpc_trade_history(mocker, default_conf, markets, fee, is_short):
     assert trades["trades"][-1]["pair"] == "ETC/BTC"
     assert trades["trades"][0]["pair"] == "XRP/BTC"
 
+    lightweight = rpc._rpc_trade_history(2, include_orders=False)
+    assert len(lightweight["trades"]) == 2
+    assert all(trade["orders"] == [] for trade in lightweight["trades"])
+    assert all(trade["open_fill_timestamp"] is None for trade in lightweight["trades"])
+
+
+def test_closed_trade_snapshot_is_incremental(mocker, default_conf_usdt, ticker, fee):
+    mocker.patch("freqtrade.rpc.telegram.Telegram", MagicMock())
+    mocker.patch.multiple(EXMS, fetch_ticker=ticker, get_fee=fee)
+    freqtradebot = get_patched_freqtradebot(mocker, default_conf_usdt)
+    create_mock_trades_usdt(fee)
+    rpc = RPC(freqtradebot)
+
+    execute_spy = mocker.spy(Trade.session, "execute")
+    first = rpc._closed_trade_frame()
+    first_query_count = execute_spy.call_count
+    second = rpc._closed_trade_frame()
+
+    assert len(first) == 3
+    assert second is first
+    assert first_query_count == 2  # watermark plus compact snapshot
+    assert execute_spy.call_count == first_query_count + 1  # watermark only on cache hit
+
+    newly_closed = Trade.session.scalars(
+        select(Trade).where(Trade.is_open.is_(True)).order_by(Trade.id.desc()).limit(1)
+    ).one()
+    newly_closed.is_open = False
+    newly_closed.close_date = datetime.now(UTC)
+    newly_closed.close_profit = 0.01
+    newly_closed.close_profit_abs = 0.1
+    Trade.commit()
+
+    third = rpc._closed_trade_frame()
+    assert len(third) == 4
+    assert third.iloc[-1]["id"] == newly_closed.id
+
 
 @pytest.mark.parametrize("is_short", [True, False])
 def test_rpc_delete_trade(mocker, default_conf, fee, markets, caplog, is_short):
