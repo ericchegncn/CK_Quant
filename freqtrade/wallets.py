@@ -2,6 +2,7 @@
 """Wallet"""
 
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Literal, NamedTuple
 
@@ -183,7 +184,10 @@ class Wallets:
         self._positions = _positions
 
     def _update_live(self) -> None:
+        started = time.perf_counter()
+        balances_started = started
         balances = self._exchange.get_balances()
+        balances_elapsed = time.perf_counter() - balances_started
         _wallets = {}
 
         for currency in balances:
@@ -195,8 +199,11 @@ class Wallets:
                     balances[currency].get("total", 0),
                 )
 
+        positions_started = time.perf_counter()
         positions = self._exchange.fetch_positions()
+        positions_elapsed = time.perf_counter() - positions_started
         _parsed_positions = {}
+        open_trade_leverage: dict[str, float] | None = None
         for position in positions:
             symbol = position["symbol"]
             if position["side"] is None or position["collateral"] == 0.0:
@@ -206,8 +213,11 @@ class Wallets:
             collateral = safe_value_fallback(position, "initialMargin", "collateral", 0.0)
             leverage: float | None = position.get("leverage")
             if not leverage:
-                trade = Trade.get_trades_proxy(is_open=True, pair=symbol)
-                leverage = trade[0].leverage if trade else None
+                if open_trade_leverage is None:
+                    open_trade_leverage = {
+                        trade.pair: trade.leverage for trade in Trade.get_open_trades()
+                    }
+                leverage = open_trade_leverage.get(symbol)
             _parsed_positions[symbol] = PositionWallet(
                 symbol,
                 position=size,
@@ -217,6 +227,17 @@ class Wallets:
             )
         self._positions = _parsed_positions
         self._wallets = _wallets
+        total_elapsed = time.perf_counter() - started
+        if total_elapsed >= 0.5:
+            logger.warning(
+                "CK Quant performance: live wallet sync took %.3fs "
+                "(balances %.3fs, positions %.3fs, %d balances, %d positions).",
+                total_elapsed,
+                balances_elapsed,
+                positions_elapsed,
+                len(_wallets),
+                len(_parsed_positions),
+            )
 
     def update(self, require_update: bool = True) -> None:
         """

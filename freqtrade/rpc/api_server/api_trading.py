@@ -171,9 +171,14 @@ def trades(
     order_by_id: bool = Query(
         True, description="Sort trades by id (default: True). If False, sorts by latest timestamp"
     ),
+    include_orders: bool = Query(
+        True, description="Include order details. Disable for lightweight history lists/charts."
+    ),
     rpc: RPC = Depends(get_rpc),
 ):
-    return rpc._rpc_trade_history(limit, offset=offset, order_by_id=order_by_id)
+    return rpc._rpc_trade_history(
+        limit, offset=offset, order_by_id=order_by_id, include_orders=include_orders
+    )
 
 
 @router.get("/trade/{tradeid}", response_model=OpenTradeSchema, tags=["Trades"])

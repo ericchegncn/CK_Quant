@@ -355,6 +355,28 @@ def set_sqlite_to_wal(engine):
             connection.execute(text("PRAGMA journal_mode=wal"))
 
 
+def ensure_performance_indexes(engine):
+    """Create CK Quant hot-path indexes on both existing and new databases.
+
+    ``metadata.create_all`` skips tables which already exist, so model-level Index
+    declarations alone do not upgrade a long-running bot database.
+    """
+    performance_index_names = {
+        "ix_orders_trade_status_filled",
+        "ix_trades_open_close_id",
+        "ix_trades_open_short_close",
+        "ix_trades_open_closed_profit",
+    }
+    indexes = [
+        index
+        for table in (Order.__table__, Trade.__table__)
+        for index in table.indexes
+        if index.name in performance_index_names
+    ]
+    for index in indexes:
+        index.create(bind=engine, checkfirst=True)
+
+
 def fix_old_dry_orders(engine):
     with engine.begin() as connection:
         # Update current dry-run Orders where
@@ -475,6 +497,7 @@ def check_migrate(engine: Engine, decl_base, previous_tables: list[str]) -> None
         )
 
     set_sqlite_to_wal(engine)
+    ensure_performance_indexes(engine)
     fix_old_dry_orders(engine)
     fix_wrong_max_stake_amount(engine)
 

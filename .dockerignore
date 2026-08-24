@@ -29,12 +29,21 @@ ck_quant_ui/android/
 artifacts/
 desktop/
 docker-images/
+CK_Quant_Rust/
+**/target/
+LOGO/
 .codex-release-objects/
+.codex-docker-config/
 build_helpers/
 *.apk
 
 *.yml
 *.yaml
+**/*.yml
+**/*.yaml
+!ck_quant_ui/pnpm-lock.yaml
+!ck_quant_ui/pnpm-workspace.yaml
+remote-deploy/
 *.sh
 *.ps1
 

@@ -224,11 +224,11 @@ export function createBotSubStore(botId: string, botName: string) {
       if (forceUpdate || refreshRequired.value) {
         try {
           refreshing.value = true;
+          const shouldRefreshTrades = refreshRequired.value || trades.value.length === 0;
           // TODO: Should be AxiosInstance
           const updates: Promise<unknown>[] = [];
           updates.push(getState());
           updates.push(getProfit());
-          updates.push(getTrades());
           updates.push(getBalance());
           updates.push(updateWalletChange());
           /* white/blacklist might be refreshed more often as they are not expensive on the backend */
@@ -236,6 +236,14 @@ export function createBotSubStore(botId: string, botName: string) {
           updates.push(getBlacklist());
           updates.push(getCurrentStrategy());
           await Promise.all(updates);
+          // Profit contains the authoritative closed count. Only fetch the newest history page
+          // when a trade actually changed; periodic balance refreshes must not scan history.
+          if (
+            shouldRefreshTrades ||
+            (profit.value?.closed_trade_count ?? tradeCount.value) !== tradeCount.value
+          ) {
+            await getTrades();
+          }
           refreshRequired.value = false;
         } finally {
           refreshing.value = false;
@@ -257,36 +265,35 @@ export function createBotSubStore(botId: string, botName: string) {
 
     async function getTrades() {
       try {
-        let totalTrades = 0;
         const pageLength = 500;
-        const fetchTrades = async (limit: number, offset: number) => {
-          return api.get<TradeResponse>('/trades', {
-            params: { limit, offset },
-          });
-        };
-        const res = await fetchTrades(pageLength, 0);
+        const maxCachedTrades = 2000;
+        // Always fetch only the newest page. The previous implementation paged through the
+        // complete lifetime history every minute, so one WebUI tab became progressively more
+        // expensive as the bot accumulated trades.
+        const res = await api.get<TradeResponse>('/trades', {
+          params: { limit: pageLength, offset: 0, order_by_id: false, include_orders: false },
+        });
         const result: TradeResponse = res.data;
-        let { trades: fetchedTrades } = result;
+        const { trades: fetchedTrades } = result;
         if (Array.isArray(fetchedTrades)) {
-          if (fetchedTrades.length !== result.total_trades) {
-            // Pagination necessary
-            // Don't use Promise.all - this would fire all requests at once, which can
-            // cause problems for big sqlite databases
-            do {
-              const pageResult = await fetchTrades(pageLength, fetchedTrades.length);
-              const nextResult: TradeResponse = pageResult.data;
-              fetchedTrades = fetchedTrades.concat(nextResult.trades);
-              totalTrades = pageResult.data.total_trades;
-            } while (fetchedTrades.length !== totalTrades);
+          const merged = new Map<number, ClosedTrade>();
+          for (const trade of [...fetchedTrades, ...trades.value]) {
+            merged.set(trade.trade_id, trade);
           }
-          const tradesCount = fetchedTrades.length;
-          trades.value = fetchedTrades.map((t) => ({
-            ...t,
-            botId,
-            botName,
-            botTradeId: `${botId}__${t.trade_id}`,
-          }));
-          tradeCount.value = tradesCount;
+          trades.value = Array.from(merged.values())
+            .sort((a, b) =>
+              b.close_timestamp && a.close_timestamp
+                ? b.close_timestamp - a.close_timestamp
+                : b.trade_id - a.trade_id,
+            )
+            .slice(0, maxCachedTrades)
+            .map((t) => ({
+              ...t,
+              botId,
+              botName,
+              botTradeId: `${botId}__${t.trade_id}`,
+            }));
+          tradeCount.value = result.total_trades;
         }
         return Promise.resolve();
       } catch (error) {

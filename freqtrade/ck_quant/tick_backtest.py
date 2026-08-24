@@ -19,7 +19,7 @@ CK Quant Tick-Level Backtest Engine
 
 用法（作为独立模块）:
     python -m freqtrade.ck_quant.tick_backtest \\
-        --config config.json --strategy CK_Trend \\
+        --config config.json --strategy SampleStrategy \\
         --data-dir user_data/data/binance/futures/trades_eth \\
         --timerange 20250701-20250731
 """

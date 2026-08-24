@@ -65,9 +65,10 @@ RUN if find /freqtrade -type f \( \
       -o -name 'test_ck_*.py' \
       -o -iname 'Freqtrade*.txt' \
       -o -path '*/user_data/strategies/*' \
+      -o -path '*/remote-deploy/*' \
       -o -path '*/.hotfix-build-*/*' \
     \) \
-      -print -quit | grep -q .; then \
+      -print -quit | tee /dev/stderr | grep -q .; then \
       echo 'Refusing to build: proprietary strategy source detected in Docker context.' >&2; \
       exit 1; \
     fi \
@@ -75,6 +76,12 @@ RUN if find /freqtrade -type f \( \
       'from user_data\.strategies\.CK_|import user_data\.strategies\.CK_|class CK_(Trend|EMA|Momentum|Reversion|Wick|Structure|RS|Retest)' \
       /freqtrade --include='*.py' | grep -q .; then \
       echo 'Refusing to build: proprietary CK strategy logic detected.' >&2; \
+      exit 1; \
+    fi \
+  && if grep -RIlE \
+      '8\.209\.251\.99|47\.239\.242\.72|47\.91\.1\.141|CK_Trend_HighLev_15m' \
+      /freqtrade | grep -q .; then \
+      echo 'Refusing to build: private deployment marker detected.' >&2; \
       exit 1; \
     fi \
   && pip install -e . --user --no-cache-dir \

@@ -8,7 +8,7 @@ from copy import deepcopy
 from datetime import UTC, datetime, time, timedelta
 from math import isclose
 from threading import Lock
-from time import sleep
+from time import perf_counter, sleep
 from typing import Any
 
 from schedule import Scheduler
@@ -72,6 +72,35 @@ logger = logging.getLogger(__name__)
 
 ICEBERG_ENTRY_KEY = "ckq_iceberg_entry"
 ICEBERG_EXIT_KEY = "ckq_iceberg_exit"
+
+
+class _LatencyTrace:
+    """Low-overhead phase timer which only logs operations that exceed the SLO."""
+
+    def __init__(self) -> None:
+        self.started = perf_counter()
+        self.last = self.started
+        self.phases: dict[str, float] = {}
+
+    def mark(self, phase: str) -> None:
+        now = perf_counter()
+        self.phases[phase] = self.phases.get(phase, 0.0) + now - self.last
+        self.last = now
+
+    def finish(self, operation: str, *, threshold: float = 1.0, **context: Any) -> None:
+        total = perf_counter() - self.started
+        if total < threshold:
+            return
+        phase_text = ", ".join(f"{name}={duration:.3f}s" for name, duration in self.phases.items())
+        context_text = ", ".join(f"{name}={value}" for name, value in context.items())
+        logger.warning(
+            "CK Quant performance: %s took %.3fs (%s%s%s).",
+            operation,
+            total,
+            phase_text,
+            ", " if phase_text and context_text else "",
+            context_text,
+        )
 
 
 class FreqtradeBot(LoggingMixin):
@@ -265,21 +294,25 @@ class FreqtradeBot(LoggingMixin):
         :return: True if one or more trades has been created or closed, False otherwise
         """
 
+        latency = _LatencyTrace()
         # Check whether markets have to be reloaded and reload them when it's needed
         self.exchange.reload_markets()
 
         self.update_trades_without_assigned_fees()
+        latency.mark("market_and_fee_refresh")
 
         # Query trades from persistence layer
         trades: list[Trade] = Trade.get_open_trades()
 
         self.active_pair_whitelist = self._refresh_active_whitelist(trades)
+        latency.mark("load_open_trades")
 
         # Refreshing candles
         self.dataprovider.refresh(
             self.pairlists.create_pair_list(self.active_pair_whitelist),
             self.strategy.gather_informative_pairs(),
         )
+        latency.mark("market_data")
 
         strategy_safe_wrapper(self.strategy.bot_loop_start, supress_error=True)(
             current_time=datetime.now(UTC)
@@ -287,10 +320,12 @@ class FreqtradeBot(LoggingMixin):
 
         with self._measure_execution:
             self.strategy.analyze(self.active_pair_whitelist)
+        latency.mark("strategy")
 
         with self._exit_lock:
             # Check for exchange cancellations, timeouts and user requested replace
             self.manage_open_orders()
+        latency.mark("open_order_management")
 
         # Protect from collisions with force_exit.
         # Without this, freqtrade may try to recreate stoploss_on_exchange orders
@@ -300,24 +335,30 @@ class FreqtradeBot(LoggingMixin):
             # First process current opened trades (positions)
             self.exit_positions(trades)
             Trade.commit()
+        latency.mark("exit_and_commit")
 
         # Replenish at most one child per trade and process loop.  This runs
         # after regular exits so a stop or reversal always takes precedence.
         with self._exit_lock:
             self.process_iceberg_orders()
+        latency.mark("iceberg")
 
         # Check if we need to adjust our current positions before attempting to enter new trades.
         if self.strategy.position_adjustment_enable:
             with self._exit_lock:
                 self.process_open_trade_positions()
+        latency.mark("position_adjustment")
 
         # Then looking for entry opportunities
         if self.state == State.RUNNING and self.get_free_open_trades():
             self.enter_positions()
+        latency.mark("entries")
         self._schedule.run_pending()
         Trade.commit()
         self.rpc.process_msg_queue(self.dataprovider._msg_queue)
+        latency.mark("scheduled_commit_rpc")
         self.last_process = datetime.now(UTC)
+        latency.finish("bot loop", threshold=2.0, open_trades=len(trades))
 
     def process_stopped(self) -> None:
         """
@@ -1056,6 +1097,7 @@ class FreqtradeBot(LoggingMixin):
         :return: True if an entry order is created, False if it fails.
         :raise: DependencyException or it's subclasses like ExchangeError.
         """
+        latency = _LatencyTrace()
         time_in_force = self.strategy.order_time_in_force["entry"]
 
         side: BuySell = "sell" if is_short else "buy"
@@ -1066,6 +1108,7 @@ class FreqtradeBot(LoggingMixin):
         enter_limit_requested, stake_amount, leverage = self.get_valid_enter_price_and_stake(
             pair, price, stake_amount, trade_side, enter_tag, trade, mode, leverage_
         )
+        latency.mark("validation_and_sizing")
 
         if not stake_amount:
             return False
@@ -1132,6 +1175,7 @@ class FreqtradeBot(LoggingMixin):
             leverage=leverage,
             initial_order=trade is None,
         )
+        latency.mark("exchange_create_order")
         order_obj = Order.parse_from_ccxt_object(order, pair, side, amount, enter_limit_requested)
         order_obj.ft_order_tag = enter_tag
         order_id = order["id"]
@@ -1192,6 +1236,7 @@ class FreqtradeBot(LoggingMixin):
             if trade
             else 0
         )
+        latency.mark("fees_and_funding")
 
         # This is a new trade
         if trade is None:
@@ -1233,6 +1278,7 @@ class FreqtradeBot(LoggingMixin):
         trade.recalc_trade_from_orders()
         Trade.session.add(trade)
         Trade.commit()
+        latency.mark("database_commit")
         if iceberg_entry and trade.get_custom_data(ICEBERG_ENTRY_KEY) is None:
             trade.set_custom_data(
                 ICEBERG_ENTRY_KEY,
@@ -1241,8 +1287,10 @@ class FreqtradeBot(LoggingMixin):
 
         # Updating wallets
         self.wallets.update()
+        latency.mark("wallet_sync")
 
         self._notify_enter(trade, order_obj, order_type, sub_trade=pos_adjust)
+        latency.mark("notification")
 
         if pos_adjust:
             if order_status == "closed":
@@ -1261,6 +1309,13 @@ class FreqtradeBot(LoggingMixin):
                     trade, order, order_obj, constants.CANCEL_REASON["TIMEOUT"]
                 )
 
+        latency.mark("post_order_reconciliation")
+        latency.finish(
+            "entry",
+            pair=pair,
+            mode=mode,
+            status=order_status,
+        )
         return True
 
     def cancel_stoploss_on_exchange(self, trade: Trade, allow_nonblocking: bool = False) -> Trade:
@@ -2264,6 +2319,7 @@ class FreqtradeBot(LoggingMixin):
         :param exit_check: CheckTuple with signal and reason
         :return: True if it succeeds False
         """
+        latency = _LatencyTrace()
         trade.set_funding_fees(
             self.exchange.get_funding_fees(
                 pair=trade.pair,
@@ -2272,6 +2328,7 @@ class FreqtradeBot(LoggingMixin):
                 open_date=trade.date_last_filled_utc,
             )
         )
+        latency.mark("funding")
 
         exit_type = "exit"
         exit_reason = exit_tag or exit_check.exit_reason
@@ -2306,11 +2363,14 @@ class FreqtradeBot(LoggingMixin):
             )
 
         limit = self.get_valid_price(custom_exit_price, proposed_limit_rate)
+        latency.mark("strategy_and_price")
 
         # First cancelling stoploss on exchange ...
         trade = self.cancel_stoploss_on_exchange(trade, allow_nonblocking=True)
+        latency.mark("cancel_stoploss")
 
         amount = self._safe_exit_amount(trade, trade.pair, sub_trade_amt or trade.amount)
+        latency.mark("amount_and_wallet_check")
         time_in_force = self.strategy.order_time_in_force["exit"]
 
         if (
@@ -2364,6 +2424,7 @@ class FreqtradeBot(LoggingMixin):
                 time_in_force=time_in_force,
                 initial_order=False,
             )
+            latency.mark("exchange_create_order")
         except InsufficientFundsError as e:
             logger.warning(f"Unable to place order {e}.")
             # Try to figure out what went wrong
@@ -2396,10 +2457,19 @@ class FreqtradeBot(LoggingMixin):
         trade.exit_reason = exit_reason
 
         self._notify_exit(trade, order_type, sub_trade=bool(sub_trade_amt), order=order_obj)
+        latency.mark("notification")
         # In case of market exit orders the order can be closed immediately
         if order.get("status", "unknown") in ("closed", "expired"):
             self.update_trade_state(trade, order_obj.order_id, order)
+        latency.mark("order_reconciliation")
         Trade.commit()
+        latency.mark("database_commit")
+        latency.finish(
+            "exit",
+            pair=trade.pair,
+            status=order.get("status", "unknown"),
+            reason=exit_reason,
+        )
 
         return True
 
