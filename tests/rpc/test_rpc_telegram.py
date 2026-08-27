@@ -1968,6 +1968,23 @@ async def test_whitelist_dynamic(default_conf, update, mocker) -> None:
     )
 
 
+async def test_whitelist_long_message_is_split(default_conf, update, mocker) -> None:
+    telegram, freqtradebot, msg_mock = get_telegram_testobject(mocker, default_conf)
+    pairlist = [f"PAIR{i:02d}/USDT:USDT" for i in range(20)]
+    freqtradebot.pairlists._whitelist = pairlist
+    mocker.patch("freqtrade.rpc.telegram.MAX_MESSAGE_LENGTH", 120)
+
+    context = MagicMock()
+    context.args = []
+    await telegram._whitelist(update=update, context=context)
+
+    messages = [call.args[0] for call in msg_mock.call_args_list]
+    assert len(messages) > 1
+    assert all(len(message) <= 120 for message in messages)
+    combined = "\n".join(messages)
+    assert all(combined.count(pair) == 1 for pair in pairlist)
+
+
 async def test_blacklist_static(default_conf, update, mocker) -> None:
     telegram, freqtradebot, msg_mock = get_telegram_testobject(mocker, default_conf)
 

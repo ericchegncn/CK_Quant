@@ -391,9 +391,13 @@ class FreqtradeBot(LoggingMixin):
         pairs that have open trades.
         """
         # Refresh whitelist
-        _prev_whitelist = self.pairlists.whitelist
+        _prev_whitelist = list(self.pairlists.whitelist)
         self.pairlists.refresh_pairlist()
-        _whitelist = self.pairlists.whitelist
+        # Keep the generated pairlist separate from the internal analysis list.
+        # Open-trade pairs must remain analyzed, but they are not part of the
+        # configured/generated whitelist exposed through RPC and WebUI.
+        _generated_whitelist = list(self.pairlists.whitelist)
+        _whitelist = list(_generated_whitelist)
 
         if trades:
             # Extend active-pair whitelist with pairs of open trades
@@ -401,8 +405,10 @@ class FreqtradeBot(LoggingMixin):
             _whitelist.extend([trade.pair for trade in trades if trade.pair not in _whitelist])
 
         # Called last to include the included pairs
-        if _prev_whitelist != _whitelist:
-            self.rpc.send_msg({"type": RPCMessageType.WHITELIST, "data": _whitelist})
+        if _prev_whitelist != _generated_whitelist:
+            self.rpc.send_msg(
+                {"type": RPCMessageType.WHITELIST, "data": _generated_whitelist}
+            )
 
         return _whitelist
 
