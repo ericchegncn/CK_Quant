@@ -225,12 +225,20 @@ class GainersLosersPairList(IPairList):
         else:
             pairlist = _pairlist
 
-        pairlist = self.filter_pairlist(pairlist, tickers)
+        # As the first pairlist handler, the full market is only the ranking
+        # universe.  It must not be treated as an upstream list for union mode.
+        pairlist = self.filter_pairlist(pairlist, tickers, merge_with_upstream=False)
         self._pair_cache["pairlist"] = pairlist.copy()
 
         return pairlist
 
-    def filter_pairlist(self, pairlist: list[str], tickers: dict) -> list[str]:
+    def filter_pairlist(
+        self,
+        pairlist: list[str],
+        tickers: dict,
+        *,
+        merge_with_upstream: bool = True,
+    ) -> list[str]:
         # filter 模式：原生过滤链 —— 只在上家输出的候选里排涨跌幅
         # union 模式：混合并集 —— 从全市场独立选涨跌幅榜，并与上家结果合并
         if self._mode == "union":
@@ -274,7 +282,7 @@ class GainersLosersPairList(IPairList):
         pairs = self._whitelist_for_active_markets(selected)
         pairs = self.verify_blacklist(pairs, logmethod=logger.info)
 
-        if self._mode == "union":
+        if self._mode == "union" and merge_with_upstream:
             # 混合并集：上家结果 + 涨跌幅榜（去重）
             return list(dict.fromkeys(list(pairlist) + pairs))
         return pairs
