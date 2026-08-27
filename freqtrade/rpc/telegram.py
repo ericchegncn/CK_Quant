@@ -1851,11 +1851,29 @@ class Telegram(RPCHandler):
             if "baseonly" in context.args:
                 whitelist["whitelist"] = [pair.split("/")[0] for pair in whitelist["whitelist"]]
 
-        message = f"Using whitelist `{whitelist['method']}` with {whitelist['length']} pairs\n"
-        message += f"`{', '.join(whitelist['whitelist'])}`"
+        header = f"Using whitelist `{whitelist['method']}` with {whitelist['length']} pairs\n"
+        messages: list[str] = []
+        message = f"{header}`"
+        has_pair = False
 
-        logger.debug(message)
-        await self._send_msg(message)
+        for pair in whitelist["whitelist"]:
+            token = f", {pair}" if has_pair else pair
+            if has_pair and len(message) + len(token) + 1 > MAX_MESSAGE_LENGTH:
+                messages.append(f"{message}`")
+                message = f"`{pair}"
+                has_pair = True
+            elif not has_pair and len(message) + len(token) + 1 > MAX_MESSAGE_LENGTH:
+                messages.append(header.rstrip())
+                message = f"`{pair}"
+                has_pair = True
+            else:
+                message += token
+                has_pair = True
+
+        messages.append(f"{message}`")
+        for message in messages:
+            logger.debug(message)
+            await self._send_msg(message)
 
     @authorized_only
     async def _blacklist(self, update: Update, context: CallbackContext) -> None:

@@ -77,6 +77,32 @@ def patch_RPCManager(mocker) -> MagicMock:
 # Unit tests
 
 
+def test_refresh_active_whitelist_keeps_generated_pairlist_separate() -> None:
+    freqtradebot = FreqtradeBot.__new__(FreqtradeBot)
+    freqtradebot.pairlists = MagicMock()
+    freqtradebot.pairlists.whitelist = ["OLD/USDT"]
+    generated_whitelist = ["ETH/USDT", "BTC/USDT"]
+
+    def refresh_pairlist() -> None:
+        freqtradebot.pairlists.whitelist = generated_whitelist
+
+    freqtradebot.pairlists.refresh_pairlist.side_effect = refresh_pairlist
+    freqtradebot.rpc = MagicMock()
+    open_trade = MagicMock(pair="OPEN/USDT")
+
+    active_whitelist = freqtradebot._refresh_active_whitelist([open_trade])
+
+    assert active_whitelist == ["ETH/USDT", "BTC/USDT", "OPEN/USDT"]
+    assert freqtradebot.pairlists.whitelist == generated_whitelist
+    assert "OPEN/USDT" not in freqtradebot.pairlists.whitelist
+    freqtradebot.rpc.send_msg.assert_called_once_with(
+        {
+            "type": RPCMessageType.WHITELIST,
+            "data": generated_whitelist,
+        }
+    )
+
+
 def test_freqtradebot_state(mocker, default_conf_usdt, markets) -> None:
     mocker.patch(f"{EXMS}.markets", PropertyMock(return_value=markets))
     freqtrade = get_patched_freqtradebot(mocker, default_conf_usdt)

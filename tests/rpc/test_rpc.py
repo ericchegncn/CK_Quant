@@ -1615,10 +1615,16 @@ def test_rpc_whitelist(mocker, default_conf) -> None:
 
     freqtradebot = get_patched_freqtradebot(mocker, default_conf)
     rpc = RPC(freqtradebot)
+    freqtradebot.active_pair_whitelist = [
+        *freqtradebot.active_pair_whitelist,
+        "OPEN/TRADE",
+    ]
     ret = rpc._rpc_whitelist()
     assert len(ret["method"]) == 1
     assert "StaticPairList" in ret["method"]
     assert ret["whitelist"] == default_conf["exchange"]["pair_whitelist"]
+    assert "OPEN/TRADE" not in ret["whitelist"]
+    assert rpc._ws_request_whitelist() == default_conf["exchange"]["pair_whitelist"]
 
 
 def test_rpc_whitelist_dynamic(mocker, default_conf) -> None:

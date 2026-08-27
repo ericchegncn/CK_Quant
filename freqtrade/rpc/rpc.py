@@ -1895,11 +1895,17 @@ class RPC:
         return lock
 
     def _rpc_whitelist(self) -> dict:
-        """Returns the currently active whitelist"""
+        """Returns the configured/generated whitelist.
+
+        The bot's active pair list may additionally contain pairs with open
+        trades so they continue receiving candle updates. Those internal pairs
+        must not leak into the user-facing whitelist.
+        """
+        whitelist = list(self._freqtrade.pairlists.whitelist)
         res = {
             "method": self._freqtrade.pairlists.name_list,
-            "length": len(self._freqtrade.active_pair_whitelist),
-            "whitelist": self._freqtrade.active_pair_whitelist,
+            "length": len(whitelist),
+            "whitelist": whitelist,
         }
         return res
 
@@ -2108,7 +2114,7 @@ class RPC:
 
     def _ws_request_whitelist(self):
         """Whitelist data for WebSocket"""
-        return self._freqtrade.active_pair_whitelist
+        return list(self._freqtrade.pairlists.whitelist)
 
     @staticmethod
     def _rpc_analysed_history_full(
