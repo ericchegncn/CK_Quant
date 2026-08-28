@@ -1414,6 +1414,22 @@ def test_api_profit_all(botclient, mocker, ticker, fee, markets):
     assert response["short"]["best_pair"] == "NEO/USDT"
 
 
+def test_api_profit_history(botclient, fee):
+    _, client = botclient
+    create_mock_trades_usdt(fee, is_short=None)
+
+    rc = client_get(client, f"{BASE_URI}/profit_history")
+
+    assert_response(rc, 200)
+    response = rc.json()
+    # The fixture contains seven trades, three of which are closed.
+    assert len(response["data"]) == 3
+    assert response["data"][-1]["profit"] == pytest.approx(response["closed_profit"])
+    assert [point["date"] for point in response["data"]] == sorted(
+        point["date"] for point in response["data"]
+    )
+
+
 @pytest.mark.parametrize("is_short", [True, False])
 def test_api_stats(botclient, mocker, ticker, fee, markets, is_short):
     ftbot, client = botclient

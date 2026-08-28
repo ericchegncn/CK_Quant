@@ -384,6 +384,24 @@ def test_rpc_trade_history(mocker, default_conf, markets, fee, is_short):
     assert all(trade["open_fill_timestamp"] is None for trade in lightweight["trades"])
 
 
+def test_rpc_profit_history_uses_complete_compact_snapshot(mocker, default_conf_usdt, ticker, fee):
+    mocker.patch("freqtrade.rpc.telegram.Telegram", MagicMock())
+    mocker.patch.multiple(EXMS, fetch_ticker=ticker, get_fee=fee)
+    freqtradebot = get_patched_freqtradebot(mocker, default_conf_usdt)
+    create_mock_trades_usdt(fee)
+    rpc = RPC(freqtradebot)
+
+    frame = rpc._closed_trade_frame()
+    history = rpc._rpc_profit_history()
+
+    assert len(history["data"]) == len(frame)
+    assert [point["date"] for point in history["data"]] == sorted(
+        point["date"] for point in history["data"]
+    )
+    assert history["closed_profit"] == pytest.approx(frame["profit_abs"].sum())
+    assert history["data"][-1]["profit"] == pytest.approx(history["closed_profit"])
+
+
 def test_closed_trade_snapshot_is_incremental(mocker, default_conf_usdt, ticker, fee):
     mocker.patch("freqtrade.rpc.telegram.Telegram", MagicMock())
     mocker.patch.multiple(EXMS, fetch_ticker=ticker, get_fee=fee)

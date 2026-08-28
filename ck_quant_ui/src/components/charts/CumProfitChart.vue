@@ -43,11 +43,13 @@ const props = withDefaults(
   defineProps<{
     trades: ClosedTrade[];
     openTrades?: Trade[];
+    profitHistory?: CumProfitChartData[];
     showTitle?: boolean;
     profitColumn?: string;
   }>(),
   {
     openTrades: () => [],
+    profitHistory: () => [],
     showTitle: true,
     profitColumn: 'profit_abs',
   },
@@ -66,6 +68,12 @@ const openProfit = computed<number>(() => {
 });
 
 const cumulativeData = computed<CumProfitChartData[]>(() => {
+  if (props.profitHistory.length > 0) {
+    const valueArray = props.profitHistory.map((point) => ({ ...point }));
+    appendOpenProfitProjection(valueArray);
+    return valueArray;
+  }
+
   // const res: CumProfitData[] = [];
   const resD: CumProfitDataPerDate = {};
   const closedTrades = props.trades
@@ -119,6 +127,11 @@ const cumulativeData = computed<CumProfitChartData[]>(() => {
     },
   );
 
+  appendOpenProfitProjection(valueArray);
+  return valueArray;
+});
+
+function appendOpenProfitProjection(valueArray: CumProfitChartData[]) {
   if (props.openTrades.length > 0) {
     let lastProfit = 0;
     let lastDate: number;
@@ -136,8 +149,7 @@ const cumulativeData = computed<CumProfitChartData[]>(() => {
     const tomorrow = Date.now() + 24 * 60 * 60 * 1000;
     valueArray.push({ date: tomorrow, currentProfit: resultWithOpen });
   }
-  return valueArray;
-});
+}
 
 function generateChart(initial = false) {
   const { colorProfit, colorLoss } = colorStore;
@@ -226,7 +238,7 @@ function generateChart(initial = false) {
 }
 
 const cumProfitChartOptions: ComputedRefWithControl<EChartsOption> = computedWithControl(
-  () => [props.trades, locale.value],
+  () => [props.trades, props.profitHistory, locale.value],
   () => {
     const chartOptionsLoc: EChartsOption = {
       title: {
@@ -310,7 +322,9 @@ watchThrottled(
   () => {
     cumProfitChartOptions.trigger();
   },
-  { throttle: 60 * 1000 },
+  // The overview cards refresh open P&L every few seconds.  Keep the projected
+  // endpoint on the same cadence so the curve and the displayed total agree.
+  { throttle: 5 * 1000 },
 );
 watch(
   () => settingsStore.chartTheme,
