@@ -186,6 +186,16 @@ class ProfitAll(BaseModel):
     short: Profit | None = None
 
 
+class ProfitHistoryPoint(BaseModel):
+    date: int
+    profit: float
+
+
+class ProfitHistory(BaseModel):
+    data: list[ProfitHistoryPoint]
+    closed_profit: float
+
+
 class SellReason(BaseModel):
     wins: int
     losses: int

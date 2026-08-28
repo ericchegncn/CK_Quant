@@ -54,6 +54,7 @@ import type {
   PairlistsResponse,
   PerformanceEntry,
   PlotConfig,
+  ProfitHistory,
   ProfitStats,
   RecursiveAnalysis,
   RecursiveAnalysisPayload,
@@ -102,6 +103,7 @@ export function createBotSubStore(botId: string, botName: string) {
     const trades = ref<ClosedTrade[]>([]);
     const openTrades = ref<Trade[]>([]);
     const tradeCount = ref(0);
+    const profitHistory = ref<ProfitHistory | undefined>(undefined);
 
     const pairlistMethods = ref<string[]>([]);
     const detailTradeId = ref<number | null>(null);
@@ -242,7 +244,7 @@ export function createBotSubStore(botId: string, botName: string) {
             shouldRefreshTrades ||
             (profit.value?.closed_trade_count ?? tradeCount.value) !== tradeCount.value
           ) {
-            await getTrades();
+            await Promise.all([getTrades(), getProfitHistory()]);
           }
           refreshRequired.value = false;
         } finally {
@@ -656,6 +658,21 @@ export function createBotSubStore(botId: string, botName: string) {
         return Promise.resolve(data);
       } catch (error) {
         return Promise.reject(error);
+      }
+    }
+
+    async function getProfitHistory() {
+      try {
+        const { data } = await api.get<ProfitHistory>('/profit_history');
+        profitHistory.value = data;
+        return data;
+      } catch (error) {
+        // Keep compatibility with older remote servers.  The chart will fall back to
+        // the locally cached detailed trades until that server updates.
+        if (!axios.isAxiosError(error) || error.response?.status !== 404) {
+          console.error(error);
+        }
+        return undefined;
       }
     }
 
@@ -1578,6 +1595,7 @@ export function createBotSubStore(botId: string, botName: string) {
       trades,
       openTrades,
       tradeCount,
+      profitHistory,
       performanceStats,
       entryStats,
       exitStats,
@@ -1671,6 +1689,7 @@ export function createBotSubStore(botId: string, botName: string) {
       getWhitelist,
       getBlacklist,
       getProfit,
+      getProfitHistory,
       getBalance,
       getTimeSummary,
       updateWalletChange,

@@ -13,6 +13,11 @@ export type CumProfitChartData = {
   currentProfit?: number;
 };
 
+export interface ProfitHistory {
+  data: CumProfitChartData[];
+  closed_profit: number;
+}
+
 export interface ChartSliderPosition {
   startValue: number;
   endValue: number | undefined;

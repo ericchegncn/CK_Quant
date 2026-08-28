@@ -28,6 +28,7 @@ from freqtrade.rpc.api_server.api_schemas import (
     PerformanceEntry,
     Profit,
     ProfitAll,
+    ProfitHistory,
     ResultMsg,
     Stats,
     StatusMsg,
@@ -98,6 +99,12 @@ def profit_all(rpc: RPC = Depends(get_rpc), config=Depends(get_config)):
         )
 
     return response
+
+
+@router.get("/profit_history", response_model=ProfitHistory, tags=["Trading-info"])
+def profit_history(rpc: RPC = Depends(get_rpc)):
+    """Compact complete realized-profit history for dashboard charts."""
+    return rpc._rpc_profit_history()
 
 
 @router.get("/stats", response_model=Stats, tags=["Trading-info"])

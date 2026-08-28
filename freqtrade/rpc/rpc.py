@@ -701,6 +701,30 @@ class RPC:
                 )
             return self._closed_trade_cache
 
+    def _rpc_profit_history(self) -> dict[str, Any]:
+        """Return the complete realized-profit curve without loading Trade ORM objects.
+
+        The dashboard deliberately keeps only a bounded page of detailed trades.  Using
+        that page for a lifetime cumulative chart produces a false total once the bot has
+        more trades than the UI cache.  This endpoint reuses the compact incremental
+        statistics snapshot and transfers only timestamp plus cumulative profit.
+        """
+        closed_frame = self._closed_trade_frame()
+        if closed_frame.empty:
+            return {"data": [], "closed_profit": 0.0}
+
+        cumulative_profit = 0.0
+        data: list[dict[str, int | float]] = []
+        for row in closed_frame.itertuples(index=False):
+            cumulative_profit += float(row.profit_abs or 0.0)
+            data.append(
+                {
+                    "date": dt_ts(row.close_date),
+                    "profit": round(cumulative_profit, 8),
+                }
+            )
+        return {"data": data, "closed_profit": round(cumulative_profit, 8)}
+
     def _invalidate_closed_trade_cache(self) -> None:
         with self._closed_trade_cache_lock:
             self._closed_trade_cache = self._closed_trade_cache.iloc[0:0].copy()

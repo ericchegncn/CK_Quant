@@ -204,6 +204,7 @@ const metricItems = computed(() => {
         <CumProfitChart
           :trades="botStore.allTradesSelectedBots"
           :open-trades="botStore.allOpenTradesSelectedBots"
+          :profit-history="activeBot?.profitHistory?.data"
           :show-title="false"
         />
       </div>
