@@ -777,6 +777,54 @@ def test_process_trade_no_whitelist_pair(
     assert len(freqtrade.active_pair_whitelist) == len(set(freqtrade.active_pair_whitelist))
 
 
+def test_enter_positions_only_uses_generated_whitelist(
+    default_conf_usdt, ticker_usdt, fee, mocker
+) -> None:
+    """Regression: after a pair outside the whitelist closes, it must NOT be
+    re-opened. Entry candidates come from the generated whitelist only,
+    not from active_pair_whitelist (which extends with open-trade pairs
+    for analysis purposes)."""
+    patch_RPCManager(mocker)
+    patch_exchange(mocker)
+    mocker.patch.multiple(
+        EXMS,
+        fetch_ticker=ticker_usdt,
+        get_fee=fee,
+    )
+    freqtrade = FreqtradeBot(default_conf_usdt)
+    patch_get_signal(freqtrade)
+
+    outside_pair = "BLK/BTC"
+    assert outside_pair not in default_conf_usdt["exchange"]["pair_whitelist"]
+
+    # Simulate: an old trade from a previous (e.g. union) whitelist is still open.
+    Trade.session.add(
+        Trade(
+            pair=outside_pair,
+            stake_amount=0.001,
+            fee_open=fee.return_value,
+            fee_close=fee.return_value,
+            is_open=True,
+            amount=20,
+            open_rate=0.001,
+            exchange="binance",
+        )
+    )
+    Trade.commit()
+
+    # Simulate the bot loop refresh: active_pair_whitelist extends with the
+    # open-trade pair (for analysis), while generated whitelist does not.
+    freqtrade.active_pair_whitelist = freqtrade._refresh_active_whitelist(Trade.get_open_trades())
+    assert outside_pair in freqtrade.active_pair_whitelist
+    assert outside_pair not in freqtrade.pairlists.whitelist
+
+    # enter_positions must iterate the generated whitelist only.
+    mocker.patch.object(freqtrade, "create_trade", return_value=False)
+    freqtrade.enter_positions()
+    called_pairs = [c.args[0] for c in freqtrade.create_trade.call_args_list]
+    assert outside_pair not in called_pairs
+
+
 def test_process_informative_pairs_added(default_conf_usdt, ticker_usdt, mocker) -> None:
     patch_RPCManager(mocker)
     patch_exchange(mocker)
