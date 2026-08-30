@@ -829,7 +829,12 @@ class FreqtradeBot(LoggingMixin):
         """
         trades_created = 0
 
-        whitelist = deepcopy(self.active_pair_whitelist)
+        # Only open trades from the configured/generated whitelist.
+        # active_pair_whitelist contains open-trade pairs for analysis purposes
+        # (so exits keep working), but those pairs must NOT become entry candidates
+        # once their position is closed - otherwise pairs outside the configured
+        # whitelist would be re-opened after a stop-loss / take-profit.
+        whitelist = deepcopy(self.pairlists.whitelist)
         if not whitelist:
             self.log_once("Active pair whitelist is empty.", logger.info)
             return trades_created
