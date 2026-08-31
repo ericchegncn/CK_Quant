@@ -78,7 +78,6 @@ import type {
 import { BacktestSteps, LoadingStatus, RunModes, TimeSummaryOptions } from '@/types';
 import type { FTWsMessage } from '@/types/wsMessageTypes';
 import { FtWsMessageTypes } from '@/types/wsMessageTypes';
-import { useWebSocket } from '@vueuse/core';
 import type { AxiosResponse } from 'axios';
 import axios from 'axios';
 
@@ -187,6 +186,8 @@ export function createBotSubStore(botId: string, botName: string) {
     }
 
     function logout() {
+      // 低内存加固：登出时永久停止 WebSocket 与重连
+      stopWebSocket();
       loginInfo.logout();
     }
 
@@ -1484,10 +1485,93 @@ export function createBotSubStore(botId: string, botName: string) {
     // #endregion backtesting
 
     // #region Websocket handling
+    // 4.3 低内存加固：单实例 WebSocket 状态机（idle/connecting/connected/closing）
+    // 4.4 应用层心跳 PING/PONG（浏览器无法发原生 Ping Frame）
+    type WsState = 'idle' | 'connecting' | 'connected' | 'closing';
+    const websocketState = ref<WsState>('idle');
+    let wsHandle: WebSocket | null = null;
+    let wsReconnectTimer: number | null = null;
+    let wsReconnectAttempts = 0;
+    let wsHeartbeatTimer: number | null = null;
+    let wsLastPongAt = 0;
+    let wsStopped = false; // 永久停止（登出/删除机器人）
+    let wsVisibilityHandler: (() => void) | null = null;
 
-    const websocketStarted = ref(false);
+    function _wsPageVisible() {
+      return typeof document === 'undefined' || document.visibilityState !== 'hidden';
+    }
+
+    function _wsShouldReconnect() {
+      return _wsPageVisible() && isBotLoggedIn.value && isBotOnline.value && !wsStopped;
+    }
+
+    function _wsCloseExisting() {
+      if (wsHandle) {
+        try {
+          wsHandle.onopen = null;
+          wsHandle.onmessage = null;
+          wsHandle.onerror = null;
+          wsHandle.onclose = null;
+          wsHandle.close();
+        } catch {
+          // ignore
+        }
+        wsHandle = null;
+      }
+      if (wsReconnectTimer !== null) {
+        window.clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = null;
+      }
+      if (wsHeartbeatTimer !== null) {
+        window.clearInterval(wsHeartbeatTimer);
+        wsHeartbeatTimer = null;
+      }
+    }
+
+    function _wsScheduleReconnect() {
+      if (!_wsShouldReconnect() || websocketState.value === 'closing') {
+        return;
+      }
+      // 指数退避 5/10/20/30 秒，连接成功后重置
+      const delays = [5000, 10000, 20000, 30000];
+      const delay = delays[Math.min(wsReconnectAttempts, delays.length - 1)];
+      wsReconnectAttempts += 1;
+      wsReconnectTimer = window.setTimeout(() => {
+        wsReconnectTimer = null;
+        if (_wsShouldReconnect() && websocketState.value === 'idle') {
+          startWebSocket();
+        }
+      }, delay);
+    }
+
+    function _wsStartHeartbeat(ws: WebSocket) {
+      if (wsHeartbeatTimer !== null) {
+        window.clearInterval(wsHeartbeatTimer);
+      }
+      wsLastPongAt = Date.now();
+      // 每 30 秒发送 PING；连续两个周期（60 秒）未收到 PONG 则关闭并重连
+      wsHeartbeatTimer = window.setInterval(() => {
+        if (ws.readyState !== WebSocket.OPEN || websocketState.value !== 'connected') {
+          return;
+        }
+        try {
+          ws.send(JSON.stringify({ type: 'ping' }));
+        } catch {
+          // ignore
+        }
+        if (Date.now() - wsLastPongAt > 60000) {
+          ws.close();
+        }
+      }, 30000);
+    }
+
     function _handleWebsocketMessage(ws: WebSocket, event: MessageEvent<string>) {
       const msg: FTWsMessage = JSON.parse(event.data);
+      // 4.4 应用层心跳：PONG 只更新时间，不触发业务刷新
+      if (msg.type === FtWsMessageTypes.pong) {
+        wsLastPongAt = Date.now();
+        return;
+      }
       switch (msg.type) {
         case FtWsMessageTypes.exception:
           showAlert(`WSException: ${msg.data}`, 'error');
@@ -1520,68 +1604,116 @@ export function createBotSubStore(botId: string, botName: string) {
 
     function startWebSocket() {
       if (
-        websocketStarted.value === true ||
+        websocketState.value === 'connecting' ||
+        websocketState.value === 'connected' ||
+        wsStopped ||
         botStatusAvailable.value === false ||
         !botFeatures.value.websocketConnection ||
-        isWebserverMode.value === true
+        isWebserverMode.value === true ||
+        !_wsPageVisible()
       ) {
         return;
       }
-      const { send, close } = useWebSocket(
-        // 'ws://localhost:8080/api/v1/message/ws?token=testtoken',
-        `${loginInfo.baseWsUrl.value}/message/ws?token=${loginInfo.accessToken.value}`,
-        {
-          autoReconnect: {
-            delay: 10000,
-            // retries: 10
-          },
-          // heartbeat: {
-          //   message: JSON.stringify({ type: 'ping' }),
-          //   interval: 10000,
-          // },
-          onError: (ws, event) => {
-            console.log('onError', event, ws);
-            websocketStarted.value = false;
-            close();
-          },
-          onMessage: _handleWebsocketMessage,
-          onConnected: () => {
-            console.log('subscribing');
-            if (isWebserverMode.value !== true) {
-              websocketStarted.value = true;
-              const subscriptions = [
-                FtWsMessageTypes.whitelist,
-                FtWsMessageTypes.entryFill,
-                FtWsMessageTypes.exitFill,
-                FtWsMessageTypes.entryCancel,
-                FtWsMessageTypes.exitCancel,
-                /*'new_candle' /*'analyzed_df'*/
-              ];
-              if (botFeatures.value.websocketNewCandle) {
-                subscriptions.push(FtWsMessageTypes.newCandle);
-              }
+      // 先置 connecting 关闭竞态窗口，再创建连接（杜绝双连接）
+      websocketState.value = 'connecting';
+      _wsCloseExisting();
 
-              send(
-                JSON.stringify({
-                  type: 'subscribe',
-                  data: subscriptions,
-                }),
-              );
-              send(
-                JSON.stringify({
-                  type: FtWsMessageTypes.whitelist,
-                  data: '',
-                }),
-              );
+      if (!wsVisibilityHandler) {
+        wsVisibilityHandler = () => {
+          if (_wsPageVisible()) {
+            // 页面恢复：只重建唯一连接（重连条件由 _wsShouldReconnect 把关）
+            if (!wsStopped && botStatusAvailable.value && websocketState.value === 'idle') {
+              startWebSocket();
             }
-          },
-        },
+          } else {
+            // 页面隐藏：关闭连接；onclose 因不可见不会触发重连
+            _wsCloseExisting();
+            websocketState.value = 'idle';
+          }
+        };
+        document.addEventListener('visibilitychange', wsVisibilityHandler);
+      }
+
+      const ws = new WebSocket(
+        `${loginInfo.baseWsUrl.value}/message/ws?token=${loginInfo.accessToken.value}`,
       );
+      wsHandle = ws;
+      ws.onopen = () => {
+        if (ws !== wsHandle) return;
+        websocketState.value = 'connected';
+        wsReconnectAttempts = 0;
+        console.log('subscribing');
+        if (isWebserverMode.value !== true) {
+          const subscriptions = [
+            FtWsMessageTypes.whitelist,
+            FtWsMessageTypes.entryFill,
+            FtWsMessageTypes.exitFill,
+            FtWsMessageTypes.entryCancel,
+            FtWsMessageTypes.exitCancel,
+            /*'new_candle' /*'analyzed_df'*/
+          ];
+          if (botFeatures.value.websocketNewCandle) {
+            subscriptions.push(FtWsMessageTypes.newCandle);
+          }
+
+          ws.send(
+            JSON.stringify({
+              type: 'subscribe',
+              data: subscriptions,
+            }),
+          );
+          ws.send(
+            JSON.stringify({
+              type: FtWsMessageTypes.whitelist,
+              data: '',
+            }),
+          );
+        }
+        _wsStartHeartbeat(ws);
+      };
+      ws.onmessage = (event) => {
+        if (ws !== wsHandle) return;
+        try {
+          _handleWebsocketMessage(ws, event);
+        } catch (e) {
+          console.error('WS message parse error', e);
+        }
+      };
+      ws.onerror = () => {
+        if (ws !== wsHandle) return;
+        // error 后通常会触发 onclose，交给 onclose 统一处理
+      };
+      ws.onclose = () => {
+        if (ws !== wsHandle) return;
+        wsHandle = null;
+        if (wsHeartbeatTimer !== null) {
+          window.clearInterval(wsHeartbeatTimer);
+          wsHeartbeatTimer = null;
+        }
+        const wasActive =
+          websocketState.value === 'connected' || websocketState.value === 'connecting';
+        websocketState.value = 'idle';
+        if (wasActive && _wsShouldReconnect()) {
+          _wsScheduleReconnect();
+        }
+      };
+    }
+
+    function stopWebSocket() {
+      // 永久停止：登出/删除机器人时调用
+      wsStopped = true;
+      if (wsVisibilityHandler) {
+        document.removeEventListener('visibilitychange', wsVisibilityHandler);
+        wsVisibilityHandler = null;
+      }
+      _wsCloseExisting();
+      websocketState.value = 'closing';
     }
     // #endregion websocket handling
 
     return {
-      websocketStarted,
+      websocketState,
+      stopWebSocket,
       isSelected,
       ping,
       botStatusAvailable,

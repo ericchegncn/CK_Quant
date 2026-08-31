@@ -8,6 +8,9 @@ export enum FtWsMessageTypes {
   exitFill = 'exit_fill',
   exitCancel = 'exit_cancel',
   newCandle = 'new_candle',
+
+  // 4.4 应用层心跳响应（后端 PING/PONG）
+  pong = 'pong',
 }
 
 export interface FtBaseWsMessage {
@@ -59,8 +62,14 @@ export interface FtErrorMessage extends FtBaseWsMessage {
   data: string;
 }
 
+export interface FtPongMessage extends FtBaseWsMessage {
+  type: FtWsMessageTypes.pong;
+  data: string;
+}
+
 export type FTWsMessage =
   | FtErrorMessage
+  | FtPongMessage
   | FtWhitelistMessage
   | FtEntryFillMessage
   | FTEntryCancelMessage

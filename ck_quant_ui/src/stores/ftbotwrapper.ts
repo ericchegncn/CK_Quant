@@ -335,6 +335,11 @@ export const useBotStore = defineStore('ftbot-wrapper', (): BotStoreSetup => {
       }
       botStores.value = { ...botStores.value };
       availableBots.value = { ...availableBots.value };
+
+      // 最后一个 bot 被移除时，停止全局刷新调度器（低内存加固）
+      if (Object.keys(botStores.value).length === 0) {
+        stopRefresh();
+      }
     } else {
       console.warn(`bot ${botId} not found! could not remove`);
     }
@@ -360,29 +365,53 @@ export const useBotStore = defineStore('ftbot-wrapper', (): BotStoreSetup => {
     globalAutoRefresh.value = value;
   }
 
+  // 4.2 WebUI 低内存加固：single-flight + 可见性控制
+  let frequentInFlight: Promise<void> | null = null;
+  let slowInFlight: Promise<void> | null = null;
+  let frequentTimer: number | null = null;
+  let slowTimer: number | null = null;
+  let visibilityHandler: (() => void) | null = null;
+
   async function allRefreshFrequent(forceUpdate = false) {
-    const updates: Promise<unknown>[] = [];
-    allBotStores.value.forEach((store) => {
-      if (
-        store.refreshNow &&
-        store.botStatusAvailable &&
-        (globalAutoRefresh.value || forceUpdate)
-      ) {
-        updates.push(store.refreshFrequent());
-      }
+    // single-flight：同类刷新未结束时不启动第二个（forceUpdate 不能绕过）
+    if (frequentInFlight) {
+      return frequentInFlight;
+    }
+    frequentInFlight = (async () => {
+      const updates: Promise<unknown>[] = [];
+      allBotStores.value.forEach((store) => {
+        if (
+          store.refreshNow &&
+          store.botStatusAvailable &&
+          (globalAutoRefresh.value || forceUpdate)
+        ) {
+          updates.push(store.refreshFrequent());
+        }
+      });
+      await Promise.all(updates);
+    })().finally(() => {
+      frequentInFlight = null;
     });
-    await Promise.all(updates);
-    return Promise.resolve();
+    return frequentInFlight;
   }
 
   async function allRefreshSlow(forceUpdate = false) {
-    const updates: Promise<unknown>[] = [];
-    allBotStores.value.forEach((store) => {
-      if (store.refreshNow && (globalAutoRefresh.value || forceUpdate)) {
-        updates.push(store.refreshSlow(forceUpdate));
-      }
+    // single-flight：同类刷新未结束时不启动第二个（forceUpdate 不能绕过）
+    if (slowInFlight) {
+      return slowInFlight;
+    }
+    slowInFlight = (async () => {
+      const updates: Promise<unknown>[] = [];
+      allBotStores.value.forEach((store) => {
+        if (store.refreshNow && (globalAutoRefresh.value || forceUpdate)) {
+          updates.push(store.refreshSlow(forceUpdate));
+        }
+      });
+      await Promise.all(updates);
+    })().finally(() => {
+      slowInFlight = null;
     });
-    await Promise.all(updates);
+    return slowInFlight;
   }
 
   async function pingAll() {
@@ -425,32 +454,74 @@ export const useBotStore = defineStore('ftbot-wrapper', (): BotStoreSetup => {
     }
   }
 
+  // ---- 4.2 定时刷新：setTimeout 递归 + 页面可见性控制（低内存加固）----
+
+  function _isPageVisible() {
+    return typeof document === 'undefined' || document.visibilityState !== 'hidden';
+  }
+
+  function _scheduleFrequent() {
+    if (!_isPageVisible()) return;
+    frequentTimer = window.setTimeout(async () => {
+      await allRefreshFrequent();
+      _scheduleFrequent();
+    }, 5000);
+  }
+
+  function _scheduleSlow() {
+    if (!_isPageVisible()) return;
+    slowTimer = window.setTimeout(async () => {
+      // forceUpdate=true：每个周期都重新拉取 profit/balance 等慢数据，
+      // 保证收益率卡片始终实时（不只依赖交易变化触发）
+      await allRefreshSlow(true);
+      _scheduleSlow();
+    }, 60000);
+  }
+
+  function _clearTimers() {
+    if (frequentTimer !== null) {
+      window.clearTimeout(frequentTimer);
+      frequentTimer = null;
+    }
+    if (slowTimer !== null) {
+      window.clearTimeout(slowTimer);
+      slowTimer = null;
+    }
+  }
+
+  function _handleVisibilityChange() {
+    if (_isPageVisible()) {
+      // 页面恢复：只执行一次合并刷新，然后重启定时器
+      allRefreshFull();
+      _scheduleFrequent();
+      _scheduleSlow();
+    } else {
+      // 页面隐藏：停止定时器（不启动新请求），WebSocket 由各 bot store 自行关闭
+      _clearTimers();
+    }
+  }
+
   function startRefresh() {
     console.log('Starting automatic refresh.');
-    allRefreshFull();
-    if (!refreshInterval.value) {
-      refreshInterval.value = window.setInterval(() => {
-        allRefreshFrequent();
-      }, 5000);
+    // 幂等：多次调用（路由守卫每次导航都调用 initBots）只创建一套调度器
+    if (frequentTimer !== null || slowTimer !== null) {
+      return;
     }
-    if (!refreshIntervalSlow.value) {
-      refreshIntervalSlow.value = window.setInterval(() => {
-        // forceUpdate=true：每个周期都重新拉取 profit/balance 等慢数据，
-        // 保证收益率卡片始终实时（不只依赖交易变化触发）
-        allRefreshSlow(true);
-      }, 60000);
+    allRefreshFull();
+    _scheduleFrequent();
+    _scheduleSlow();
+    if (!visibilityHandler) {
+      visibilityHandler = _handleVisibilityChange;
+      document.addEventListener('visibilitychange', visibilityHandler);
     }
   }
 
   function stopRefresh() {
     console.log('Stopping automatic refresh.');
-    if (refreshInterval.value) {
-      window.clearInterval(refreshInterval.value);
-      refreshInterval.value = null;
-    }
-    if (refreshIntervalSlow.value) {
-      window.clearInterval(refreshIntervalSlow.value);
-      refreshIntervalSlow.value = null;
+    _clearTimers();
+    if (visibilityHandler) {
+      document.removeEventListener('visibilitychange', visibilityHandler);
+      visibilityHandler = null;
     }
   }
 
@@ -581,7 +652,17 @@ export const useBotStore = defineStore('ftbot-wrapper', (): BotStoreSetup => {
   };
 });
 
+// 模块级标志：initBots 幂等（路由守卫每次导航都会调用，但只初始化一次）
+let botsInitialized = false;
+
 export function initBots() {
+  if (botsInitialized) {
+    // 已初始化：只需保证刷新调度器在运行即可（幂等）
+    const botStore = useBotStore();
+    botStore.startRefresh();
+    return;
+  }
+  botsInitialized = true;
   const botStore = useBotStore();
   Object.entries(loggedInBots.value).forEach(([, v]) => {
     botStore.addBot(v);

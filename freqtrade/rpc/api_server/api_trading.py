@@ -3,7 +3,6 @@ import logging
 from fastapi import APIRouter, Depends, Query
 from fastapi.exceptions import HTTPException
 
-from freqtrade.enums import TradingMode
 from freqtrade.rpc import RPC
 from freqtrade.rpc.api_server.api_schemas import (
     Balances,
@@ -85,20 +84,8 @@ def profit(rpc: RPC = Depends(get_rpc), config=Depends(get_config)):
 
 @router.get("/profit_all", response_model=ProfitAll, tags=["Trading-info"])
 def profit_all(rpc: RPC = Depends(get_rpc), config=Depends(get_config)):
-    response = {
-        "all": rpc._rpc_trade_statistics(
-            config["stake_currency"], config.get("fiat_display_currency")
-        ),
-    }
-    if config.get("trading_mode", TradingMode.SPOT) != TradingMode.SPOT:
-        response["long"] = rpc._rpc_trade_statistics(
-            config["stake_currency"], config.get("fiat_display_currency"), direction="long"
-        )
-        response["short"] = rpc._rpc_trade_statistics(
-            config["stake_currency"], config.get("fiat_display_currency"), direction="short"
-        )
-
-    return response
+    # 4.6 低内存加固：5 秒短 TTL 单飞缓存 —— 相同参数的并发请求只计算一次
+    return rpc._rpc_profit_all_cached(config)
 
 
 @router.get("/profit_history", response_model=ProfitHistory, tags=["Trading-info"])

@@ -15,8 +15,8 @@ import psutil
 from dateutil.relativedelta import relativedelta
 from dateutil.tz import tzlocal
 from numpy import inf, isnan, mean, nan
-from pandas import DataFrame, NaT, concat, read_sql
-from sqlalchemy import and_, case, func, or_, select
+from pandas import DataFrame, NaT, concat, read_sql, to_datetime
+from sqlalchemy import and_, case, func, or_, select, text
 from sqlalchemy.orm import aliased
 
 from freqtrade import __version__
@@ -152,8 +152,49 @@ class RPC:
         )
         self._closed_trade_cache_watermark: tuple[datetime, int] | None = None
         self._closed_trade_cache_lock = threading.RLock()
+        # 4.6 低内存加固：/profit_all 5 秒短 TTL 单飞缓存
+        self._profit_all_cache: dict[str, Any] | None = None
+        self._profit_all_cache_ts = 0.0
+        self._profit_all_cache_open_count = -1
+        self._profit_all_cache_lock = threading.RLock()
         if self._config.get("fiat_display_currency"):
             self._fiat_converter = CryptoToFiatConverter(self._config)
+
+    def _rpc_profit_all_cached(self, config: Config) -> dict[str, Any]:
+        """
+        4.6 低内存加固：/profit_all 单飞缓存。
+        5 秒 TTL + trade_count 签名校验 —— 相同参数的并发请求只计算一次；
+        有新开仓/平仓时 trade_count 变化立即触发重算（不等 TTL 过期）。
+        """
+        import time as _time
+
+        open_trade_count = Trade.get_open_trade_count()
+        with self._profit_all_cache_lock:
+            if (
+                self._profit_all_cache is not None
+                and (_time.time() - self._profit_all_cache_ts) < 5
+                and self._profit_all_cache_open_count == open_trade_count
+            ):
+                return self._profit_all_cache
+
+        response = {
+            "all": self._rpc_trade_statistics(
+                config["stake_currency"], config.get("fiat_display_currency")
+            ),
+        }
+        if config.get("trading_mode", TradingMode.SPOT) != TradingMode.SPOT:
+            response["long"] = self._rpc_trade_statistics(
+                config["stake_currency"], config.get("fiat_display_currency"), direction="long"
+            )
+            response["short"] = self._rpc_trade_statistics(
+                config["stake_currency"], config.get("fiat_display_currency"), direction="short"
+            )
+
+        with self._profit_all_cache_lock:
+            self._profit_all_cache = response
+            self._profit_all_cache_ts = _time.time()
+            self._profit_all_cache_open_count = open_trade_count
+        return response
 
     @staticmethod
     def _rpc_show_config(
@@ -1263,23 +1304,46 @@ class RPC:
             )
         return result
 
-    def _rpc_get_historic_balance(self) -> tuple[DataFrame, int]:
+    def _rpc_get_historic_balance(self, max_points: int | None = None) -> tuple[DataFrame, int]:
         """
         Returns the historic balance of the bot
+        4.6 低内存加固：bot_managed 过滤和 SUM 聚合在 SQL 中完成（不再全表读入 Pandas）。
+
+        :param max_points: 可选降采样上限。长时间范围时服务器端降采样，
+                           Dashboard 默认传 500~1000；不传则返回全部点（精确计算用）。
         :return: DataFrame with the balance history and the timestamp of the migration
         """
-        results = read_sql("wallet_history", con=Trade.session.bind, parse_dates=["timestamp"])
-
-        results = results.rename({"timestamp": "date"}, axis=1)
-        results.loc[:, "__date_ts"] = results.loc[:, "date"].dt.as_unit("ms").astype("int64")
-        # Exclude non-bot managed for now
-        results_filtered = results.loc[results["bot_managed"].astype(bool)]
-
-        results_final = (
-            results_filtered.groupby(["date", "__date_ts"])
-            .agg({"total_quote": "sum"})
-            .reset_index()
+        sql = text(
+            """
+            SELECT timestamp, SUM(total_quote) AS total_quote
+            FROM wallet_history
+            WHERE bot_managed = 1
+            GROUP BY timestamp
+            ORDER BY timestamp
+            """
         )
+        with Trade.session.bind.connect() as conn:
+            rows = conn.execute(sql).fetchall()
+
+        if not rows:
+            results_final = DataFrame(columns=["date", "__date_ts", "total_quote"])
+            hist = KeyValueStore.get_datetime_value("wallet_history_migration_date")
+            return results_final, dt_ts_def(hist, 0)
+
+        # 降采样：等间隔抽取，始终保留首尾点
+        if max_points is not None and len(rows) > max_points:
+            step = len(rows) / max_points
+            indices = sorted({int(i * step) for i in range(max_points - 1)} | {len(rows) - 1})
+            rows = [rows[i] for i in indices]
+
+        results_final = DataFrame(rows, columns=["date", "total_quote"])
+        # raw SQL 读 SQLite 的 timestamp 是字符串，需转 datetime（原 read_sql parse_dates 行为）
+        results_final["date"] = to_datetime(results_final["date"])
+        # 保持与旧实现一致的列顺序：date, __date_ts, total_quote
+        results_final["__date_ts"] = (
+            results_final["date"].dt.as_unit("ms").astype("int64")
+        )
+        results_final = results_final[["date", "__date_ts", "total_quote"]]
         hist = KeyValueStore.get_datetime_value("wallet_history_migration_date")
         return results_final, dt_ts_def(hist, 0)
 

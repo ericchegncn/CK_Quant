@@ -20,7 +20,7 @@ from fastapi import FastAPI, WebSocketDisconnect
 from fastapi.exceptions import HTTPException
 from fastapi.testclient import TestClient
 from requests.auth import _basic_auth_str
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from freqtrade.__init__ import __version__
 from freqtrade.enums import CandleType, RunMode, State, TradingMode
@@ -1496,40 +1496,37 @@ def test_api_historic_balance(botclient, mocker, ticker, fee, markets, is_short)
 
 def test_api_historic_balance_int_bot_managed(botclient, mocker):
     """
-    read_sql may return the wallet_history `bot_managed` column as an
-    integer (e.g. MySQL/MariaDB TINYINT)
+    4.6 低内存加固：钱包历史改为 SQL 聚合（WHERE bot_managed = 1 + SUM）。
+    验证 SQL 查询路径对 bot_managed 过滤正确（真实 DB 写入）。
     """
     _, client = botclient
 
-    # Single row: with an int64 `bot_managed`
-    one_row = pd.DataFrame(
-        {
-            "timestamp": pd.to_datetime(["2024-01-01"]),
-            "total_quote": [100.0],
-            "bot_managed": [1],
-        }
-    ).astype({"bot_managed": "int64"})
-    mocker.patch("freqtrade.rpc.rpc.read_sql", return_value=one_row)
-    rc = client_get(client, f"{BASE_URI}/historic_balance")
-    assert_response(rc, 200)
-    assert rc.json()["length"] == 1
-    assert rc.json()["data"][0][0] == "2024-01-01T00:00:00"
-    assert rc.json()["data"][0][2] == 100.0
+    # 写入 bot_managed=1 和 bot_managed=0 各一行
+    for val in (1, 0):
+        Trade.session.execute(
+            text(
+                "INSERT INTO wallet_history "
+                "(timestamp, currency, rate, quote_currency, balance, total_quote, leverage, bot_managed) "
+                "VALUES (:ts, :cur, :rate, :qcur, :balance, :quote, :lev, :managed)"
+            ),
+            {
+                "ts": "2024-01-01 00:00:00" if val else "2024-01-02 00:00:00",
+                "cur": "USDT",
+                "rate": 1.0,
+                "qcur": "USDT",
+                "balance": 100.0 if val else 999.0,
+                "quote": 100.0 if val else 999.0,
+                "lev": 1.0,
+                "managed": val,
+            },
+        )
+    Trade.session.commit()
 
-    # Mixed rows: the non-bot-managed row (bot_managed=0) must be excluded.
-    two_rows = pd.DataFrame(
-        {
-            "timestamp": pd.to_datetime(["2024-01-01", "2024-01-02"]),
-            "total_quote": [100.0, 200.0],
-            "bot_managed": [0, 1],
-        }
-    ).astype({"bot_managed": "int64"})
-    mocker.patch("freqtrade.rpc.rpc.read_sql", return_value=two_rows)
     rc = client_get(client, f"{BASE_URI}/historic_balance")
     assert_response(rc, 200)
+    # 只有 bot_managed=1 的行被返回（bot_managed=0 被 SQL 过滤）
     assert rc.json()["length"] == 1
-    assert rc.json()["data"][0][0] == "2024-01-02T00:00:00"
-    assert rc.json()["data"][0][2] == 200.0
+    assert rc.json()["data"][0][2] == 100.0
 
 
 def test_api_performance(botclient, fee):
@@ -3667,15 +3664,22 @@ def test_api_ws_send_msg(default_conf, mocker, caplog):
 
         # Start test client context manager to run lifespan events
         with TestClient(apiserver.app):
-            # Test message is published on the Message Stream
+            # Test message is published on the Message Stream (bounded per-subscriber)
             test_message = {"type": "status", "data": "test"}
-            first_waiter = apiserver._message_stream._waiter
-            apiserver.send_msg(test_message)
-            assert first_waiter.result()[0] == test_message
+            stream = apiserver._message_stream
+            assert stream.subscriber_count == 0
 
-            second_waiter = apiserver._message_stream._waiter
-            apiserver.send_msg(test_message)
-            assert first_waiter != second_waiter
+            # Subscribe a consumer for status messages
+            sub_id = stream.subscribe(["status"])
+            assert stream.subscriber_count == 1
+
+            stream.publish(test_message)
+            sub = stream._subscribers[sub_id]
+            # Critical message queued for delivery
+            assert not sub._critical.empty()
+
+            stream.unsubscribe(sub_id)
+            assert stream.subscriber_count == 0
 
     finally:
         ApiServer.shutdown()
