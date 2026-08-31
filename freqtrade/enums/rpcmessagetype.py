@@ -35,6 +35,7 @@ class RPCRequestType(StrEnum):
 
     WHITELIST = "whitelist"
     ANALYZED_DF = "analyzed_df"
+    PING = "ping"
 
 
 NO_ECHO_MESSAGES = (RPCMessageType.ANALYZED_DF, RPCMessageType.WHITELIST, RPCMessageType.NEW_CANDLE)

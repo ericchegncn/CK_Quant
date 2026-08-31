@@ -128,7 +128,8 @@ class GainersLosersPairList(IPairList):
     def description() -> str:
         return "Provides dynamic pair list based on percent change (gainers + losers)."
 
-    def available_parameters(self) -> dict[str, PairlistParameter]:
+    @staticmethod
+    def available_parameters() -> dict[str, PairlistParameter]:
         return {
             **IPairList.refresh_period_parameter(),
             "number_assets": {
