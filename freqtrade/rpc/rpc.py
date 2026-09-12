@@ -1158,7 +1158,20 @@ class RPC:
         trades_df.loc[:, "close_date_dt"] = trades_df["close_date"]
         trades_df.loc[:, "close_date"] = trades_df["close_date"].map(format_date)
 
-        expectancy, expectancy_ratio = calculate_expectancy(trades_df)
+        # Expectancy（已平仓 + 未平仓浮盈）：与 profit_factor / 回撤口径保持一致。
+        # 机器人常驻未平仓仓位，只看已平仓不能反映策略真实表现。
+        # 注意：不复用 trades_df（它还用于 drawdown / SQN / 返回交易列表）。
+        open_profit_list = stats["open_profit_coin"]
+        if open_profit_list:
+            expectancy_df = DataFrame(
+                {
+                    "profit_abs": list(closed_frame["profit_abs"])
+                    + list(open_profit_list)
+                }
+            )
+            expectancy, expectancy_ratio = calculate_expectancy(expectancy_df)
+        else:
+            expectancy, expectancy_ratio = calculate_expectancy(trades_df)
 
         # Preserve Freqtrade's historical semantics: first/latest refer to trade ID order,
         # not the mathematically earliest/latest timestamp.

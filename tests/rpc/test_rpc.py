@@ -22,6 +22,7 @@ from tests.conftest import (
     log_has_re,
     patch_get_signal,
 )
+from tests.conftest_trades import mock_trade_5
 
 
 def test_rpc_trade_status(default_conf, ticker, fee, mocker) -> None:
@@ -537,8 +538,9 @@ def test_rpc_trade_statistics(default_conf_usdt, ticker, fee, mocker) -> None:
     assert pytest.approx(stats["profit_all_percent_mean"]) == -50.83
     assert pytest.approx(stats["profit_all_fiat"]) == -63.150734691
     assert pytest.approx(stats["winrate"]) == 0.666666667
-    assert pytest.approx(stats["expectancy"]) == 0.913333333
-    assert pytest.approx(stats["expectancy_ratio"]) == 0.223308883
+    # expectancy 含未平仓浮盈（与 profit_factor / 回撤口径一致）
+    assert pytest.approx(stats["expectancy"]) == -9.568293135
+    assert pytest.approx(stats["expectancy_ratio"]) == -0.5957863673367674
     assert stats["trade_count"] == 7
     assert stats["first_trade_humanized"] == "2 days ago"
     assert stats["latest_trade_humanized"] == "17 minutes ago"
@@ -558,6 +560,37 @@ def test_rpc_trade_statistics(default_conf_usdt, ticker, fee, mocker) -> None:
     assert stats["best_pair"] == "NEO/USDT"
     assert stats["best_rate"] == 1.99
     assert isnan(stats["profit_all_coin"])
+
+
+def test_rpc_trade_statistics_expectancy_includes_open_trades(
+    default_conf_usdt, ticker, fee, mocker
+) -> None:
+    """
+    Expectancy 必须包含未平仓浮盈（与 profit_factor / 回撤口径一致）。
+    场景：只有未平仓、没有已平仓 —— 仅算已平仓的实现会得到 0，
+    含未平仓的实现应反映真实浮盈（≠ 0）。
+    """
+    mocker.patch("freqtrade.rpc.telegram.Telegram", MagicMock())
+    mocker.patch.multiple(EXMS, fetch_ticker=ticker, get_fee=fee)
+
+    freqtradebot = get_patched_freqtradebot(mocker, default_conf_usdt)
+    stake_currency = default_conf_usdt["stake_currency"]
+    fiat_display_currency = default_conf_usdt["fiat_display_currency"]
+
+    rpc = RPC(freqtradebot)
+    rpc._fiat_converter = CryptoToFiatConverter({})
+    mocker.patch.object(rpc._fiat_converter, "get_price", return_value=1.1)
+
+    # 只放一笔未平仓交易（mock_trade_5 的 is_open=True）
+    Trade.session.add(mock_trade_5(fee, False))
+    Trade.commit()
+
+    stats = rpc._rpc_trade_statistics(stake_currency, fiat_display_currency)
+    assert stats["closed_trade_count"] == 0
+    assert stats["trade_count"] == 1
+    # 仅已平仓的实现会返回 0；含未平仓必须反映浮盈
+    assert stats["expectancy"] != 0
+    assert stats["expectancy_ratio"] != 100
 
 
 def test_rpc_trade_statistics_drawdown_uses_wallet_and_current_equity(
