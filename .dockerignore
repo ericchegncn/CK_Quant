@@ -66,6 +66,12 @@ scripts/
 *.key
 *credentials*
 *secrets*
+# Python 编译缓存：旧 .pyc 可能残留已清理的源码内容（例如策略名引用），
+# 绝对不允许进入公开镜像。
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 Freqtrade*.txt
 .env
 .env.*
