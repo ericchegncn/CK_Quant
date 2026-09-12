@@ -1578,6 +1578,10 @@ class FreqtradeBot(LoggingMixin):
         Tries to execute exit orders for open trades (positions)
         """
         trades_closed = 0
+        # 批量刷新行情（低内存/CPU 加固）：原实现每笔交易各自 refresh=True 请求行情，
+        # 88 持仓时每轮 88 次 API 调用 —— 主循环 17 秒与内存峰值的主因。
+        # 这里一次性批量取回所有活跃对行情并写入退出价缓存，退出检查读本轮缓存。
+        self._prefetch_exit_rates(trades)
         for trade in trades:
             if (
                 not trade.has_open_orders
@@ -1607,7 +1611,12 @@ class FreqtradeBot(LoggingMixin):
                         f"Unable to handle stoploss on exchange for {trade.pair}: {exception}"
                     )
                 # Check if we can exit our current position for this trade
-                if trade.has_open_position and trade.is_open and self.handle_trade(trade):
+                # refresh_rate=False：使用本轮 _prefetch_exit_rates 批量预取的缓存价
+                if (
+                    trade.has_open_position
+                    and trade.is_open
+                    and self.handle_trade(trade, refresh_rate=False)
+                ):
                     trades_closed += 1
 
             except DependencyException as exception:
@@ -1619,9 +1628,58 @@ class FreqtradeBot(LoggingMixin):
 
         return trades_closed
 
-    def handle_trade(self, trade: Trade) -> bool:
+    def _prefetch_exit_rates(self, trades: list[Trade]) -> None:
+        """
+        批量预热退出价格缓存（低内存/CPU 加固）。
+
+        原实现每笔交易在 handle_trade 中各自 refresh=True 请求行情，88 持仓时
+        每轮产生 88 次 API 调用 —— 主循环耗时（约 17 秒）与内存/CPU 峰值的主因。
+        改为：一次批量 ticker 请求拿回所有活跃对行情，用结果写入退出价缓存；
+        随后 handle_trade 以 refresh=False 读取本轮缓存价。
+        批量请求失败时静默返回：get_rate(refresh=False) 缓存未命中会自动回退单笔请求，
+        因此不会因为批量失败而错过退出。
+        """
+        pairs = list(
+            dict.fromkeys(t.pair for t in trades if t.is_open and t.has_open_position)
+        )
+        if not pairs:
+            return
+        # 订单簿定价（use_order_book）依赖实时盘口，不能用批量 ticker 预热缓存
+        if self.config.get("exit_pricing", {}).get("use_order_book", False):
+            return
+        try:
+            tickers = self.exchange.get_tickers(
+                pairs, market_type=getattr(self.exchange, "trading_mode", None)
+            )
+        except Exception as e:
+            logger.warning(f"批量行情刷新失败，回退到逐笔请求: {e}")
+            return
+        if not tickers:
+            return
+        for trade in trades:
+            if not trade.is_open or not trade.has_open_position:
+                continue
+            ticker = tickers.get(trade.pair)
+            if not ticker:
+                continue
+            try:
+                self.exchange.get_rate(
+                    trade.pair,
+                    side="exit",
+                    is_short=trade.is_short,
+                    refresh=True,
+                    ticker=ticker,
+                )
+            except Exception:
+                # 单笔失败不影响其他交易；缓存未命中时该笔会自行请求行情
+                continue
+
+    def handle_trade(self, trade: Trade, refresh_rate: bool = True) -> bool:
         """
         Exits the current pair if the threshold is reached and updates the trade record.
+        :param refresh_rate: 是否强制实时刷新取价。默认 True（与上游行为一致）。
+            exit_positions 传入 False —— 该路径已在 _prefetch_exit_rates 中批量
+            预取本轮行情写入缓存，逐笔再请求会重复调用交易所 API。
         :return: True if trade has been sold/exited_short, False otherwise
         """
         if not trade.is_open:
@@ -1645,8 +1703,16 @@ class FreqtradeBot(LoggingMixin):
             )
 
         logger.debug("checking exit")
+        # 低内存/CPU 加固：exit_positions 传入 refresh_rate=False 时使用本轮批量预取的
+        # 缓存价（避免每笔各发一次行情请求）；其他调用路径保持原行为（实时取价）。
+        # 缓存未命中时 get_rate 自动回退单笔实时请求，不会因预取失败而错过退出。
+        # 订单簿定价（use_order_book）必须实时盘口，始终刷新。
+        _use_order_book = self.config.get("exit_pricing", {}).get("use_order_book", False)
         exit_rate = self.exchange.get_rate(
-            trade.pair, side="exit", is_short=trade.is_short, refresh=True
+            trade.pair,
+            side="exit",
+            is_short=trade.is_short,
+            refresh=(refresh_rate or _use_order_book),
         )
         if self._check_and_execute_exit(trade, exit_rate, enter, exit_, exit_tag):
             return True

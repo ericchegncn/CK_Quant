@@ -6216,3 +6216,34 @@ def test_check_and_call_adjust_trade_position(mocker, default_conf_usdt, fee, ca
     trade = Trade.get_trades(trade_filter=[Trade.id == 5]).first()
     assert trade.orders[-1].ft_order_tag == "partial_exit_c"
     assert trade.is_open
+
+
+def test_exit_positions_prefetches_rates_in_batch(
+    default_conf_usdt, ticker_usdt, fee, mocker
+) -> None:
+    """
+    批量行情预取（低内存/CPU 加固）：
+    exit_positions 对多笔持仓只发起一次批量 ticker 请求（get_tickers），
+    逐笔退出检查复用本轮缓存价。原实现每笔各自 refresh=True 请求行情，
+    88 持仓时每轮 88 次 API 调用 —— 主循环约 17 秒与内存峰值的主因。
+    """
+    patch_RPCManager(mocker)
+    patch_exchange(mocker)
+    get_tickers_mock = MagicMock(return_value={})
+    mocker.patch.multiple(
+        EXMS,
+        fetch_ticker=ticker_usdt,
+        get_fee=fee,
+        get_tickers=get_tickers_mock,
+    )
+    freqtrade = FreqtradeBot(default_conf_usdt)
+    patch_get_signal(freqtrade)
+    create_mock_trades_usdt(fee)
+
+    trades = Trade.get_open_trades()
+    assert trades, "本测试需要至少一笔未平仓交易"
+
+    freqtrade.exit_positions(trades)
+
+    # 批量预取只调用一次（而非逐笔一次）—— 这是低内存/CPU 加固的核心行为
+    assert get_tickers_mock.call_count == 1
