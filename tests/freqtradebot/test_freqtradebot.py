@@ -6247,3 +6247,49 @@ def test_exit_positions_prefetches_rates_in_batch(
 
     # 批量预取只调用一次（而非逐笔一次）—— 这是低内存/CPU 加固的核心行为
     assert get_tickers_mock.call_count == 1
+
+
+def test_should_check_stoploss_batching(mocker, monkeypatch) -> None:
+    """
+    止损单检查的分批调度（低内存/CPU 加固）：
+    - 默认（无环境变量）= 每轮全量检查，与上游行为一致
+    - CKQ_STOPLOSS_CHECK_BATCH=N：已挂止损单的持仓按批轮转（每轮 1/N）
+    - 【安全保证】缺失止损单的持仓无论哪一轮都必须检查（及时补挂保护）
+    """
+    bot = FreqtradeBot.__new__(FreqtradeBot)
+
+    def make_trade(has_sl: bool):
+        trade = MagicMock()
+        trade.open_sl_orders = [MagicMock(order_id="12345")] if has_sl else []
+        return trade
+
+    # 1. 默认：全量检查
+    monkeypatch.delenv("CKQ_STOPLOSS_CHECK_BATCH", raising=False)
+    bot._stoploss_check_round = 0
+    for i in range(6):
+        assert bot._should_check_stoploss(make_trade(True), i) is True
+
+    # 2. batch=4：8 笔持仓每轮只查 2 笔（idx % 4 == round % 4）
+    monkeypatch.setenv("CKQ_STOPLOSS_CHECK_BATCH", "4")
+    bot._stoploss_check_round = 0
+    round0 = {i for i in range(8) if bot._should_check_stoploss(make_trade(True), i)}
+    bot._stoploss_check_round = 1
+    round1 = {i for i in range(8) if bot._should_check_stoploss(make_trade(True), i)}
+    assert len(round0) == 2 and len(round1) == 2
+    assert round0.isdisjoint(round1), "轮转批次不应重叠"
+
+    # 3. 安全保证：缺失止损单 -> 每轮都检查（不受分批影响）
+    bot._stoploss_check_round = 3
+    no_sl = make_trade(False)
+    for i in range(8):
+        assert bot._should_check_stoploss(no_sl, i) is True
+
+    # 4. 止损单已建但未成功挂出（order_id 为 None）-> 也必须每轮检查
+    pending = MagicMock()
+    pending.open_sl_orders = [MagicMock(order_id=None)]
+    for i in range(8):
+        assert bot._should_check_stoploss(pending, i) is True
+
+    # 5. 非法环境变量 -> 回退全量检查
+    monkeypatch.setenv("CKQ_STOPLOSS_CHECK_BATCH", "abc")
+    assert bot._should_check_stoploss(make_trade(True), 3) is True

@@ -3,6 +3,7 @@ Freqtrade is the main module of this bot. It contains the FreqtradeBot class.
 """
 
 import logging
+import os
 import traceback
 from copy import deepcopy
 from datetime import UTC, datetime, time, timedelta
@@ -1582,7 +1583,7 @@ class FreqtradeBot(LoggingMixin):
         # 88 持仓时每轮 88 次 API 调用 —— 主循环 17 秒与内存峰值的主因。
         # 这里一次性批量取回所有活跃对行情并写入退出价缓存，退出检查读本轮缓存。
         self._prefetch_exit_rates(trades)
-        for trade in trades:
+        for idx, trade in enumerate(trades):
             if (
                 not trade.has_open_orders
                 and not trade.has_open_sl_orders
@@ -1599,9 +1600,11 @@ class FreqtradeBot(LoggingMixin):
 
             try:
                 try:
-                    if self.strategy.order_types.get(
-                        "stoploss_on_exchange"
-                    ) and self.handle_stoploss_on_exchange(trade):
+                    if (
+                        self.strategy.order_types.get("stoploss_on_exchange")
+                        and self._should_check_stoploss(trade, idx)
+                        and self.handle_stoploss_on_exchange(trade)
+                    ):
                         trades_closed += 1
                         Trade.commit()
                         continue
@@ -1625,6 +1628,9 @@ class FreqtradeBot(LoggingMixin):
         # Updating wallets if any trade occurred
         if trades_closed:
             self.wallets.update()
+
+        # 分批调度轮转计数（每轮 +1，供 _should_check_stoploss 轮转止损单检查）
+        self._stoploss_check_round = getattr(self, "_stoploss_check_round", 0) + 1
 
         return trades_closed
 
@@ -1673,6 +1679,40 @@ class FreqtradeBot(LoggingMixin):
             except Exception:
                 # 单笔失败不影响其他交易；缓存未命中时该笔会自行请求行情
                 continue
+
+    @staticmethod
+    def _stoploss_check_batch() -> int:
+        """
+        止损单状态检查的分批系数（低内存/CPU 加固）。
+
+        每笔持仓的交易所止损单状态查询是一次 API 调用；88 持仓时每轮 88 次调用，
+        实测占主循环约 17.5 秒。环境变量 CKQ_STOPLOSS_CHECK_BATCH=N 表示每 N 轮
+        检查一遍每笔持仓（默认 1 = 每轮全量，与上游行为完全一致）。
+
+        止损单挂在交易所侧、由交易所执行，分批只影响状态同步与止盈止损调整的
+        及时性（最多 N-1 轮延迟），不影响止损本身是否触发。
+        """
+        try:
+            return max(1, int(os.environ.get("CKQ_STOPLOSS_CHECK_BATCH", "1")))
+        except (TypeError, ValueError):
+            return 1
+
+    def _should_check_stoploss(self, trade: Trade, idx: int) -> bool:
+        """
+        本轮是否检查该持仓的交易所止损单状态。
+
+        分批调度下必须保证「止损单缺失」的持仓每轮都被检查（及时补挂保护），
+        只有「止损单已成功挂出」的持仓才按批轮转查询状态。
+        """
+        batch = self._stoploss_check_batch()
+        if batch <= 1:
+            return True
+        # 无止损单 / 止损单未成功挂出 -> 必须每轮检查（补挂保护优先）
+        if not trade.open_sl_orders or any(
+            slo.order_id is None for slo in trade.open_sl_orders
+        ):
+            return True
+        return (idx % batch) == (getattr(self, "_stoploss_check_round", 0) % batch)
 
     def handle_trade(self, trade: Trade, refresh_rate: bool = True) -> bool:
         """
