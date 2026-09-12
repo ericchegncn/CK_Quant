@@ -77,13 +77,13 @@ RUN if find /freqtrade -type f \( \
       exit 1; \
     fi \
   && if grep -RIlE \
-      'from user_data\.strategies\.CK_|import user_data\.strategies\.CK_|class CK_(Trend|EMA|Momentum|Reversion|Wick|Structure|RS|Retest)' \
+      'from user_data\.strategies\.CK_|import user_data\.strategies\.CK_|class CK_[A-Z]' \
       /freqtrade --include='*.py' | grep -q .; then \
       echo 'Refusing to build: proprietary CK strategy logic detected.' >&2; \
       exit 1; \
     fi \
   && if grep -RIlE \
-      'CK_Strategy_HighLev_15m|CK_Strategy_15m\.py|remote-deploy-marker|live-deployment-marker' \
+      'CK_[A-Z][A-Za-z0-9_]*(_15m|_5m|_1m)|remote-deploy-marker|live-deployment-marker' \
       /freqtrade | grep -q .; then \
       echo 'Refusing to build: private deployment marker detected.' >&2; \
       exit 1; \
