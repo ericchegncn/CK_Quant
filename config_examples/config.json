@@ -71,7 +71,7 @@
         "CORS_origins": [
         ],
         "username": "CK_Quant",
-        "password": "REMOVED_CREDENTIAL"
+        "password": "your_password"
     },
     "bot_name": "CK_Quant",
     "initial_state": "running",

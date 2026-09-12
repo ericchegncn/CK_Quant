@@ -130,7 +130,7 @@ function openServerForm(server) {
       <h3>${isEdit ? '编辑服务器' : '添加服务器'}</h3>
       <div class="grid-2">
         <div><label>名称</label><input id="f_name" value="${esc(server?.name || '')}" placeholder="如：阿里云实盘"></div>
-        <div><label>IP 地址</label><input id="f_host" value="${esc(server?.host || '')}" placeholder="如：REMOVED_HOST"></div>
+        <div><label>IP 地址</label><input id="f_host" value="${esc(server?.host || '')}" placeholder="如：1.2.3.4"></div>
         <div><label>SSH 端口</label><input id="f_port" value="${server?.port || 22}"></div>
         <div><label>SSH 用户名</label><input id="f_username" value="${esc(server?.username || 'root')}"></div>
         <div><label>SSH 密码</label><input id="f_password" type="password" placeholder="${isEdit ? '留空则不修改' : '服务器密码'}"></div>
