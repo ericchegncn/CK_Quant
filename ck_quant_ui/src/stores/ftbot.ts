@@ -269,7 +269,9 @@ export function createBotSubStore(botId: string, botName: string) {
     async function getTrades() {
       try {
         const pageLength = 500;
-        const maxCachedTrades = 2000;
+        // 低内存加固：浏览器端只保留最近 500 笔（原 2000）。首屏/图表只需要最近数据，
+        // 长时间运行时 2000 笔的完整交易对象会显著增加标签页内存。
+        const maxCachedTrades = 500;
         // Always fetch only the newest page. The previous implementation paged through the
         // complete lifetime history every minute, so one WebUI tab became progressively more
         // expensive as the bot accumulated trades.

@@ -73,6 +73,10 @@ logger = logging.getLogger(__name__)
 ICEBERG_ENTRY_KEY = "ckq_iceberg_entry"
 ICEBERG_EXIT_KEY = "ckq_iceberg_exit"
 
+# 内存归还间隔（主循环轮数）。84 持仓时一轮约 17s，12 轮 ≈ 3.5 分钟；
+# 小仓位时一轮 5s，12 轮 ≈ 1 分钟。malloc_trim 单次 <1ms，可频繁调用。
+MEMORY_TRIM_INTERVAL = 12
+
 
 class _LatencyTrace:
     """Low-overhead phase timer which only logs operations that exceed the SLO."""
@@ -359,6 +363,25 @@ class FreqtradeBot(LoggingMixin):
         latency.mark("scheduled_commit_rpc")
         self.last_process = datetime.now(UTC)
         latency.finish("bot loop", threshold=2.0, open_trades=len(trades))
+        self._maybe_release_memory()
+
+    def _maybe_release_memory(self) -> None:
+        """
+        内存归还（低内存加固）：Python/glibc 默认不把空闲堆内存还给操作系统，
+        长时间运行后 RSS 只涨不降（低配 VPS 上最终触发 swap 甚至卡死）。
+        每 N 轮主循环调用一次 malloc_trim(0)，把空闲堆归还内核。
+        单次耗时 <1ms，对交易逻辑无影响；非 glibc 平台静默跳过。
+        """
+        self._memory_trim_counter = getattr(self, "_memory_trim_counter", 0) + 1
+        if self._memory_trim_counter % MEMORY_TRIM_INTERVAL != 0:
+            return
+        try:
+            import ctypes
+
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except (OSError, AttributeError):
+            # 非 glibc 平台（如 Windows 开发环境）或 libc 无此符号
+            pass
 
     def process_stopped(self) -> None:
         """

@@ -17,6 +17,10 @@ ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONFAULTHANDLER=1
+# 内存优化：限制 glibc 每线程内存池（arena）数量。多线程 Python 进程默认会为
+# 每个线程创建独立 arena（每个最多 64MB），低配 VPS 上造成大量碎片和 RSS 虚高。
+# 2 个 arena 足以满足本应用的并发模式，可显著降低稳态内存。
+ENV MALLOC_ARENA_MAX=2
 ENV PATH=/home/ftuser/.local/bin:$PATH
 ENV FT_APP_ENV="docker"
 LABEL org.opencontainers.image.title="CK Quant"
