@@ -83,7 +83,7 @@ RUN if find /freqtrade -type f \( \
       exit 1; \
     fi \
   && if grep -RIlE \
-      '8\.209\.251\.99|47\.239\.242\.72|47\.91\.1\.141|CK_Strategy_HighLev_15m' \
+      'CK_Strategy_HighLev_15m|CK_Strategy_15m\.py|remote-deploy-marker|live-deployment-marker' \
       /freqtrade | grep -q .; then \
       echo 'Refusing to build: private deployment marker detected.' >&2; \
       exit 1; \
