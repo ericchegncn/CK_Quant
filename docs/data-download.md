@@ -61,6 +61,7 @@ freqtrade download-data --exchange binance --pairs ".*/USDT"
 * Use `--timeframes` to specify what timeframe download the historical candle (OHLCV) data for. Default is `--timeframes 1m 5m` which will download 1-minute and 5-minute data.
 * To use exchange, timeframe and list of pairs as defined in your configuration file, use the `-c/--config` option. With this, the script uses the whitelist defined in the config as the list of currency pairs to download data for and does not require the pairs.json file. You can combine `-c/--config` with most other options.
 * When downloading futures data (`--trading-mode futures` or a configuration specifying futures mode), freqtrade will automatically download the necessary candle types (e.g. `mark` and `funding_rate` candles) unless specified otherwise via `--candle-types`.
+* Funding rate data is stored with a `date` and a `funding_rate` column - unlike the other candle types, which use the regular OHLCV columns. Data downloaded with an older version is read transparently and rewritten in the current layout the next time it's stored, so no manual migration is needed.
 
 ??? Note "Permission denied errors"
     If your configuration directory `user_data` was made by docker, you may get the following error:
@@ -118,17 +119,17 @@ If the default data-format has been changed during download, then the keys `data
 The following comparisons have been made with the following data, and by using the linux `time` command.
 
 ```
-Found 6 pair / timeframe combinations.
-+----------+-------------+--------+---------------------+---------------------+
-|     Pair |   Timeframe |   Type |                From |                  To |
-|----------+-------------+--------+---------------------+---------------------|
-| BTC/USDT |          5m |   spot | 2017-08-17 04:00:00 | 2022-09-13 19:25:00 |
-| ETH/USDT |          1m |   spot | 2017-08-17 04:00:00 | 2022-09-13 19:26:00 |
-| BTC/USDT |          1m |   spot | 2017-08-17 04:00:00 | 2022-09-13 19:30:00 |
-| XRP/USDT |          5m |   spot | 2018-05-04 08:10:00 | 2022-09-13 19:15:00 |
-| XRP/USDT |          1m |   spot | 2018-05-04 08:11:00 | 2022-09-13 19:22:00 |
-| ETH/USDT |          5m |   spot | 2017-08-17 04:00:00 | 2022-09-13 19:20:00 |
-+----------+-------------+--------+---------------------+---------------------+
+                       Found 6 pair / timeframe combinations.
+┏━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┓
+┃     Pair ┃ Timeframe ┃ Type ┃                From ┃                  To ┃ Candles ┃
+┡━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━┩
+│ BTC/USDT │        1m │ spot │ 2017-08-17 04:00:00 │ 2026-07-15 04:42:00 │ 4677171 │
+│ BTC/USDT │        5m │ spot │ 2017-08-17 04:00:00 │ 2026-07-15 04:35:00 │  935445 │
+│ ETH/USDT │        1m │ spot │ 2017-08-17 04:00:00 │ 2026-07-15 04:43:00 │ 4677172 │
+│ ETH/USDT │        5m │ spot │ 2017-08-17 04:00:00 │ 2026-07-15 04:35:00 │  935445 │
+│ XRP/USDT │        1m │ spot │ 2018-05-04 08:11:00 │ 2026-07-15 04:44:00 │ 4305252 │
+│ XRP/USDT │        5m │ spot │ 2018-05-04 08:10:00 │ 2026-07-15 04:40:00 │  861055 │
+└──────────┴───────────┴──────┴─────────────────────┴─────────────────────┴─────────┘
 ```
 
 Timings have been taken in a not very scientific way with the following command, which forces reading the data into memory.
@@ -139,14 +140,14 @@ time freqtrade list-data --show-timerange --data-format-ohlcv <dataformat>
 
 |  Format | Size | timing |
 |------------|-------------|-------------|
-| `feather` | 72Mb | 3.5s |
-| `json` | 149Mb | 25.6s |
-| `jsongz` | 39Mb | 27s |
-| `parquet` | 83Mb | 3.8s |
+| `feather` | 115Mb | 1.6s |
+| `json` | 265Mb | 17.1s |
+| `jsongz` | 83Mb | 23.6s |
+| `parquet` | 149Mb | 2.5s |
 
 Size has been taken from the BTC/USDT 1m spot combination for the timerange specified above.
 
-To have a best performance/size mix, we recommend using the default feather format, or parquet.
+To have a best performance/size mix, we recommend using the default **feather** format.
 
 ### Pairs file
 

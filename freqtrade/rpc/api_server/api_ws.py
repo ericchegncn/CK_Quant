@@ -105,7 +105,7 @@ async def _process_consumer_request(
             return
 
         # If all topics passed are a valid RPCMessageType, set subscriptions on channel
-        if all([any(x.value == topic for x in RPCMessageType) for topic in data]):
+        if all(any(x.value == topic for x in RPCMessageType) for topic in data):
             channel.set_subscriptions(data)
             # 4.5：同步更新 MessageStream 订阅 —— 未订阅的类型不再入队
             message_stream.set_subscriptions(subscriber_id, data)

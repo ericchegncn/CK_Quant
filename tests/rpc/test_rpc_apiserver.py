@@ -45,7 +45,6 @@ from tests.conftest import (
     create_mock_trades,
     create_mock_trades_usdt,
     generate_test_data,
-    get_mock_coro,
     get_patched_freqtradebot,
     log_has,
     log_has_re,
@@ -388,9 +387,7 @@ def test_api_UvicornServer(mocker):
 
 
 def test_api_UvicornServer_run(mocker):
-    serve_mock = mocker.patch(
-        "freqtrade.rpc.api_server.uvicorn_threaded.UvicornServer.serve", get_mock_coro(None)
-    )
+    serve_mock = mocker.patch("freqtrade.rpc.api_server.uvicorn_threaded.UvicornServer.serve")
     s = UvicornServer(uvicorn.Config(MagicMock(), port=8080, host="127.0.0.1"))
     assert serve_mock.call_count == 0
 
@@ -401,9 +398,7 @@ def test_api_UvicornServer_run(mocker):
 
 
 def test_api_UvicornServer_run_no_uvloop(mocker, import_fails):
-    serve_mock = mocker.patch(
-        "freqtrade.rpc.api_server.uvicorn_threaded.UvicornServer.serve", get_mock_coro(None)
-    )
+    serve_mock = mocker.patch("freqtrade.rpc.api_server.uvicorn_threaded.UvicornServer.serve")
     asyncio.set_event_loop(asyncio.new_event_loop())
     s = UvicornServer(uvicorn.Config(MagicMock(), port=8080, host="127.0.0.1"))
     assert serve_mock.call_count == 0
@@ -2495,6 +2490,35 @@ def test_api_pair_history(botclient, tmp_path, mocker):
         assert_response(rc, 502)
         assert rc.json()["detail"] == ("No data for UNITTEST/BTC, 5m in 20200111-20200112 found.")
 
+        # Data available, but fully consumed by startup_candle_count trimming.
+        # The requested timerange sits at the very start of the available data, so no
+        # startup candles can be loaded ahead of it and trimming removes everything.
+        trim_timerange = "1515560100-1515562200"
+        if call == "get":
+            rc = client_get(
+                client,
+                f"{BASE_URI}/pair_history?pair=UNITTEST%2FBTC&timeframe={timeframe}"
+                f"&timerange={trim_timerange}&strategy={CURRENT_TEST_STRATEGY}",
+            )
+        else:
+            rc = client_post(
+                client,
+                f"{BASE_URI}/pair_history",
+                data={
+                    "pair": "UNITTEST/BTC",
+                    "timeframe": timeframe,
+                    "timerange": trim_timerange,
+                    "strategy": CURRENT_TEST_STRATEGY,
+                    "columns": ["rsi", "fastd", "fastk"],
+                },
+            )
+        assert_response(rc, 502)
+        assert rc.json()["detail"] == (
+            f"After trimming by startup_candle_count, no data for UNITTEST/BTC, 5m "
+            f"in {trim_timerange} left."
+        )
+        lfm.reset_mock()
+
     # No strategy
     rc = client_post(
         client,
@@ -2660,6 +2684,7 @@ def test_api_strategies(botclient, tmp_path):
         "strategies": [
             "HyperoptableStrategy",
             "HyperoptableStrategyV2",
+            "InformativeDecoratorCacheTest",
             "InformativeDecoratorTest",
             "StrategyTestV2",
             "StrategyTestV3",
