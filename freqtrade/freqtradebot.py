@@ -766,15 +766,11 @@ class FreqtradeBot(LoggingMixin):
                         )
                         continue
 
-                    existing_order = (
-                        Order.session.query(Order)
-                        .filter(
-                            Order.ft_pair == trade.pair,
-                            Order.order_id == str(order["id"]),
-                        )
-                        .first()
-                    )
-                    if existing_order is not None:
+                    # 用上游的 Order.order_by_id（不要再改回显式 query：上游测试
+                    # 通过 patch 该函数来构造唯一约束冲突场景）。ft_trade_id != trade.id
+                    # 判定同样来自上游 —— 订单已属于本交易时应继续更新，而非跳过。
+                    existing_order = Order.order_by_id(order["id"], trade.pair)
+                    if existing_order is not None and existing_order.ft_trade_id != trade.id:
                         # Order ownership is immutable.  Moving an order between
                         # trades corrupts both positions and can violate the unique
                         # order-id constraint during recovery.

@@ -5350,6 +5350,10 @@ def test_handle_onexchange_order_other_trade(mocker, default_conf_usdt, fee, cap
 
     prev_exit_order = Trade.get_trades([Trade.id == 1]).first().orders[-1].to_ccxt_object()
     prev_exit_order.update({"status": "closed", "filled": prev_exit_order["amount"]})
+    # 本 fork 额外有一层 predates 保护（订单时间早于本交易建仓边界即跳过），
+    # 且它先于 ownership 检查执行。这里把订单时间设为当前，以便真正覆盖
+    # ownership 检查这条路径。
+    prev_exit_order["lastTradeTimestamp"] = dt_ts()
     mocker.patch(f"{EXMS}.fetch_orders", return_value=[prev_exit_order])
 
     trade = Trade.get_trades([Trade.id == 6]).first()
@@ -5358,7 +5362,11 @@ def test_handle_onexchange_order_other_trade(mocker, default_conf_usdt, fee, cap
     prev_amount = trade.amount
 
     assert freqtrade.handle_onexchange_order(trade) is False
-    assert log_has_re(r"Order prod_exit_1_long .* already belongs to trade 1 - skipping\.", caplog)
+    # 本 fork 在保留上游 ownership 判定之外还额外加了 predates 保护，
+    # 日志文案是本 fork 的（含 pair 与双方 trade id），比上游更详细。
+    assert log_has_re(
+        r"Ignoring recovered order prod_exit_1_long .* it already belongs to trade 1", caplog
+    )
     assert not log_has_re(r"Found previously unknown order .*", caplog)
 
     # Order stayed with the preceding trade - the recovered trade is unchanged.
@@ -5380,6 +5388,9 @@ def test_handle_onexchange_order_rollback(mocker, default_conf_usdt, fee, caplog
 
     prev_exit_order = Trade.get_trades([Trade.id == 1]).first().orders[-1].to_ccxt_object()
     prev_exit_order.update({"status": "closed", "filled": prev_exit_order["amount"]})
+    # 同上：本 fork 的 predates 保护会先拦截旧时间戳的订单，
+    # 把时间设为当前才能真正走到「所有权检查被绕过 → 唯一约束冲突」这条路径。
+    prev_exit_order["lastTradeTimestamp"] = dt_ts()
     mocker.patch(f"{EXMS}.fetch_orders", return_value=[prev_exit_order])
 
     trade = Trade.get_trades([Trade.id == 6]).first()
