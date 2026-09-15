@@ -68,6 +68,13 @@ scripts/
 *secrets*
 # Python 编译缓存：旧 .pyc 可能残留已清理的源码内容（例如策略名引用），
 # 绝对不允许进入公开镜像。
+# 注意：Docker 的 .dockerignore 中 `*` 不跨 `/`，所以 `__pycache__/`、`*.pyc`
+# 只能匹配上下文根目录，嵌套目录（如 freqtrade/freqtrade/exchange/__pycache__/）
+# 必须用 `**/` 前缀排除 —— 只写裸模式会让 .pyc 静默进入镜像。
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
 __pycache__/
 *.pyc
 *.pyo

@@ -30,7 +30,7 @@ from freqtrade.exceptions import (
     PricingError,
     TemporaryError,
 )
-from freqtrade.freqtradebot import FreqtradeBot
+from freqtrade.freqtradebot import FreqtradeBot, _LatencyTrace
 from freqtrade.persistence import Order, PairLocks, Trade
 from freqtrade.plugins.protections.iprotection import ProtectionReturn
 from freqtrade.util.datetime_helpers import dt_now, dt_ts, dt_utc
@@ -6293,3 +6293,38 @@ def test_should_check_stoploss_batching(mocker, monkeypatch) -> None:
     # 5. 非法环境变量 -> 回退全量检查
     monkeypatch.setenv("CKQ_STOPLOSS_CHECK_BATCH", "abc")
     assert bot._should_check_stoploss(make_trade(True), 3) is True
+
+
+def test_latency_log_threshold_env_override(mocker, monkeypatch, caplog) -> None:
+    """
+    CKQ_LATENCY_THRESHOLD 可覆盖性能日志阈值（默认行为不变）。
+
+    背景：bot loop 的日志阈值是 2.0s，优化后循环变快反而什么都看不到，
+    低配机器上需要把阈值调低才能持续观测各阶段耗时。
+    """
+    import logging
+
+    from freqtrade.freqtradebot import _latency_log_threshold
+
+    # 1. 未设环境变量：耗时低于阈值 -> 不打印（保持原行为）
+    monkeypatch.delenv("CKQ_LATENCY_THRESHOLD", raising=False)
+    trace = _LatencyTrace()
+    trace.mark("exit_and_commit")
+    trace.finish("bot loop", threshold=1000.0)
+    assert "CK Quant performance" not in caplog.text
+
+    # 2. 阈值设为 0：任何耗时都打印，且带阶段明细
+    monkeypatch.setenv("CKQ_LATENCY_THRESHOLD", "0")
+    with caplog.at_level(logging.WARNING):
+        trace2 = _LatencyTrace()
+        trace2.mark("exit_and_commit")
+        trace2.finish("bot loop", threshold=1000.0, open_trades=88)
+    assert "CK Quant performance: bot loop took" in caplog.text
+    assert "exit_and_commit" in caplog.text
+    assert "open_trades=88" in caplog.text
+
+    # 3. 非法值 -> 回退默认阈值
+    monkeypatch.setenv("CKQ_LATENCY_THRESHOLD", "abc")
+    assert _latency_log_threshold(2.0) == 2.0
+    monkeypatch.setenv("CKQ_LATENCY_THRESHOLD", "0.5")
+    assert _latency_log_threshold(2.0) == 0.5

@@ -79,6 +79,19 @@ ICEBERG_EXIT_KEY = "ckq_iceberg_exit"
 MEMORY_TRIM_INTERVAL = 12
 
 
+def _latency_log_threshold(default: float) -> float:
+    """
+    日志阈值，可用环境变量 CKQ_LATENCY_THRESHOLD 覆盖（默认值 = 原行为，不变）。
+
+    低配 VPS 上把阈值调低，即可让每轮循环都打印各阶段耗时，用于观测优化效果；
+    正常情况下不设该变量，行为与上游一致（仅在超时阈值时才警告）。
+    """
+    try:
+        return float(os.environ.get("CKQ_LATENCY_THRESHOLD", default))
+    except (TypeError, ValueError):
+        return default
+
+
 class _LatencyTrace:
     """Low-overhead phase timer which only logs operations that exceed the SLO."""
 
@@ -94,7 +107,7 @@ class _LatencyTrace:
 
     def finish(self, operation: str, *, threshold: float = 1.0, **context: Any) -> None:
         total = perf_counter() - self.started
-        if total < threshold:
+        if total < _latency_log_threshold(threshold):
             return
         phase_text = ", ".join(f"{name}={duration:.3f}s" for name, duration in self.phases.items())
         context_text = ", ".join(f"{name}={value}" for name, value in context.items())
