@@ -105,6 +105,10 @@ class _LatencyTrace:
         self.phases[phase] = self.phases.get(phase, 0.0) + now - self.last
         self.last = now
 
+    def add(self, phase: str, duration: float) -> None:
+        """累加一个已单独计时的阶段（用于循环体内部的细分计时，不移动游标）。"""
+        self.phases[phase] = self.phases.get(phase, 0.0) + duration
+
     def finish(self, operation: str, *, threshold: float = 1.0, **context: Any) -> None:
         total = perf_counter() - self.started
         if total < _latency_log_threshold(threshold):
@@ -351,7 +355,7 @@ class FreqtradeBot(LoggingMixin):
         with self._exit_lock:
             trades = Trade.get_open_trades()
             # First process current opened trades (positions)
-            self.exit_positions(trades)
+            self.exit_positions(trades, latency)
             Trade.commit()
         latency.mark("exit_and_commit")
 
@@ -1587,40 +1591,52 @@ class FreqtradeBot(LoggingMixin):
     # SELL / exit positions / close trades logic and methods
     #
 
-    def exit_positions(self, trades: list[Trade]) -> int:
+    def exit_positions(self, trades: list[Trade], latency: _LatencyTrace | None = None) -> int:
         """
         Tries to execute exit orders for open trades (positions)
         """
         trades_closed = 0
+        _t_prefetch = perf_counter()
         # 批量刷新行情（低内存/CPU 加固）：原实现每笔交易各自 refresh=True 请求行情，
         # 88 持仓时每轮 88 次 API 调用 —— 主循环 17 秒与内存峰值的主因。
         # 这里一次性批量取回所有活跃对行情并写入退出价缓存，退出检查读本轮缓存。
         self._prefetch_exit_rates(trades)
+        _prefetch_cost = perf_counter() - _t_prefetch
+        _sl_cost = 0.0
+        _handle_cost = 0.0
+        _wallets_cost = 0.0
         for idx, trade in enumerate(trades):
             if (
                 not trade.has_open_orders
                 and not trade.has_open_sl_orders
                 and trade.fee_open_currency is not None
-                and not self.wallets.check_exit_amount(trade)
             ):
-                logger.warning(
-                    f"Not enough {trade.safe_base_currency} in wallet to exit {trade}. "
-                    "Trying to recover."
-                )
-                if self.handle_onexchange_order(trade):
-                    # Trade was deleted. Don't continue.
-                    continue
+                _w0 = perf_counter()
+                _enough = self.wallets.check_exit_amount(trade)
+                if not _enough:
+                    logger.warning(
+                        f"Not enough {trade.safe_base_currency} in wallet to exit {trade}. "
+                        "Trying to recover."
+                    )
+                    if self.handle_onexchange_order(trade):
+                        # Trade was deleted. Don't continue.
+                        _wallets_cost += perf_counter() - _w0
+                        continue
+                _wallets_cost += perf_counter() - _w0
 
             try:
                 try:
                     if (
                         self.strategy.order_types.get("stoploss_on_exchange")
                         and self._should_check_stoploss(trade, idx)
-                        and self.handle_stoploss_on_exchange(trade)
                     ):
-                        trades_closed += 1
-                        Trade.commit()
-                        continue
+                        _s0 = perf_counter()
+                        _closed = self.handle_stoploss_on_exchange(trade)
+                        _sl_cost += perf_counter() - _s0
+                        if _closed:
+                            trades_closed += 1
+                            Trade.commit()
+                            continue
 
                 except InvalidOrderException as exception:
                     logger.warning(
@@ -1628,22 +1644,32 @@ class FreqtradeBot(LoggingMixin):
                     )
                 # Check if we can exit our current position for this trade
                 # refresh_rate=False：使用本轮 _prefetch_exit_rates 批量预取的缓存价
+                _h0 = perf_counter()
                 if (
                     trade.has_open_position
                     and trade.is_open
                     and self.handle_trade(trade, refresh_rate=False)
                 ):
                     trades_closed += 1
+                _handle_cost += perf_counter() - _h0
 
             except DependencyException as exception:
                 logger.warning(f"Unable to exit trade {trade.pair}: {exception}")
 
         # Updating wallets if any trade occurred
+        _w1 = perf_counter()
         if trades_closed:
             self.wallets.update()
+        _wallets_cost += perf_counter() - _w1
 
         # 分批调度轮转计数（每轮 +1，供 _should_check_stoploss 轮转止损单检查）
         self._stoploss_check_round = getattr(self, "_stoploss_check_round", 0) + 1
+
+        if latency is not None:
+            latency.add("exit.prefetch", _prefetch_cost)
+            latency.add("exit.sl_check", _sl_cost)
+            latency.add("exit.handle_trade", _handle_cost)
+            latency.add("exit.wallets", _wallets_cost)
 
         return trades_closed
 
