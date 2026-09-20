@@ -90,3 +90,21 @@ Freqtrade*.txt
 .pytest_cache/
 .ruff_cache/
 .ipynb_checkpoints
+
+# 2026-09-20：同上（构建守卫抓私有部署标记）——gitignore 不管 docker 上下文。
+reports/
+docs/antimartingale-pyramid.md
+docs/strategy-dev-progress.md
+docs/webui-low-memory-remediation-plan.md
+
+# 2026-09-20（第二批）：Dockerfile 反泄露守卫 check#3 扫整个上下文找 "CK_*_15m" 这类私有标记，
+# 下列文件都带策略名或属私有开发产物，不该进公开镜像。
+docker-compose*.yml
+.env*
+.env.bak_*
+.hotfix-build-*/**
+CK_Quant_Rust/**
+desktop/docs/**
+scripts/**
+tests/**
+*.bak_*
