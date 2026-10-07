@@ -1881,12 +1881,27 @@ class FreqtradeBot(LoggingMixin):
             return
         if not tickers:
             return
+        # 2026-10-07 修复②：use_order_book=true 时 get_rate 会忽略传入的 ticker，
+        #   对每笔再发一次 fetch_l2_order_book ⇒ 32 持仓 × 2 侧 = 64 次串行往返 ≈ 8.6 秒/轮。
+        #   批量 ticker 的 bid/ask 就是 1 档盘口，这里合成为 order_book 形状直接传入，
+        #   与 order_book_top=1 语义完全等价（_get_rate_from_ob 只读 bids[0]/asks[0]），
+        #   往返次数降为 0；拿不到 bid/ask 时传 None，由 get_rate 自行回退请求行情。
+        _use_ob = bool(
+            self.config.get("entry_pricing", {}).get("use_order_book", False)
+            or self.config.get("exit_pricing", {}).get("use_order_book", False)
+        )
         for trade in trades:
             if not trade.is_open or not trade.has_open_position:
                 continue
             ticker = tickers.get(trade.pair)
             if not ticker:
                 continue
+            order_book = None
+            if _use_ob and ticker.get("bid") and ticker.get("ask"):
+                order_book = {
+                    "bids": [[ticker["bid"], 0.0]],
+                    "asks": [[ticker["ask"], 0.0]],
+                }
             try:
                 # exit / entry 两侧都预热：加仓路径（check_and_call_adjust_trade_position）
                 # 需要 entry+exit 两个价，原先只预热 exit，导致它绕过缓存重新逐笔请求行情。
@@ -1897,6 +1912,7 @@ class FreqtradeBot(LoggingMixin):
                         is_short=trade.is_short,
                         refresh=True,
                         ticker=ticker,
+                        order_book=order_book,
                     )
             except Exception:
                 # 单笔失败不影响其他交易；缓存未命中时该笔会自行请求行情
