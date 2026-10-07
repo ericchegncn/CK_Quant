@@ -140,6 +140,7 @@ target/
 Freqtrade安装与操作说明.txt
 .venv
 uv.lock
+!markets/uv.lock
 .idea
 .vscode
 
@@ -161,6 +162,10 @@ scripts/tmp_dl/
 # Desktop app
 node_modules/
 desktop/dist/
+markets/build/
+markets/dist/
+markets/desktop/dist/
+markets/*.spec
 
 desktop/pnpm-lock.yaml
 desktop/pnpm-workspace.yaml

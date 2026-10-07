@@ -1,18 +1,26 @@
 ---
+# CK_Quant 本地 compose —— 所有值直接写死在这里，不使用 ${VAR} 变量替换。
+# 不要重新引入 .env: 2026-09-20 一个陈旧的 .env 曾静默覆盖 --strategy 与 --db-url,
+# 导致容器去载入已删除的 CK_Trend_HighLev_15m，并指向不存在的数据库 → 重启循环。
+# 公共模板见 docker-compose.ck-quant.example.yml（那个才是给新用户的变量版）。
 services:
   CK_Quant:
-    image: ${CK_QUANT_IMAGE:-ericchenghz/ck-quant:latest}
-    container_name: ${CK_QUANT_CONTAINER_NAME:-CK_Quant}
+    image: ericchenghz/ck-quant:latest
+    container_name: CK_Quant
     restart: unless-stopped
     working_dir: /CK_Quant
     volumes:
       - "./user_data:/CK_Quant/user_data"
     ports:
-      - "${CK_QUANT_WEBUI_BIND:-0.0.0.0}:${CK_QUANT_WEBUI_PORT:-8080}:8080"
+      - "0.0.0.0:8081:8080"
+    environment:
+      # 交易所侧止损单状态查询分批：每 2 轮查一遍「已成功挂出」的持仓（缺单的仍每轮必查）。
+      # 止损由交易所执行，分批只延后状态同步，不影响止损触发；实测该阶段 3.9s → ~2.0s。
+      CKQ_STOPLOSS_CHECK_BATCH: "1"   # 2026-10-07: 2→1，每轮全量检查止损状态（上游行为，不引入额外延迟）
     command: >
       trade
       --userdir /CK_Quant/user_data
-      --logfile /CK_Quant/user_data/logs/${CK_QUANT_LOGFILE:-tradesv3.log}
-      --db-url sqlite:////CK_Quant/user_data/${CK_QUANT_DATABASE:-tradesv3.sqlite}
-      --config /CK_Quant/user_data/${CK_QUANT_CONFIG:-config.json}
-      --strategy ${CK_QUANT_STRATEGY:-SampleStrategy}
+      --logfile /CK_Quant/user_data/logs/CK_Trend_15m.log
+      --db-url sqlite:////CK_Quant/user_data/CK_Trend_15m.sqlite
+      --config /CK_Quant/user_data/config_binance.json
+      --strategy CK_Trend_15m

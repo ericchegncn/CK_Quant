@@ -1864,9 +1864,14 @@ class FreqtradeBot(LoggingMixin):
         )
         if not pairs:
             return
-        # 订单簿定价（use_order_book）依赖实时盘口，不能用批量 ticker 预热缓存
-        if self.config.get("exit_pricing", {}).get("use_order_book", False):
-            return
+        # 2026-10-07 修复（原 BUG）：原先 use_order_book=True 时直接 return，导致本函数完全不生效
+        #   —— 实测 exit.prefetch 恒为 0.000s，每轮对每个持仓逐笔请求盘口
+        #   —— 50 持仓 × 每轮 ≈ 50 次 API 调用 ⇒ 撞穿币安权重上限 ⇒ 418 并封 IP。
+        # 该守卫的理由（"订单簿定价不能用批量 ticker 预热"）在本仓库已不成立：
+        #   freqtrade/exchange/binance.py 的 get_tickers() 已合并 fetch_bids_asks()
+        #   （批量 bookTicker = 最优买一/卖一，与 order_book_top=1 语义完全等价）。
+        # 批量失败时下方 except 会静默返回，get_rate(refresh=False) 缓存未命中会自动回退单笔请求，
+        # 因此不会因为批量失败而错过退出。
         try:
             tickers = self.exchange.get_tickers(
                 pairs, market_type=getattr(self.exchange, "trading_mode", None)
