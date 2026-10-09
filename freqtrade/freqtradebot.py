@@ -2027,6 +2027,43 @@ class FreqtradeBot(LoggingMixin):
                     f"Exit for {trade.pair} detected. Reason: {should_exit.exit_type}"
                     f"{f' Tag: {exit_tag1}' if exit_tag1 is not None else ''}"
                 )
+                # 2026-10-09 修复（重复平仓 BUG）：止损类退出前必须复查交易所止损单的真实状态。
+                #   背景：exit_positions 里 handle_stoploss_on_exchange 受 _should_check_stoploss 分批
+                #   门控（CKQ_STOPLOSS_CHECK_BATCH），在"本轮不检查"的循环里价格穿过止损价时，
+                #   本分支会直接发市价平仓，而交易所那条止损单同一时刻也在成交 ⇒ 仓位被平两次。
+                #   实测代价（ARB #96，10x，5985.8）：-54.95 应为 -112.10（正好一倍）。
+                #   实盘上多平一次 = 反向开仓 ⇒ 直接吃强平（用户实盘亏损的形态）。
+                # 只需在真正要发止损类出场时多查一次，代价可忽略。
+                if should_exit.exit_type in (
+                    ExitType.STOP_LOSS,
+                    ExitType.TRAILING_STOP_LOSS,
+                    ExitType.LIQUIDATION,
+                ):
+                    _slo_closed = False
+                    for _slo in getattr(trade, "open_sl_orders", []):
+                        if not _slo.order_id:
+                            continue
+                        try:
+                            _o = self.exchange.fetch_stoploss_order(_slo.order_id, trade.pair)
+                        except Exception as _e:
+                            logger.warning(
+                                f"复查止损单状态失败（按原逻辑继续）{trade.pair}: {_e}"
+                            )
+                            continue
+                        if _o and _o.get("status") in ("closed", "triggered"):
+                            self.update_trade_state(
+                                trade, _slo.order_id, _o, stoploss_order=True
+                            )
+                            trade.exit_reason = ExitType.STOPLOSS_ON_EXCHANGE.value
+                            logger.info(
+                                f"止损单已在交易所成交，跳过市价平仓 {trade.pair} "
+                                f"(#{trade.id})，避免重复平仓"
+                            )
+                            _slo_closed = True
+                            break
+                    if _slo_closed:
+                        continue
+
                 exited = self.execute_trade_exit(trade, exit_rate, should_exit, exit_tag=exit_tag1)
                 if exited:
                     return True
