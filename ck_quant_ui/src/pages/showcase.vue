@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n';
 import axios from 'axios';
 
 import type { ClosedTrade, CumProfitChartData, Trade } from '@/types';
+import type { TableColumn } from '@nuxt/ui';
 
 const { t } = useI18n();
 
@@ -14,46 +15,72 @@ definePage({
 
 const POLL_INTERVAL_MS = 60_000;
 const OVERVIEW_ENDPOINT = '/api/v1/public/overview';
+// Stake amounts render with 3 decimals, exactly like the dashboard's overview.
+const STAKE_DECIMALS = 3;
+// Anything the payload does not carry shows as an em dash - never "N/A".
+const MISSING = '—';
+// Below this magnitude a profit curve is unambiguously a *ratio* curve
+// (0.1131 == +11.31%) rather than an absolute one.
+const RATIO_HISTORY_CEILING = 1;
 
 /**
- * Tolerant shape of the public overview payload. The server may expose the
- * metrics either flat or nested below a `profit` / `summary` object, so every
- * field stays optional and is read through `resolveField()`.
+ * Public overview payload (contract v2). Every ratio is a ratio
+ * (`0.1131` == `11.31%`) and every amount is denominated in `stake_currency`.
+ * All fields stay optional so a partially implemented or older bot renders
+ * gracefully instead of crashing.
  */
-interface PublicOverviewPayload {
-  running?: boolean;
-  status?: string;
-  state?: string;
-  label?: string;
-  exchange?: string;
-  exchange_name?: string;
-  uptime_seconds?: number;
-  start_date?: string;
-  bot_start_date?: string;
-  version?: string;
-  open_trade_count?: number;
-  open_trades?: number;
-  trade_count?: number;
-  winrate?: number;
-  profit_factor?: number | null;
-  expectancy?: number;
-  expectancy_ratio?: number;
-  max_drawdown?: number;
-  profit_total_ratio?: number;
-  profit_all_ratio?: number;
+interface PublicProfitPoint {
+  date: number;
+  profit?: number;
   profit_abs?: number;
-  profit_all_coin?: number;
-  show_absolute?: boolean;
-  stake_currency?: string;
-  profit_history?: CumProfitChartData[];
-  profit?: PublicOverviewPayload;
-  summary?: PublicOverviewPayload;
 }
 
-interface ShowcaseMetric {
-  label: string;
-  value: string;
-  accent?: 'profit' | 'loss';
+interface PublicOverviewPayload {
+  label?: string;
+  bot_state?: string;
+  runmode?: string;
+  version?: string;
+  exchange?: string;
+  trading_mode?: string;
+  start_date?: string;
+  uptime_seconds?: number;
+  as_of?: string;
+  open_trades?: number;
+  max_open_trades?: number;
+  trade_count?: number;
+  win_count?: number;
+  loss_count?: number;
+  win_rate?: number;
+  profit_factor?: number;
+  expectancy?: number;
+  expectancy_ratio?: number;
+  avg_duration_seconds?: number;
+  trading_volume?: number;
+  profit_total_abs?: number;
+  profit_total_ratio?: number;
+  profit_closed_abs?: number;
+  profit_closed_ratio?: number;
+  profit_open_abs?: number;
+  profit_open_ratio?: number;
+  profit_total_ratio_sum?: number;
+  profit_closed_ratio_sum?: number;
+  starting_capital?: number;
+  balance_total?: number;
+  stake_currency?: string;
+  max_drawdown_ratio?: number;
+  max_drawdown_abs?: number;
+  current_drawdown_ratio?: number;
+  current_drawdown_abs?: number;
+  open_profit_abs?: number;
+  profit_history?: PublicProfitPoint[];
+  // Tolerated extras: a bot may publish fiat conversions or trade timestamps on
+  // top of the contract. Shown when present, ignored otherwise.
+  first_trade_timestamp?: number;
+  last_trade_timestamp?: number;
+  profit_total_fiat?: number;
+  profit_closed_fiat?: number;
+  profit?: PublicOverviewPayload;
+  summary?: PublicOverviewPayload;
 }
 
 type ShowcaseState = 'loading' | 'ready' | 'disabled' | 'error';
@@ -109,20 +136,48 @@ const blocks = ref<ShowcaseBlock[]>(buildBlocks());
 // cannot (and must not) do.
 const http = axios.create({ timeout: 15000 });
 
-function resolveField<K extends keyof PublicOverviewPayload>(
-  block: ShowcaseBlock,
-  key: K,
-): PublicOverviewPayload[K] | undefined {
-  const source = block.payload;
-  if (!source) return undefined;
-  const direct = source[key];
-  if (direct !== undefined && direct !== null) return direct;
-  for (const nested of [source.profit, source.summary]) {
-    if (!nested) continue;
-    const value = nested[key];
+/**
+ * Field names an older deployment may still publish. Reading them keeps a
+ * shared link working unchanged while a bot is upgraded, instead of degrading
+ * to an em dash for a value the server actually sent.
+ */
+const FIELD_ALIASES: Record<string, string[]> = {
+  bot_state: ['status', 'state'],
+  open_trades: ['open_trade_count'],
+  win_rate: ['winrate'],
+  max_drawdown_ratio: ['max_drawdown'],
+  profit_total_ratio: ['profit_all_ratio'],
+  profit_total_abs: ['profit_abs', 'profit_all_coin'],
+  profit_closed_abs: ['profit_closed_coin'],
+  start_date: ['bot_start_date'],
+};
+
+function readPoint(source: PublicOverviewPayload, key: string): unknown {
+  const candidates = [key, ...(FIELD_ALIASES[key] ?? [])];
+  for (const candidate of candidates) {
+    const value = (source as Record<string, unknown>)[candidate];
     if (value !== undefined && value !== null) return value;
   }
   return undefined;
+}
+
+/** Read a field off the payload, tolerating a `profit` / `summary` wrapper. */
+function rawField(block: ShowcaseBlock, key: keyof PublicOverviewPayload): unknown {
+  const source = block.payload;
+  if (!source) return undefined;
+  const direct = readPoint(source, key as string);
+  if (direct !== undefined) return direct;
+  for (const nested of [source.profit, source.summary]) {
+    if (!nested) continue;
+    const value = readPoint(nested, key as string);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+function fieldNumber(block: ShowcaseBlock, key: keyof PublicOverviewPayload): number | undefined {
+  const value = rawField(block, key);
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 async function loadBlock(block: ShowcaseBlock): Promise<void> {
@@ -159,167 +214,351 @@ onBeforeUnmount(() => {
   if (pollTimer !== undefined) window.clearInterval(pollTimer);
 });
 
-// Stable empty collections: passing inline literals would re-create arrays on
-// every render and make the chart recompute for no reason.
+// Stable empty collection: an inline literal would be re-created on every
+// render and make the chart recompute for no reason. Typed exactly like the
+// chart's `trades` prop - the public page has no per-trade rows at all and
+// feeds the curve through `profit-history`.
 const NO_TRADES: ClosedTrade[] = [];
-const NO_OPEN_TRADES: Trade[] = [];
 
-function blockTitle(block: ShowcaseBlock): string {
-  const label = resolveField(block, 'label');
-  return typeof label === 'string' && label ? label : t('showcase.defaultLabel');
+// --- formatting helpers -----------------------------------------------------
+// The shared formatters answer "N/A" (or "N/A%") for a missing value, which the
+// showcase must never show. Each helper therefore checks for a real number
+// first and only then delegates.
+function moneyText(value: number | undefined, currency: string, decimals = STAKE_DECIMALS) {
+  return value === undefined ? MISSING : formatPriceCurrency(value, currency, decimals);
 }
 
-function blockExchange(block: ShowcaseBlock): string {
-  const value = resolveField(block, 'exchange') ?? resolveField(block, 'exchange_name');
-  return typeof value === 'string' && value ? value : 'N/A';
+function percentText(value: number | undefined, decimals = 2) {
+  return value === undefined ? MISSING : formatPercent(value, decimals);
 }
 
-function blockVersion(block: ShowcaseBlock): string {
-  const value = resolveField(block, 'version');
-  return typeof value === 'string' && value ? value : 'N/A';
+function numberText(value: number | undefined, decimals = 0) {
+  return value === undefined ? MISSING : formatNumber(value, decimals);
 }
 
-function blockStakeCurrency(block: ShowcaseBlock): string {
-  const value = resolveField(block, 'stake_currency');
+function countText(value: number | undefined) {
+  return value === undefined ? MISSING : formatNumber(value, 0);
+}
+
+function timestampText(value: number | undefined) {
+  return value === undefined ? MISSING : timestampms(value);
+}
+
+function stakeCurrency(block: ShowcaseBlock): string {
+  const value = rawField(block, 'stake_currency');
   return typeof value === 'string' && value ? value : 'USDT';
 }
 
-function blockRunning(block: ShowcaseBlock): boolean | undefined {
-  const explicit = resolveField(block, 'running');
-  if (typeof explicit === 'boolean') return explicit;
-  const raw = resolveField(block, 'status') ?? resolveField(block, 'state');
-  if (typeof raw !== 'string' || !raw) return undefined;
-  const normalized = raw.toLowerCase();
-  if (normalized.includes('run') || normalized === 'online') return true;
-  if (normalized.includes('stop') || normalized === 'offline') return false;
+// --- view models ------------------------------------------------------------
+type Accent = 'profit' | 'loss';
+
+interface OverviewRow {
+  label: string;
+  status: string;
+  statusClass: string;
+  trades: string;
+  profitOpen?: number;
+  profitOpenRatio?: number;
+  profitClosed?: number;
+  profitClosedRatio?: number;
+  balance?: number;
+  balanceCurrency: string;
+  winCount?: number;
+  lossCount?: number;
+  runmode?: string;
+}
+
+interface RoiCard {
+  label: string;
+  value: string;
+  sum: string;
+  fiat: string;
+  positive: boolean;
+}
+
+interface MetricItem {
+  label: string;
+  value: string;
+  accent?: Accent;
+}
+
+interface BlockView {
+  block: ShowcaseBlock;
+  title: string;
+  row: OverviewRow;
+  roi: RoiCard[];
+  metrics: MetricItem[];
+  history: CumProfitChartData[];
+  chartOpenTrades: Trade[];
+  updatedText: string;
+}
+
+function blockTitle(block: ShowcaseBlock): string {
+  const label = rawField(block, 'label');
+  return typeof label === 'string' && label ? label : t('showcase.defaultLabel');
+}
+
+function blockStatus(block: ShowcaseBlock): { text: string; className: string } {
+  const raw = rawField(block, 'bot_state');
+  const normalized = typeof raw === 'string' ? raw.toLowerCase() : '';
+  if (normalized === 'running' || normalized.includes('run')) {
+    return { text: t('showcase.running'), className: 'showcase-status-pill--running' };
+  }
+  if (normalized === 'stopped' || normalized.includes('stop')) {
+    return { text: t('showcase.stopped'), className: 'showcase-status-pill--stopped' };
+  }
+  return { text: t('showcase.unknown'), className: 'showcase-status-pill--unknown' };
+}
+
+function blockRunmode(block: ShowcaseBlock): string | undefined {
+  const raw = rawField(block, 'runmode');
+  const runmode = typeof raw === 'string' ? raw.toLowerCase() : '';
+  if (runmode.includes('dry')) return t('workspace.dry');
+  if (runmode.includes('live')) return t('workspace.live');
   return undefined;
 }
 
-function blockStatusText(block: ShowcaseBlock): string {
-  const running = blockRunning(block);
-  if (running === true) return t('showcase.running');
-  if (running === false) return t('showcase.stopped');
-  return t('showcase.unknown');
+function overviewRow(block: ShowcaseBlock): OverviewRow {
+  const status = blockStatus(block);
+  const openTrades = fieldNumber(block, 'open_trades');
+  const maxOpenTrades = fieldNumber(block, 'max_open_trades');
+  return {
+    label: blockTitle(block),
+    status: status.text,
+    statusClass: status.className,
+    trades:
+      openTrades === undefined && maxOpenTrades === undefined
+        ? MISSING
+        : `${countText(openTrades)} / ${countText(maxOpenTrades)}`,
+    profitOpen: fieldNumber(block, 'profit_open_abs') ?? fieldNumber(block, 'open_profit_abs'),
+    profitOpenRatio: fieldNumber(block, 'profit_open_ratio'),
+    profitClosed: fieldNumber(block, 'profit_closed_abs'),
+    profitClosedRatio: fieldNumber(block, 'profit_closed_ratio'),
+    balance: fieldNumber(block, 'balance_total'),
+    balanceCurrency: stakeCurrency(block),
+    winCount: fieldNumber(block, 'win_count'),
+    lossCount: fieldNumber(block, 'loss_count'),
+    runmode: blockRunmode(block),
+  };
 }
 
-function blockStatusClass(block: ShowcaseBlock): string {
-  const running = blockRunning(block);
-  if (running === true) return 'showcase-status-pill--running';
-  if (running === false) return 'showcase-status-pill--stopped';
-  return 'showcase-status-pill--unknown';
-}
-
-function blockUptime(block: ShowcaseBlock): string {
-  const seconds = resolveField(block, 'uptime_seconds');
-  if (typeof seconds === 'number' && Number.isFinite(seconds)) {
-    return humanizeDurationFromSeconds(seconds);
-  }
-  const startDate = resolveField(block, 'start_date') ?? resolveField(block, 'bot_start_date');
-  if (typeof startDate === 'string' && startDate) {
-    const started = Date.parse(startDate);
-    if (!Number.isNaN(started)) {
-      return humanizeDurationFromSeconds(Math.max(0, (Date.now() - started) / 1000));
-    }
-  }
-  return 'N/A';
-}
-
-function blockTotalReturn(block: ShowcaseBlock): number | undefined {
-  const value = resolveField(block, 'profit_total_ratio') ?? resolveField(block, 'profit_all_ratio');
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-}
-
-function blockAbsoluteProfit(block: ShowcaseBlock): number | undefined {
-  const value = resolveField(block, 'profit_abs') ?? resolveField(block, 'profit_all_coin');
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-}
-
-function blockShowAbsolute(block: ShowcaseBlock): boolean {
-  return (
-    blockAbsoluteProfit(block) !== undefined && resolveField(block, 'show_absolute') !== false
-  );
-}
-
-function blockTotalReturnText(block: ShowcaseBlock): string {
-  const value = blockTotalReturn(block);
-  return value === undefined ? 'N/A' : formatPercent(value, 2);
-}
-
-function blockTotalReturnClass(block: ShowcaseBlock): string {
-  const value = blockTotalReturn(block);
-  if (value === undefined) return '';
-  return value >= 0 ? 'text-emerald-500' : 'text-rose-500';
-}
-
-function blockAbsoluteProfitText(block: ShowcaseBlock): string {
-  const value = blockAbsoluteProfit(block);
-  return value === undefined ? 'N/A' : `${formatPrice(value, 3)} ${blockStakeCurrency(block)}`;
-}
-
-function blockUpdatedText(block: ShowcaseBlock): string {
-  return block.updatedAt === null
-    ? ''
-    : t('showcase.updated', { time: timestampms(block.updatedAt) });
-}
-
-function blockProfitHistory(block: ShowcaseBlock): CumProfitChartData[] {
-  const history = resolveField(block, 'profit_history');
-  return Array.isArray(history) ? history : [];
-}
-
-function numberOrNa(value: unknown, decimals = 0): string {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? formatNumber(value, decimals)
-    : 'N/A';
-}
-
-function blockMetrics(block: ShowcaseBlock): ShowcaseMetric[] {
-  const openTrades = resolveField(block, 'open_trade_count') ?? resolveField(block, 'open_trades');
-  const tradeCount = resolveField(block, 'trade_count');
-  const winrate = resolveField(block, 'winrate');
-  const profitFactor = resolveField(block, 'profit_factor');
-  const expectancy = resolveField(block, 'expectancy');
-  const expectancyRatio = resolveField(block, 'expectancy_ratio');
-  const maxDrawdown = resolveField(block, 'max_drawdown');
-
+function roiCards(block: ShowcaseBlock): RoiCard[] {
+  const currency = stakeCurrency(block);
+  const build = (
+    label: string,
+    abs: number | undefined,
+    ratio: number | undefined,
+    sum: number | undefined,
+    fiat: number | undefined,
+  ): RoiCard => ({
+    label,
+    value:
+      abs === undefined && ratio === undefined
+        ? MISSING
+        : `${moneyText(abs, currency)} (${percentText(ratio)})`,
+    sum: `Σ ${percentText(sum)}`,
+    fiat: fiat === undefined ? MISSING : formatPriceCurrency(fiat, 'USD', STAKE_DECIMALS),
+    positive: (abs ?? ratio ?? 0) >= 0,
+  });
   return [
-    { label: t('showcase.exchange'), value: blockExchange(block) },
-    { label: t('showcase.uptime'), value: blockUptime(block) },
-    { label: t('showcase.version'), value: blockVersion(block) },
-    { label: t('showcase.openTrades'), value: numberOrNa(openTrades, 0) },
-    { label: t('showcase.tradeCount'), value: numberOrNa(tradeCount, 0) },
+    build(
+      t('showcase.roiAllTrades'),
+      fieldNumber(block, 'profit_total_abs'),
+      fieldNumber(block, 'profit_total_ratio'),
+      fieldNumber(block, 'profit_total_ratio_sum'),
+      fieldNumber(block, 'profit_total_fiat'),
+    ),
+    build(
+      t('showcase.roiClosedTrades'),
+      fieldNumber(block, 'profit_closed_abs'),
+      fieldNumber(block, 'profit_closed_ratio'),
+      fieldNumber(block, 'profit_closed_ratio_sum'),
+      fieldNumber(block, 'profit_closed_fiat'),
+    ),
+  ];
+}
+
+function drawdownText(ratio: number | undefined, abs: number | undefined, currency: string) {
+  const percent = percentText(ratio);
+  return abs === undefined ? percent : `${percent} (${moneyText(abs, currency)})`;
+}
+
+function durationText(seconds: number | undefined) {
+  return seconds === undefined || seconds <= 0 ? MISSING : humanizeDurationFromSeconds(seconds);
+}
+
+function startedText(block: ShowcaseBlock): string {
+  const startDate = rawField(block, 'start_date');
+  if (typeof startDate === 'string' && startDate) {
+    const parsed = Date.parse(startDate);
+    if (!Number.isNaN(parsed)) return timestampText(parsed);
+  }
+  // Fall back to "now minus uptime" when only the runtime is published.
+  const uptime = fieldNumber(block, 'uptime_seconds');
+  return uptime === undefined ? MISSING : timestampText(Date.now() - uptime * 1000);
+}
+
+function metricItems(block: ShowcaseBlock): MetricItem[] {
+  const currency = stakeCurrency(block);
+  const winRate = fieldNumber(block, 'win_rate');
+  const expectancy = fieldNumber(block, 'expectancy');
+  const expectancyRatio = fieldNumber(block, 'expectancy_ratio');
+  return [
+    { label: t('showcase.metricTradeCount'), value: countText(fieldNumber(block, 'trade_count')) },
+    { label: t('showcase.metricBotStarted'), value: startedText(block) },
     {
-      label: t('showcase.winRate'),
-      value: typeof winrate === 'number' ? formatPercent(winrate, 2) : 'N/A',
-      accent: typeof winrate === 'number' && winrate >= 0.5 ? 'profit' : undefined,
+      label: t('showcase.metricFirstTrade'),
+      value: timestampText(fieldNumber(block, 'first_trade_timestamp')),
     },
     {
-      label: t('showcase.profitFactor'),
-      value: typeof profitFactor === 'number' ? formatNumber(profitFactor, 2) : 'N/A',
-      accent: typeof profitFactor === 'number' && profitFactor >= 1 ? 'profit' : undefined,
+      label: t('showcase.metricLastTrade'),
+      value: timestampText(fieldNumber(block, 'last_trade_timestamp')),
+    },
+    {
+      label: t('showcase.metricWinLoss'),
+      value: `${countText(fieldNumber(block, 'win_count'))} / ${countText(
+        fieldNumber(block, 'loss_count'),
+      )}`,
+    },
+    {
+      label: t('showcase.winRate'),
+      value: percentText(winRate),
+      accent: winRate === undefined ? undefined : winRate >= 0.5 ? 'profit' : 'loss',
     },
     {
       label: t('showcase.expectancy'),
       value:
-        typeof expectancy === 'number'
-          ? `${formatNumber(expectancy, 2)}${
-              typeof expectancyRatio === 'number'
-                ? ` (${formatNumber(expectancyRatio, 2)})`
-                : ''
-            }`
-          : 'N/A',
+        expectancy === undefined && expectancyRatio === undefined
+          ? MISSING
+          : `${numberText(expectancy, 2)} (${numberText(expectancyRatio, 2)})`,
     },
     {
+      label: t('showcase.metricAvgDuration'),
+      value: durationText(fieldNumber(block, 'avg_duration_seconds')),
+    },
+    {
+      label: t('showcase.metricTradingVolume'),
+      value: moneyText(fieldNumber(block, 'trading_volume'), currency),
+    },
+    { label: t('showcase.profitFactor'), value: numberText(fieldNumber(block, 'profit_factor'), 2) },
+    {
       label: t('showcase.maxDrawdown'),
-      value: typeof maxDrawdown === 'number' ? formatPercent(maxDrawdown, 2) : 'N/A',
+      value: drawdownText(
+        fieldNumber(block, 'max_drawdown_ratio'),
+        fieldNumber(block, 'max_drawdown_abs'),
+        currency,
+      ),
+      accent: 'loss',
+    },
+    {
+      label: t('showcase.metricCurrentDrawdown'),
+      value: drawdownText(
+        fieldNumber(block, 'current_drawdown_ratio'),
+        fieldNumber(block, 'current_drawdown_abs'),
+        currency,
+      ),
       accent: 'loss',
     },
   ];
 }
+
+/**
+ * Starting capital used to turn a ratio profit curve into absolute amounts.
+ * Taken from the payload when published, otherwise derived from an absolute /
+ * ratio profit pair (both describe the same set of trades).
+ */
+function capitalBase(block: ShowcaseBlock): number | undefined {
+  const explicit = fieldNumber(block, 'starting_capital');
+  if (explicit !== undefined && explicit > 0) return explicit;
+  const abs = fieldNumber(block, 'profit_total_abs');
+  const ratio = fieldNumber(block, 'profit_total_ratio');
+  if (abs !== undefined && ratio !== undefined && ratio !== 0) return Math.abs(abs / ratio);
+  return undefined;
+}
+
+/**
+ * Feed `CumProfitChart` what it expects: an ascending `{date, profit}` list
+ * whose `profit` is an *absolute* amount in the stake currency, so the y-axis
+ * stays on the dashboard's USDT scale instead of showing a ratio curve
+ * (-0.04 … 0.02).
+ *
+ * A bot that publishes its curve as ratios (|value| <= 1) while still exposing
+ * its capital base is rescaled here; anything else is passed through untouched.
+ */
+function profitHistory(block: ShowcaseBlock): CumProfitChartData[] {
+  const raw = block.payload?.profit_history;
+  if (!Array.isArray(raw)) return [];
+  const points: { date: number; profit: number }[] = [];
+  for (const point of raw) {
+    const date = typeof point?.date === 'number' ? point.date : undefined;
+    const value =
+      typeof point?.profit_abs === 'number'
+        ? point.profit_abs
+        : typeof point?.profit === 'number'
+          ? point.profit
+          : undefined;
+    if (date === undefined || value === undefined || !Number.isFinite(value)) continue;
+    points.push({ date, profit: value });
+  }
+  points.sort((a, b) => a.date - b.date);
+  const base = capitalBase(block);
+  const isRatioCurve =
+    points.length > 0 &&
+    points.every((point) => Math.abs(point.profit) <= RATIO_HISTORY_CEILING);
+  if (isRatioCurve && base !== undefined) {
+    return points.map((point) => ({ date: point.date, profit: point.profit * base }));
+  }
+  return points;
+}
+
+/**
+ * The chart projects the open P&L as a second, dotted series, derived from a
+ * list of open trades. A single synthetic aggregate entry carries the payload's
+ * `open_profit_abs` - no pair, stake amount or per-trade detail is involved.
+ */
+function chartOpenTrades(block: ShowcaseBlock): Trade[] {
+  const openProfit = fieldNumber(block, 'open_profit_abs') ?? fieldNumber(block, 'profit_open_abs');
+  if (openProfit === undefined || openProfit === 0) return [];
+  const history = profitHistory(block);
+  const lastDate = history.length > 0 ? history[history.length - 1]!.date : Date.now();
+  return [
+    {
+      open_timestamp: lastDate,
+      profit_abs: openProfit,
+      total_profit_abs: openProfit,
+    } as unknown as Trade,
+  ];
+}
+
+function buildView(block: ShowcaseBlock): BlockView {
+  return {
+    block,
+    title: blockTitle(block),
+    row: overviewRow(block),
+    roi: roiCards(block),
+    metrics: metricItems(block),
+    history: profitHistory(block),
+    chartOpenTrades: chartOpenTrades(block),
+    updatedText:
+      block.updatedAt === null ? '' : t('showcase.updated', { time: timestampms(block.updatedAt) }),
+  };
+}
+
+const views = computed<BlockView[]>(() => blocks.value.map(buildView));
+
+const overviewColumns = computed<TableColumn<OverviewRow>[]>(() => [
+  { accessorKey: 'label', header: t('showcase.nameLabel') },
+  { accessorKey: 'status', header: t('showcase.status') },
+  { accessorKey: 'trades', header: t('showcase.tradesLabel') },
+  { id: 'profitOpen', header: t('showcase.openProfitLabel') },
+  { id: 'profitClosed', header: t('showcase.closedProfitLabel') },
+  { accessorKey: 'balance', header: t('showcase.balanceLabel') },
+  { id: 'winVsLoss', header: t('showcase.winLossLabel') },
+]);
 </script>
 
 <template>
-  <div class="mx-auto flex h-full max-w-6xl flex-col gap-4 py-4 sm:py-6">
+  <div class="mx-auto flex h-full max-w-7xl flex-col gap-5 py-4 sm:py-6">
     <header class="flex flex-wrap items-center justify-between gap-3 px-1">
       <div class="flex items-center gap-3">
         <AppIcon class="h-9 w-9" />
@@ -337,128 +576,203 @@ function blockMetrics(block: ShowcaseBlock): ShowcaseMetric[] {
       </div>
     </header>
 
-    <section v-for="block in blocks" :key="block.key" class="flex flex-col gap-4">
-      <article v-if="block.state === 'disabled'" class="ckq-glass-card p-6 text-left">
-        <h2 class="text-lg font-semibold">{{ blockTitle(block) }}</h2>
+    <section v-for="view in views" :key="view.block.key" class="flex flex-col gap-3">
+      <article v-if="view.block.state === 'disabled'" class="ckq-glass-card p-6 text-left">
+        <h2 class="text-lg font-semibold">{{ view.title }}</h2>
         <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
           {{ t('showcase.blockDisabled') }}
         </p>
       </article>
 
-      <article v-else-if="block.state === 'error'" class="ckq-glass-card p-6 text-left">
-        <h2 class="text-lg font-semibold">{{ blockTitle(block) }}</h2>
+      <article v-else-if="view.block.state === 'error'" class="ckq-glass-card p-6 text-left">
+        <h2 class="text-lg font-semibold">{{ view.title }}</h2>
         <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
           {{ t('showcase.blockError') }}
         </p>
-        <UButton class="mt-4" icon="mdi:refresh" @click="retryBlock(block)">
+        <UButton class="mt-4" icon="mdi:refresh" @click="retryBlock(view.block)">
           {{ t('showcase.retry') }}
         </UButton>
       </article>
 
-      <article v-else-if="!block.payload" class="ckq-glass-card p-6 text-left">
-        <h2 class="text-lg font-semibold">{{ blockTitle(block) }}</h2>
+      <article v-else-if="!view.block.payload" class="ckq-glass-card p-6 text-left">
+        <h2 class="text-lg font-semibold">{{ view.title }}</h2>
         <p class="mt-2 text-sm text-neutral-500 dark:text-neutral-400">
           {{ t('showcase.loading') }}
         </p>
       </article>
 
-      <div v-else class="grid gap-4 lg:grid-cols-2 lg:items-start">
-        <article class="ckq-glass-card p-5 text-left">
-          <div class="mb-4 flex items-center justify-between gap-3">
-            <h2 class="text-base font-semibold">{{ blockTitle(block) }}</h2>
-            <span
-              class="showcase-status-pill"
-              :class="blockStatusClass(block)"
-              :title="t('showcase.status')"
-            >
-              {{ blockStatusText(block) }}
-            </span>
-          </div>
-          <div class="grid gap-2 sm:grid-cols-2">
-            <div class="showcase-stat">
-              <p class="text-xs font-medium text-muted">{{ t('showcase.totalProfit') }}</p>
-              <p class="showcase-stat-value" :class="blockTotalReturnClass(block)">
-                {{ blockTotalReturnText(block) }}
-              </p>
-            </div>
-            <div v-if="blockShowAbsolute(block)" class="showcase-stat">
-              <p class="text-xs font-medium text-muted">{{ t('showcase.absoluteProfit') }}</p>
-              <p class="showcase-stat-value" :class="blockTotalReturnClass(block)">
-                {{ blockAbsoluteProfitText(block) }}
-              </p>
-            </div>
-            <div v-for="item in blockMetrics(block)" :key="item.label" class="showcase-stat">
-              <p class="text-xs font-medium text-muted">{{ item.label }}</p>
-              <p
-                class="showcase-stat-value"
-                :class="{
-                  'text-emerald-500': item.accent === 'profit',
-                  'text-rose-500': item.accent === 'loss',
-                }"
+      <!-- The dashboard's first screen, minus everything that would leak: no
+           pair column and no open-trade detail table. -->
+      <div
+        v-else
+        class="showcase-overview grid min-h-full grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.04fr)_minmax(420px,0.96fr)] lg:items-start"
+      >
+        <div class="flex min-w-0 flex-col gap-4">
+          <section class="ckq-glass-card overflow-hidden px-3 py-3">
+            <h3 class="mb-2 text-left text-sm font-semibold">{{ t('showcase.overview') }}</h3>
+            <div class="overflow-x-auto">
+              <UTable
+                :data="[view.row]"
+                :columns="overviewColumns"
+                :ui="{ td: 'px-2 py-2 text-default text-sm text-left whitespace-nowrap' }"
               >
-                {{ item.value }}
-              </p>
+                <template #label-cell="{ row }">
+                  <div class="flex flex-row items-center gap-2">
+                    <span class="font-medium">{{ row.original.label }}</span>
+                    <UBadge v-if="row.original.runmode" color="neutral" variant="subtle">
+                      {{ row.original.runmode }}
+                    </UBadge>
+                  </div>
+                </template>
+                <template #status-cell="{ row }">
+                  <span class="showcase-status-pill" :class="row.original.statusClass">
+                    {{ row.original.status }}
+                  </span>
+                </template>
+                <template #profitOpen-cell="{ row }">
+                  <ProfitPill
+                    v-if="row.original.profitOpen !== undefined"
+                    :profit-ratio="row.original.profitOpenRatio"
+                    :profit-abs="row.original.profitOpen"
+                    :stake-currency="row.original.balanceCurrency"
+                  />
+                  <span v-else>{{ MISSING }}</span>
+                </template>
+                <template #profitClosed-cell="{ row }">
+                  <ProfitPill
+                    v-if="row.original.profitClosed !== undefined"
+                    :profit-ratio="row.original.profitClosedRatio"
+                    :profit-abs="row.original.profitClosed"
+                    :stake-currency="row.original.balanceCurrency"
+                  />
+                  <span v-else>{{ MISSING }}</span>
+                </template>
+                <template #balance-cell="{ row }">
+                  <div v-if="row.original.balance !== undefined" class="tabular-nums">
+                    <span>{{ formatPrice(row.original.balance, 3) }}</span>
+                    <span class="ms-1 text-sm">{{ row.original.balanceCurrency }}</span>
+                  </div>
+                  <span v-else>{{ MISSING }}</span>
+                </template>
+                <template #winVsLoss-cell="{ row }">
+                  <div class="tabular-nums">
+                    <span class="text-profit">{{ countText(row.original.winCount) }}</span>
+                    /
+                    <span class="text-loss">{{ countText(row.original.lossCount) }}</span>
+                  </div>
+                </template>
+              </UTable>
             </div>
-          </div>
-          <p
-            v-if="blockUpdatedText(block)"
-            class="mt-3 text-xs text-neutral-500 dark:text-neutral-400"
-          >
-            {{ blockUpdatedText(block) }}
-          </p>
-        </article>
+          </section>
 
-        <article class="ckq-glass-card p-4 text-left">
-          <h2 class="mb-2 px-1 text-base font-semibold">{{ t('showcase.profitCurve') }}</h2>
-          <div class="h-[320px] min-h-[320px] lg:h-[460px] lg:min-h-[460px]">
+          <section class="space-y-3">
+            <div class="grid gap-3 md:grid-cols-2">
+              <article
+                v-for="item in view.roi"
+                :key="item.label"
+                class="overview-stat-card relative overflow-hidden rounded-xl border border-default/60 bg-elevated/55 p-4"
+              >
+                <div
+                  class="absolute inset-y-0 left-0 w-1"
+                  :class="item.positive ? 'bg-emerald-500' : 'bg-rose-500'"
+                />
+                <p class="text-center text-sm font-semibold uppercase tracking-wide">
+                  {{ item.label }}
+                </p>
+                <div class="mt-2 flex flex-col items-center gap-1">
+                  <strong
+                    class="text-2xl tabular-nums"
+                    :class="item.positive ? 'text-emerald-400' : 'text-rose-400'"
+                  >
+                    {{ item.value }}
+                  </strong>
+                  <span class="text-sm tabular-nums text-muted">{{ item.sum }}</span>
+                </div>
+                <p class="mt-1 text-center text-sm tabular-nums text-muted">{{ item.fiat }}</p>
+              </article>
+            </div>
+
+            <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              <article
+                v-for="item in view.metrics"
+                :key="item.label"
+                class="overview-stat-card min-w-0 rounded-lg border border-default/50 bg-default/25 px-3.5 py-3"
+              >
+                <p class="text-left text-sm font-medium text-muted">{{ item.label }}</p>
+                <p
+                  class="mt-1.5 break-words text-left text-base font-semibold leading-snug tabular-nums"
+                  :class="{
+                    'text-profit': item.accent === 'profit',
+                    'text-loss': item.accent === 'loss',
+                  }"
+                >
+                  {{ item.value }}
+                </p>
+              </article>
+            </div>
+          </section>
+        </div>
+
+        <section
+          class="profit-curve h-[360px] min-h-[360px] rounded-xl border border-default/60 bg-default/20 p-2 lg:h-[620px] lg:min-h-[620px]"
+        >
+          <div class="flex items-center justify-between px-2 pt-1">
+            <h3 class="text-sm font-semibold">{{ t('showcase.profitCurve') }}</h3>
+            <span class="text-xs text-muted">{{ view.title }}</span>
+          </div>
+          <div class="h-[320px] min-h-[320px] lg:h-[580px] lg:min-h-[580px]">
             <CumProfitChart
-              :profit-history="blockProfitHistory(block)"
               :trades="NO_TRADES"
-              :open-trades="NO_OPEN_TRADES"
-              profit-column="profit"
+              :open-trades="view.chartOpenTrades"
+              :profit-history="view.history"
+              profit-column="profit_abs"
               :show-title="false"
             />
           </div>
-        </article>
+        </section>
       </div>
+
+      <p
+        v-if="view.updatedText"
+        class="px-1 text-left text-xs text-neutral-500 dark:text-neutral-400"
+      >
+        {{ view.updatedText }}
+      </p>
     </section>
   </div>
 </template>
 
 <style scoped>
-.showcase-stat {
-  min-width: 0;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--ckq-border) 72%, transparent);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--ckq-glass-strong) 55%, transparent);
+.showcase-overview {
+  background:
+    radial-gradient(circle at 12% 0%, rgb(16 185 129 / 8%), transparent 34%),
+    radial-gradient(circle at 88% 32%, rgb(59 130 246 / 8%), transparent 36%);
+}
+
+.overview-stat-card {
   transition:
     border-color 180ms ease,
-    box-shadow 180ms ease;
+    box-shadow 180ms ease,
+    background-color 180ms ease;
 }
 
-.showcase-stat:hover {
-  border-color: color-mix(in srgb, var(--color-brand-400) 45%, var(--ckq-border));
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
-}
-
-.showcase-stat-value {
-  margin-top: 6px;
-  font-size: 1rem;
-  font-weight: 600;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-  font-variant-numeric: tabular-nums;
+.overview-stat-card:hover {
+  border-color: rgb(59 130 246 / 78%);
+  background-color: rgb(59 130 246 / 7%);
+  box-shadow:
+    0 0 0 1px rgb(59 130 246 / 20%),
+    0 8px 24px rgb(15 23 42 / 18%);
 }
 
 .showcase-status-pill {
-  flex-shrink: 0;
+  display: inline-block;
   padding: 2px 10px;
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .showcase-status-pill--running {
