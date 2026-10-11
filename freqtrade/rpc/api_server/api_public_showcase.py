@@ -389,11 +389,14 @@ def _profit_history(
     walks the closed trades in close-date order and returns the running sum of
     their absolute profit, so no per-trade row ever leaves this module.
 
-    The dashboard chart then projects the still-open positions onto the end of
-    that curve (``CumProfitChart.appendOpenProfitProjection``).  The same rule is
-    applied here, server side: a final point at ``as_of`` whose value is the
-    realized total plus the open floating profit - i.e. the headline
-    ``profit_total_abs``.  The result is one ascending series of absolute amounts.
+    The series is REALIZED only: it walks the closed trades in close-date order
+    and returns the running sum of their absolute profit - the same red line the
+    dashboard draws, which therefore ends at ``profit_closed_abs`` (a loss when
+    the closed trades are down).  The still-open positions are NOT folded into
+    this line: the dashboard draws them as a separate projection, and the public
+    page does the same from the ``open_profit_abs`` field.  Mixing them into one
+    line would make a losing bot look profitable, which is exactly what the user
+    reported.
 
     With ``show_absolute`` off the series is withheld (empty list), because every
     point of it is an absolute amount.
@@ -421,13 +424,7 @@ def _profit_history(
         history.append({"date": timestamp, "profit_abs": round(value, 8)})
 
     projected = _as_float(total_profit_abs)
-    if open_trades and projected is not None:
-        last = history[-1]["profit_abs"] if history else None
-        if last is None or not math.isclose(last, projected, rel_tol=1e-9, abs_tol=1e-6):
-            timestamp = _to_epoch_ms(as_of) or 0
-            if history and timestamp <= history[-1]["date"]:
-                timestamp = history[-1]["date"] + 1
-            history.append({"date": timestamp, "profit_abs": round(projected, 8)})
+    _ = (projected, open_trades, as_of)  # kept for signature compatibility
     return history
 
 

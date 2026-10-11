@@ -412,9 +412,12 @@ def test_public_overview_profit_history_shape(showcase_client, mocker, ticker, f
         assert isinstance(point["date"], int)
         assert not isinstance(point["date"], bool)
         assert isinstance(point["profit_abs"], float)
-    # The curve is the running sum of closed profit, closed out by the projected
-    # floating profit - so it ends exactly on the headline total.
-    assert history[-1]["profit_abs"] == pytest.approx(payload["profit_total_abs"])
+    # The curve is the running sum of realized (closed) profit only - it must end
+    # on the CLOSED total.  Folding the still-open floating profit into the line
+    # would make a losing bot's curve read as profitable.
+    assert history[-1]["profit_abs"] == pytest.approx(payload["profit_closed_abs"])
+    if payload["profit_open_abs"]:
+        assert history[-1]["profit_abs"] != pytest.approx(payload["profit_total_abs"])
 
 
 def test_public_overview_profit_history_matches_dashboard_series(
@@ -431,20 +434,20 @@ def test_public_overview_profit_history_matches_dashboard_series(
     dashboard = client.get(DASHBOARD_HISTORY_URI, headers=_admin_headers()).json()
 
     assert dashboard["data"], "the fixture must produce a closed-trade curve"
-    realized = payload["profit_history"][: len(dashboard["data"])]
+    realized = payload["profit_history"]
 
-    # Point for point the same realized curve ...
+    # Point for point the same realized curve, with nothing appended at the end:
+    # the public series stops exactly where the dashboard's realized line stops.
+    assert len(realized) == len(dashboard["data"])
     assert [point["date"] for point in realized] == [point["date"] for point in dashboard["data"]]
     assert [point["profit_abs"] for point in realized] == [
         round(point["profit"], 8) for point in dashboard["data"]
     ]
     assert dashboard["closed_profit"] == pytest.approx(realized[-1]["profit_abs"])
-    # ... plus, while positions are open, the dashboard's open-profit projection
-    # onto the headline total.
-    if payload["profit_open_abs"]:
-        assert len(payload["profit_history"]) == len(dashboard["data"]) + 1
-        assert payload["profit_history"][-1]["date"] > realized[-1]["date"]
-    assert payload["profit_history"][-1]["profit_abs"] == pytest.approx(payload["profit_total_abs"])
+    assert realized[-1]["profit_abs"] == pytest.approx(payload["profit_closed_abs"])
+    # The still-open floating profit is published as its own field (the chart's
+    # second, projected series) and is never mixed into the realized line.
+    assert payload["open_profit_abs"] == pytest.approx(payload["profit_open_abs"])
 
 
 def test_public_overview_profit_history_uses_the_rpc_series(

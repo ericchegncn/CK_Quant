@@ -558,7 +558,7 @@ const overviewColumns = computed<TableColumn<OverviewRow>[]>(() => [
 </script>
 
 <template>
-  <div class="mx-auto flex h-full max-w-7xl flex-col gap-5 py-4 sm:py-6">
+  <div class="flex h-full w-full min-w-0 flex-col gap-5 px-4 py-4 sm:py-6">
     <header class="flex flex-wrap items-center justify-between gap-3 px-1">
       <div class="flex items-center gap-3">
         <AppIcon class="h-9 w-9" />
