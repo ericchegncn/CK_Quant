@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from freqtrade.enums import ExitCheckTuple, ExitType, RPCMessageType
 from freqtrade.exceptions import ExchangeError, InsufficientFundsError, InvalidOrderException
-from freqtrade.freqtradebot import FreqtradeBot
+from freqtrade.freqtradebot import FreqtradeBot, _StoplossOrdersSnapshot
 from freqtrade.persistence import Order, Trade
 from freqtrade.persistence.models import PairLock
 from freqtrade.util.datetime_helpers import dt_now
@@ -1254,3 +1254,181 @@ def test_may_execute_trade_exit_after_stoploss_on_exchange_hit(
     assert rpc_mock.call_args_list[1][0][0]["amount"] > 20
     assert rpc_mock.call_args_list[2][0][0]["type"] == RPCMessageType.ENTRY_FILL
     assert rpc_mock.call_args_list[3][0][0]["type"] == RPCMessageType.EXIT_FILL
+
+
+# ---------------------------------------------------------------------------
+# 止损单全量快照优化：每轮一次全量挂单查询 + 缺单回退逐单查询
+# ---------------------------------------------------------------------------
+
+
+def _make_sl_trade(mocker, order_id: str | None, pair: str = "ADA/USDT"):
+    """check 止损路径所需的最小 trade 替身（只读属性，不落库）。"""
+    trade = mocker.MagicMock()
+    trade.pair = pair
+    trade.exit_side = "sell"
+    trade.trade_direction = "long"
+    trade.is_open = True
+    trade.has_open_position = True
+    trade.has_open_orders = False
+    trade.has_open_sl_orders = order_id is not None
+    trade.fee_open_currency = None
+    trade.open_sl_orders = [mocker.MagicMock(order_id=order_id)] if order_id else []
+    return trade
+
+
+def _make_sl_bot(mocker, default_conf_usdt) -> FreqtradeBot:
+    """dry_run=False 的 bot（快照只在真实交易模式下启用），副作用方法全部替身化。"""
+    default_conf_usdt["dry_run"] = False
+    bot = get_patched_freqtradebot(mocker, default_conf_usdt)
+    mocker.patch.object(bot, "update_trade_state", MagicMock())
+    mocker.patch.object(bot, "_notify_exit", MagicMock())
+    mocker.patch.object(bot, "handle_protections", MagicMock())
+    mocker.patch.object(bot, "manage_trade_stoploss_orders", MagicMock())
+    mocker.patch.object(bot, "create_stoploss_order", MagicMock(return_value=True))
+    return bot
+
+
+@pytest.mark.usefixtures("init_persistence")
+def test_handle_stoploss_snapshot_hit_skips_per_order_fetch(mocker, default_conf_usdt):
+    """(a) 快照命中 -> 逐单查询次数为 0（本优化的核心断言）。"""
+    bot = _make_sl_bot(mocker, default_conf_usdt)
+    trade = _make_sl_trade(mocker, "111")
+    snap_order = {"id": "111", "status": "open", "type": "stop_market"}
+
+    fetch_all = mocker.patch(f"{EXMS}.fetch_open_orders", MagicMock(return_value=[snap_order]))
+    fetch_one = mocker.patch(f"{EXMS}.fetch_stoploss_order", MagicMock())
+
+    snapshot = _StoplossOrdersSnapshot(bot)
+    assert bot.handle_stoploss_on_exchange(trade, open_orders_snapshot=snapshot) is False
+
+    fetch_all.assert_called_once_with(pair=None, params=None)
+    fetch_one.assert_not_called()
+    # 状态处理照旧执行，用的就是快照里的 order
+    bot.update_trade_state.assert_called_once_with(trade, "111", snap_order, stoploss_order=True)
+    assert bot.create_stoploss_order.call_count == 0
+
+
+@pytest.mark.usefixtures("init_persistence")
+@pytest.mark.parametrize("status", ["closed", "triggered"])
+def test_handle_stoploss_snapshot_miss_falls_back(mocker, default_conf_usdt, status):
+    """(b) 快照未命中 -> 逐单查询被调用，且 closed/triggered 仍走原退出路径。"""
+    bot = _make_sl_bot(mocker, default_conf_usdt)
+    trade = _make_sl_trade(mocker, "111")
+    order = {
+        "id": "111",
+        "status": status,
+        "type": "stop_loss_limit",
+        "price": 1.9,
+        "average": 1.9,
+        "filled": 1.0,
+        "remaining": 0.0,
+        "amount": 1.0,
+    }
+    # 全量快照里是别的挂单（本持仓的止损单不在里面）-> 必须逐单回查
+    fetch_all = mocker.patch(
+        f"{EXMS}.fetch_open_orders", MagicMock(return_value=[{"id": "999", "status": "open"}])
+    )
+    fetch_one = mocker.patch(f"{EXMS}.fetch_stoploss_order", MagicMock(return_value=order))
+
+    snapshot = _StoplossOrdersSnapshot(bot)
+    assert bot.handle_stoploss_on_exchange(trade, open_orders_snapshot=snapshot) is True
+
+    fetch_all.assert_called_once_with(pair=None, params=None)
+    fetch_one.assert_called_once_with("111", "ADA/USDT")
+    bot.update_trade_state.assert_called_once_with(trade, "111", order, stoploss_order=True)
+    bot._notify_exit.assert_called_once_with(trade, "stoploss", True)
+    bot.handle_protections.assert_called_once_with("ADA/USDT", "long")
+    assert trade.exit_reason == ExitType.STOPLOSS_ON_EXCHANGE.value
+
+
+@pytest.mark.usefixtures("init_persistence")
+@pytest.mark.parametrize("status", ["closed", "triggered"])
+def test_handle_stoploss_snapshot_hit_same_state_handling(mocker, default_conf_usdt, status):
+    """(b2) 快照命中同一个 order -> 状态处理与逐单查询逐项一致，但逐单次数为 0。"""
+    bot = _make_sl_bot(mocker, default_conf_usdt)
+    trade = _make_sl_trade(mocker, "111")
+    order = {
+        "id": "111",
+        "status": status,
+        "type": "stop_loss_limit",
+        "price": 1.9,
+        "average": 1.9,
+        "filled": 1.0,
+        "remaining": 0.0,
+        "amount": 1.0,
+    }
+    fetch_all = mocker.patch(f"{EXMS}.fetch_open_orders", MagicMock(return_value=[order]))
+    fetch_one = mocker.patch(f"{EXMS}.fetch_stoploss_order", MagicMock(return_value=order))
+
+    snapshot = _StoplossOrdersSnapshot(bot)
+    assert bot.handle_stoploss_on_exchange(trade, open_orders_snapshot=snapshot) is True
+
+    fetch_all.assert_called_once_with(pair=None, params=None)
+    fetch_one.assert_not_called()
+    # 与 (b) 完全相同的可观察行为
+    bot.update_trade_state.assert_called_once_with(trade, "111", order, stoploss_order=True)
+    bot._notify_exit.assert_called_once_with(trade, "stoploss", True)
+    bot.handle_protections.assert_called_once_with("ADA/USDT", "long")
+    assert trade.exit_reason == ExitType.STOPLOSS_ON_EXCHANGE.value
+
+
+@pytest.mark.usefixtures("init_persistence")
+def test_handle_stoploss_snapshot_unavailable_falls_back(mocker, default_conf_usdt):
+    """(c) 全量拉取报错 -> 本轮所有持仓全部回退逐单查询（行为与改动前一致）。"""
+    bot = _make_sl_bot(mocker, default_conf_usdt)
+    trades = [_make_sl_trade(mocker, str(100 + i), pair=f"PAIR{i}/USDT") for i in range(3)]
+
+    fetch_all = mocker.patch(
+        f"{EXMS}.fetch_open_orders", MagicMock(side_effect=ExchangeError("snapshot down"))
+    )
+    fetch_one = mocker.patch(
+        f"{EXMS}.fetch_stoploss_order",
+        MagicMock(side_effect=[{"id": str(100 + i), "status": "open"} for i in range(3)]),
+    )
+
+    # 整轮共用一份快照：只尝试拉取一次，随后 3 笔全部回退逐单
+    snapshot = _StoplossOrdersSnapshot(bot)
+    assert [
+        bot.handle_stoploss_on_exchange(t, open_orders_snapshot=snapshot) for t in trades
+    ] == [False, False, False]
+
+    assert fetch_all.call_count == 1
+    assert fetch_one.call_count == 3
+    assert [c[0][0] for c in fetch_one.call_args_list] == ["100", "101", "102"]
+    assert [c[0][1] for c in fetch_one.call_args_list] == [
+        "PAIR0/USDT",
+        "PAIR1/USDT",
+        "PAIR2/USDT",
+    ]
+    # 止损单状态照常被处理（没有因为优化而丢失状态判定）
+    assert bot.update_trade_state.call_count == 3
+
+
+@pytest.mark.usefixtures("init_persistence")
+def test_exit_positions_shares_one_open_orders_snapshot_per_round(mocker, default_conf_usdt):
+    """(d) 一轮多笔 trade 共用同一份快照：全量拉取只发生 1 次，逐单 0 次。"""
+    bot = _make_sl_bot(mocker, default_conf_usdt)
+    bot.strategy.order_types["stoploss_on_exchange"] = True
+    mocker.patch.object(bot, "_prefetch_exit_rates", MagicMock())
+    mocker.patch.object(bot, "handle_trade", MagicMock(return_value=False))
+    bot.wallets = MagicMock()
+
+    trades = [_make_sl_trade(mocker, str(200 + i), pair=f"PAIR{i}/USDT") for i in range(3)]
+    orders = [{"id": str(200 + i), "status": "open"} for i in range(3)]
+    fetch_all = mocker.patch(f"{EXMS}.fetch_open_orders", MagicMock(return_value=orders))
+    fetch_one = mocker.patch(f"{EXMS}.fetch_stoploss_order", MagicMock())
+    spy = mocker.patch.object(
+        bot, "handle_stoploss_on_exchange", wraps=bot.handle_stoploss_on_exchange
+    )
+
+    assert bot.exit_positions(trades) == 0
+
+    # 全量拉取只发生 1 次；逐单一次都没有
+    assert fetch_all.call_count == 1
+    fetch_one.assert_not_called()
+    # 三笔 trade 拿到的是同一个快照对象（整轮共用）
+    assert spy.call_count == 3
+    snapshots = [c.kwargs["open_orders_snapshot"] for c in spy.call_args_list]
+    assert len({id(s) for s in snapshots}) == 1
+    assert snapshots[0] is not None
+    assert bot.update_trade_state.call_count == 3

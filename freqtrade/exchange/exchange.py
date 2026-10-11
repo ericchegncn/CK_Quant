@@ -2031,6 +2031,62 @@ class Exchange:
         except ccxt.BaseError as e:
             raise OperationalException(e) from e
 
+    @retrier(retries=0)
+    def fetch_open_orders(
+        self, pair: str | None = None, params: dict | None = None
+    ) -> list[CcxtOrder]:
+        """
+        Fetch currently open orders, optionally limited to a single pair.
+
+        ``pair=None`` fetches every open order in ONE request. This is used by the bot to
+        synchronise exchange stoploss orders without issuing one request per position.
+
+        The stop flag is NOT added here: callers that need the same stop/conditional
+        namespace as ``fetch_stoploss_order`` must pass it themselves (see
+        ``FreqtradeBot._fetch_open_orders_map``).
+        """
+        if self._config["dry_run"]:
+            # Dry-run orders are tracked locally, no exchange round-trip.
+            return [
+                o
+                for o in self._dry_run_open_orders.values()
+                if pair is None or o.get("symbol") == pair
+            ]
+        if not self.exchange_has("fetchOpenOrders"):
+            raise OperationalException(f"{self.name} does not support fetching open orders")
+        if pair is None:
+            # ccxt refuses symbol-less open-order requests unless this stricter
+            # rate-limit acknowledgement is explicitly disabled.
+            self._ack_fetch_open_orders_without_symbol()
+        try:
+            orders: list[CcxtOrder] = self._api.fetch_open_orders(pair, params=params or {})
+            self._log_exchange_response("fetch_open_orders", orders)
+            # Same post-processing as fetch_order: for futures markets order props are
+            # returned in contracts and must be converted to amounts.
+            orders = [self._order_contracts_to_amount(o) for o in orders]
+            return orders
+        except ccxt.NotSupported as e:
+            raise OperationalException(f"{self.name} does not support fetching open orders") from e
+        except ccxt.DDoSProtection as e:
+            raise DDosProtection(e) from e
+        except (ccxt.OperationFailed, ccxt.ExchangeError) as e:
+            raise TemporaryError(
+                f"Could not fetch open orders due to {e.__class__.__name__}. Message: {e}"
+            ) from e
+        except ccxt.BaseError as e:
+            raise OperationalException(e) from e
+
+    def _ack_fetch_open_orders_without_symbol(self) -> None:
+        """Silence ccxt's 'fetchOpenOrders without symbol' guard (stricter rate limits)."""
+        options = getattr(self._api, "options", None)
+        if not isinstance(options, dict):
+            return
+        fetch_open_orders = options.get("fetchOpenOrders")
+        if not isinstance(fetch_open_orders, dict):
+            fetch_open_orders = {}
+            options["fetchOpenOrders"] = fetch_open_orders
+        fetch_open_orders["warnWithoutSymbol"] = False
+
     def fetch_orders(
         self, pair: str, since: datetime, params: dict | None = None
     ) -> list[CcxtOrder]:

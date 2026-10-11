@@ -4875,6 +4875,51 @@ def test_fetch_order_emulated(default_conf, mocker, exchange_name, caplog):
 
 @pytest.mark.usefixtures("init_persistence")
 @pytest.mark.parametrize("exchange_name", EXCHANGES)
+def test_fetch_open_orders(default_conf, mocker, exchange_name):
+    default_conf["dry_run"] = False
+    mocker.patch(f"{EXMS}.exchange_has", return_value=True)
+    api_mock = MagicMock()
+    api_mock.fetch_open_orders = MagicMock(return_value=[{"id": "1", "amount": 10.0}])
+    # ccxt raises unless the "stricter rate limits" acknowledgement is disabled
+    api_mock.options = {"fetchOpenOrders": {"warnWithoutSymbol": True}}
+    exchange = get_patched_exchange(mocker, default_conf, api_mock, exchange=exchange_name)
+
+    orders = exchange.fetch_open_orders()
+    assert orders == [{"id": "1", "amount": 10.0}]
+    assert api_mock.fetch_open_orders.call_count == 1
+    assert api_mock.fetch_open_orders.call_args.args == (None,)
+    assert api_mock.fetch_open_orders.call_args.kwargs == {"params": {}}
+    assert api_mock.options["fetchOpenOrders"]["warnWithoutSymbol"] is False
+
+    # per-pair query: a symbol STRING is forwarded (ccxt expects a single symbol)
+    exchange.fetch_open_orders(pair="TKN/BTC")
+    assert api_mock.fetch_open_orders.call_args.args == ("TKN/BTC",)
+
+
+@pytest.mark.usefixtures("init_persistence")
+def test_fetch_open_orders_dry_run_and_contract_amounts(default_conf, mocker):
+    default_conf["dry_run"] = True
+    exchange = get_patched_exchange(mocker, default_conf)
+    exchange._dry_run_open_orders["X"] = {"id": "X", "symbol": "TKN/BTC"}
+    exchange._dry_run_open_orders["Y"] = {"id": "Y", "symbol": "ETH/BTC"}
+
+    assert [o["id"] for o in exchange.fetch_open_orders()] == ["X", "Y"]
+    assert [o["id"] for o in exchange.fetch_open_orders(pair="ETH/BTC")] == ["Y"]
+
+    # order props are converted from contracts, exactly like fetch_order does
+    default_conf["dry_run"] = False
+    mocker.patch(f"{EXMS}.exchange_has", return_value=True)
+    api_mock = MagicMock()
+    api_mock.fetch_open_orders = MagicMock(
+        return_value=[{"id": "1", "symbol": "TKN/BTC", "amount": 2.0}]
+    )
+    exchange = get_patched_exchange(mocker, default_conf, api_mock)
+    mocker.patch(f"{EXMS}.get_contract_size", return_value=28)
+    assert exchange.fetch_open_orders(pair="TKN/BTC")[0]["amount"] == 56.0
+
+
+@pytest.mark.usefixtures("init_persistence")
+@pytest.mark.parametrize("exchange_name", EXCHANGES)
 def test_fetch_stoploss_order(default_conf, mocker, exchange_name):
     default_conf["dry_run"] = True
     mocker.patch(f"{EXMS}.exchange_has", return_value=True)

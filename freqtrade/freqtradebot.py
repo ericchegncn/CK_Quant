@@ -127,6 +127,36 @@ class _LatencyTrace:
         )
 
 
+class _StoplossOrdersSnapshot:
+    """
+    一轮（一次 exit_positions）内共享的「全量未成交挂单」快照（懒加载）。
+
+    背景：handle_stoploss_on_exchange 原先对每笔持仓的每个止损单各发一次
+    fetch_stoploss_order —— N 笔持仓即 N 次串行 HTTP 往返（实测 33 持仓 ≈ 4.6s/轮）。
+    这里把「每持仓一次逐单查询」降为「每轮一次全量挂单查询 + 缺单回退」。
+
+    语义保证（只做命中加速，不改变任何判定）：
+    - 命中：直接返回快照里的 order，跳过逐单请求（性能来源）；
+    - 未命中：返回 None，调用方按原逻辑回退逐单 fetch_stoploss_order（缺单必查）；
+    - 快照不可用（dry_run / 交易所不支持 / 拉取失败）：本轮全部回退逐单查询。
+    整轮共用同一实例，因此一轮最多只会真正拉取一次。
+    """
+
+    def __init__(self, bot: "FreqtradeBot") -> None:
+        self._bot = bot
+        self._loaded = False
+        self._orders: dict[str, CcxtOrder] | None = None
+
+    def get(self, order_id: str) -> CcxtOrder | None:
+        """返回快照里该 order_id 对应的挂单；未命中或快照不可用时返回 None。"""
+        if not self._loaded:
+            self._orders = self._bot._fetch_open_orders_map()
+            self._loaded = True
+        if not self._orders:
+            return None
+        return self._orders.get(order_id)
+
+
 class LiquidationDistance(NamedTuple):
     """
     An open position, and how much room is left to its liquidation stop: the distance to the
@@ -1780,6 +1810,9 @@ class FreqtradeBot(LoggingMixin):
         _sl_cost = 0.0
         _handle_cost = 0.0
         _wallets_cost = 0.0
+        # 本轮止损单状态快照（懒加载）：整轮共用一份，只会在第一次真正需要时拉取一次
+        # 全量未成交挂单，避免「每持仓一次」的逐单止损查询。
+        _sl_open_orders = _StoplossOrdersSnapshot(self)
         for idx, trade in enumerate(trades):
             if (
                 not trade.has_open_orders
@@ -1806,7 +1839,9 @@ class FreqtradeBot(LoggingMixin):
                         and self._should_check_stoploss(trade, idx)
                     ):
                         _s0 = perf_counter()
-                        _closed = self.handle_stoploss_on_exchange(trade)
+                        _closed = self.handle_stoploss_on_exchange(
+                            trade, open_orders_snapshot=_sl_open_orders
+                        )
                         _sl_cost += perf_counter() - _s0
                         if _closed:
                             trades_closed += 1
@@ -1951,6 +1986,36 @@ class FreqtradeBot(LoggingMixin):
         ):
             return True
         return (idx % batch) == (getattr(self, "_stoploss_check_round", 0) % batch)
+
+    def _fetch_open_orders_map(self) -> dict[str, CcxtOrder] | None:
+        """
+        一次性拉取全部未成交挂单，构建 {order_id: order} 映射（本轮止损状态快照数据源）。
+
+        背景：handle_stoploss_on_exchange 原实现对每笔持仓的每个止损单各发一次
+        fetch_stoploss_order —— N 笔持仓即 N 次串行 HTTP（实测 33 持仓 ≈ 4.6s/轮，
+        占主循环相当比例）。改为每轮一次全量查询后，逐单请求只在快照未命中时发生。
+
+        返回 None 表示快照不可用，调用方必须原样回退逐单查询（优化绝不丢状态判定）：
+        - dry_run：止损单状态保存在本地，且逐单读取会顺带判定成交，语义不可替换；
+        - 交易所不支持 fetchOpenOrders、或请求失败（含限频/网络）。
+        """
+        if self.config.get("dry_run"):
+            return None
+        # 与 fetch_stoploss_order 使用同一个 stop 标记：币安 USDⓈ-M 的止损/条件单挂在
+        # 「条件单（algo）」命名空间，普通 openOrders 看不到它们。带上该标记可保证两条
+        # 路径命中同一接口、返回同样形状的 order（缺标记时只会全部未命中并回退，不会错判）。
+        params: dict[str, Any] = {}
+        try:
+            if self.exchange.get_option("stoploss_query_requires_stop_flag"):
+                params["stop"] = True
+            orders = self.exchange.fetch_open_orders(pair=None, params=params or None)
+        except Exception as e:
+            # 不刷屏：失败即整轮回退逐单查询，行为与改动前一致。
+            logger.debug(f"全量挂单快照不可用，回退逐单止损查询: {e}")
+            return None
+        if not orders:
+            return None
+        return {o["id"]: o for o in orders if o and o.get("id")}
 
     def handle_trade(self, trade: Trade, refresh_rate: bool = True) -> bool:
         """
@@ -2105,13 +2170,21 @@ class FreqtradeBot(LoggingMixin):
             logger.exception("Unable to place a stoploss order on exchange.")
         return False
 
-    def handle_stoploss_on_exchange(self, trade: Trade) -> bool:
+    def handle_stoploss_on_exchange(
+        self,
+        trade: Trade,
+        open_orders_snapshot: "_StoplossOrdersSnapshot | None" = None,
+    ) -> bool:
         """
         Check if trade is fulfilled in which case the stoploss
         on exchange should be added immediately if stoploss on exchange
         is enabled.
         # TODO: liquidation price always on exchange, even without stoploss_on_exchange
         # Therefore fetching account liquidations for open pairs may make sense.
+
+        :param open_orders_snapshot: 本轮共享的全量挂单快照（见 _StoplossOrdersSnapshot）。
+            命中该快照即可跳过逐单 fetch_stoploss_order；未命中/不可用（含默认 None）时
+            原样回退逐单查询，因此状态判定逻辑与改动前完全一致。
         """
 
         logger.debug("Handling stoploss on exchange %s ...", trade)
@@ -2119,15 +2192,20 @@ class FreqtradeBot(LoggingMixin):
         stoploss_orders = []
         for slo in trade.open_sl_orders:
             stoploss_order = None
-            try:
-                # First we check if there is already a stoploss on exchange
-                stoploss_order = (
-                    self.exchange.fetch_stoploss_order(slo.order_id, trade.pair)
-                    if slo.order_id
-                    else None
-                )
-            except InvalidOrderException as exception:
-                logger.warning("Unable to fetch stoploss order: %s", exception)
+            # 快照命中（本轮已一次性拉取全量挂单）→ 直接用快照里的 order，不再逐单请求；
+            # 未命中/快照不可用 → 保持原逻辑，逐单查询（缺单必查）。
+            if slo.order_id and open_orders_snapshot is not None:
+                stoploss_order = open_orders_snapshot.get(slo.order_id)
+            if stoploss_order is None:
+                try:
+                    # First we check if there is already a stoploss on exchange
+                    stoploss_order = (
+                        self.exchange.fetch_stoploss_order(slo.order_id, trade.pair)
+                        if slo.order_id
+                        else None
+                    )
+                except InvalidOrderException as exception:
+                    logger.warning("Unable to fetch stoploss order: %s", exception)
 
             if stoploss_order:
                 stoploss_orders.append(stoploss_order)
