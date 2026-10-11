@@ -56,6 +56,8 @@ import type {
   PlotConfig,
   ProfitHistory,
   ProfitStats,
+  PublicShowcaseConfig,
+  PublicShowcasePayload,
   RecursiveAnalysis,
   RecursiveAnalysisPayload,
   RestoreAdminBackupPayload,
@@ -1074,6 +1076,21 @@ export function createBotSubStore(botId: string, botName: string) {
       return data;
     }
 
+    /** Read the guest-visibility configuration of this bot (authenticated). */
+    async function getPublicShowcase() {
+      const { data } = await api.get<PublicShowcaseConfig>('/ck_quant/public_showcase');
+      return data;
+    }
+
+    /** Update the guest-visibility configuration of this bot (authenticated). */
+    async function setPublicShowcase(payload: PublicShowcasePayload) {
+      const { data } = await api.post<PublicShowcasePayload, AxiosResponse<PublicShowcaseConfig>>(
+        '/ck_quant/public_showcase',
+        payload,
+      );
+      return data;
+    }
+
     async function getAdminBackups() {
       const { data } = await api.get<AdminBackupInfo[]>('/admin/backups');
       return data;
@@ -1849,6 +1866,8 @@ export function createBotSubStore(botId: string, botName: string) {
       getAdminDocument,
       validateAdminDocument,
       saveAdminDocument,
+      getPublicShowcase,
+      setPublicShowcase,
       getAdminBackups,
       getAdminMarkets,
       restoreAdminBackup,

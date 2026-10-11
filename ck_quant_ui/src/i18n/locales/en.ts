@@ -2,6 +2,33 @@ import { workspaceMessages } from './workspace';
 import { researchMessages } from './research';
 
 export default {
+  showcase: {
+    pageTitle: 'Live showcase',
+    refreshed: 'Auto-refreshes every {seconds}s',
+    login: 'Login',
+    defaultLabel: 'Trading overview',
+    status: 'Status',
+    running: 'Running',
+    stopped: 'Stopped',
+    unknown: 'Unknown',
+    exchange: 'Exchange',
+    uptime: 'Uptime',
+    version: 'Version',
+    openTrades: 'Open trades',
+    tradeCount: 'Trades',
+    winRate: 'Win rate',
+    profitFactor: 'Profit factor',
+    expectancy: 'Expectancy',
+    maxDrawdown: 'Max drawdown',
+    totalProfit: 'Total return',
+    absoluteProfit: 'Absolute profit',
+    profitCurve: 'Profit curve',
+    blockDisabled: 'This bot does not expose a public showcase.',
+    blockError: 'This bot cannot be loaded right now. It will retry automatically.',
+    loading: 'Loading…',
+    retry: 'Retry',
+    updated: 'Updated {time}',
+  },
   workspace: workspaceMessages.en,
   research: researchMessages.en,
   language: {
@@ -84,6 +111,29 @@ export default {
     corsDocs: 'Freqtrade CORS documentation',
   },
   settings: {
+    showcase: {
+      title: 'Guest visibility',
+      hint: 'Choose which bots visitors may see on the showcase page.',
+      empty: 'No bot is configured locally yet.',
+      enabled: 'Allow guests to view the overview',
+      showAbsolute: 'Show absolute profit',
+      labelHint:
+        'The label becomes the heading of this block on the showcase page. Leave empty to use the bot name.',
+      unsupported:
+        'This bot does not support the online switch yet. Enable the public showcase manually in its configuration file.',
+      loadError: 'Unable to read the showcase settings for this bot.',
+      save: 'Save settings',
+      saved: 'Settings saved.',
+      saveFailed: 'Saving failed. Please try again later.',
+      shareTitle: 'Share link',
+      generate: 'Generate share link',
+      copy: 'Copy',
+      copied: 'Link copied.',
+      copyFailed: 'Copy failed, please copy manually.',
+      noSelection: 'Select at least one bot first.',
+      shareHint:
+        'The link only contains API base URLs, no tokens or keys. It is safe to share with guests.',
+    },
     title: 'CK Quant settings',
     uiVersion: 'UI version',
     uiSettings: 'Interface settings',

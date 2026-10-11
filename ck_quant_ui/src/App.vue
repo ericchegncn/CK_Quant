@@ -3,6 +3,11 @@ import { setLocale } from '@/i18n';
 
 const settingsStore = useSettingsStore();
 const colorStore = useColorStore();
+const botStore = useBotStore();
+// Guests (no configured bot) only reach the showcase page, so the navigation
+// chrome is hidden for them.
+const isGuest = computed(() => !botStore.hasBots);
+
 onMounted(() => {
   setTimezone(settingsStore.timezone);
   colorStore.updateProfitLossColor();
@@ -24,9 +29,9 @@ watch(
 <template>
   <UApp>
     <div id="app" class="flex flex-col h-dvh ckq-shell" :style="colorStore.cssVars">
-      <NavBar />
-      <BodyLayout class="grow overflow-auto md:pb-0 pb-24" />
-      <NavFooter />
+      <NavBar v-if="!isGuest" />
+      <BodyLayout class="grow overflow-auto" :class="isGuest ? 'pb-0' : 'md:pb-0 pb-24'" />
+      <NavFooter v-if="!isGuest" />
     </div>
   </UApp>
 </template>

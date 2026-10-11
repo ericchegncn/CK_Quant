@@ -1,12 +1,124 @@
 <script setup lang="ts">
 import { FtWsMessageTypes } from '@/types/wsMessageTypes';
+import axios from 'axios';
 import { useI18n } from 'vue-i18n';
 
 const settingsStore = useSettingsStore();
 const colorStore = useColorStore();
 const layoutStore = useLayoutStore();
+const botStore = useBotStore();
 const { t } = useI18n();
 const localizedBacktestMetricOptions = computed(() => localizeBacktestMetricOptions(t));
+
+// ---- Guest showcase ("public_showcase") management ------------------------
+// Lets the logged-in operator decide which locally configured bots may be
+// displayed on the guest page, and build a share link from their API bases.
+type ShowcaseStatus = 'unknown' | 'ok' | 'unsupported' | 'error';
+
+const showcaseStatus = reactive<Record<string, ShowcaseStatus>>({});
+const showcaseEnabled = reactive<Record<string, boolean>>({});
+const showcaseShowAbsolute = reactive<Record<string, boolean>>({});
+const showcaseLabels = reactive<Record<string, string>>({});
+const showcaseSaving = ref(false);
+const shareLink = ref('');
+
+// Display name and API base come from the local configuration. The share link
+// only ever contains the API base - never a token or key.
+const showcaseRows = computed(() =>
+  botStore.availableBotsSorted.map((bot) => ({
+    botId: bot.botId,
+    name: bot.botName,
+    url: bot.botUrl,
+  })),
+);
+
+async function loadShowcaseSettings() {
+  await Promise.all(
+    showcaseRows.value.map(async (row) => {
+      const bot = botStore.botStores[row.botId];
+      if (!bot) {
+        showcaseStatus[row.botId] = 'error';
+        return;
+      }
+      try {
+        const config = await bot.getPublicShowcase();
+        showcaseEnabled[row.botId] = config.enabled ?? false;
+        showcaseShowAbsolute[row.botId] = config.show_absolute ?? true;
+        showcaseLabels[row.botId] = config.label ?? row.name;
+        showcaseStatus[row.botId] = 'ok';
+      } catch (err) {
+        // Graceful degradation: a server without the endpoint (yet) only shows
+        // a "enable it in the config file" hint instead of crashing.
+        const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+        showcaseStatus[row.botId] = status === 404 || status === 501 ? 'unsupported' : 'error';
+        if (showcaseLabels[row.botId] === undefined) showcaseLabels[row.botId] = row.name;
+        if (showcaseShowAbsolute[row.botId] === undefined) showcaseShowAbsolute[row.botId] = true;
+      }
+    }),
+  );
+}
+
+async function saveShowcaseSettings() {
+  showcaseSaving.value = true;
+  let failed = 0;
+  await Promise.all(
+    showcaseRows.value.map(async (row) => {
+      if (showcaseStatus[row.botId] === 'unsupported') return;
+      const bot = botStore.botStores[row.botId];
+      if (!bot) return;
+      try {
+        const config = await bot.setPublicShowcase({
+          enabled: showcaseEnabled[row.botId] ?? false,
+          label: showcaseLabels[row.botId] ?? row.name,
+          show_absolute: showcaseShowAbsolute[row.botId] ?? true,
+        });
+        showcaseEnabled[row.botId] = config.enabled ?? false;
+        showcaseShowAbsolute[row.botId] = config.show_absolute ?? true;
+        showcaseLabels[row.botId] = config.label ?? row.name;
+        showcaseStatus[row.botId] = 'ok';
+      } catch (err) {
+        const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+        if (status === 404 || status === 501) {
+          showcaseStatus[row.botId] = 'unsupported';
+        } else {
+          failed += 1;
+        }
+      }
+    }),
+  );
+  showcaseSaving.value = false;
+  if (failed > 0) {
+    showAlert(t('settings.showcase.saveFailed'), 'error');
+  } else {
+    showAlert(t('settings.showcase.saved'));
+  }
+}
+
+function generateShareLink() {
+  const selected = showcaseRows.value
+    .filter((row) => showcaseEnabled[row.botId])
+    .map((row) => row.url.replace(/\/+$/, ''));
+  if (selected.length === 0) {
+    shareLink.value = '';
+    showAlert(t('settings.showcase.noSelection'), 'warning');
+    return;
+  }
+  const params = new URLSearchParams();
+  selected.forEach((url) => params.append('api', url));
+  shareLink.value = `${window.location.origin}/showcase?${params.toString()}`;
+}
+
+async function copyShareLink() {
+  if (!shareLink.value) return;
+  try {
+    await navigator.clipboard.writeText(shareLink.value);
+    showAlert(t('settings.showcase.copied'));
+  } catch {
+    showAlert(t('settings.showcase.copyFailed'), 'error');
+  }
+}
+
+onMounted(() => void loadShowcaseSettings());
 
 const timezoneOptions = ['UTC', Intl.DateTimeFormat().resolvedOptions().timeZone];
 const openTradesOptions = computed(() => [
@@ -226,6 +338,84 @@ const resetDynamicLayout = () => {
           <small class="text-sm text-neutral-600 dark:text-neutral-400">{{
             t('settings.backtestMetricsHint')
           }}</small>
+        </div>
+      </div>
+
+      <div class="border rounded-sm border-neutral-400 p-4 space-y-4">
+        <h4 class="text-lg font-semibold">{{ t('settings.showcase.title') }}</h4>
+        <small class="block text-sm text-neutral-600 dark:text-neutral-400">
+          {{ t('settings.showcase.hint') }}
+        </small>
+
+        <p
+          v-if="showcaseRows.length === 0"
+          class="text-sm text-neutral-600 dark:text-neutral-400"
+        >
+          {{ t('settings.showcase.empty') }}
+        </p>
+
+        <div
+          v-for="row in showcaseRows"
+          :key="row.botId"
+          class="space-y-3 border border-neutral-300/60 rounded-sm p-3"
+        >
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="font-semibold">{{ row.name }}</span>
+            <span class="text-xs break-all text-neutral-500 dark:text-neutral-400">
+              {{ row.url }}
+            </span>
+          </div>
+
+          <BaseCheckbox v-model="showcaseEnabled[row.botId]">
+            {{ t('settings.showcase.enabled') }}
+          </BaseCheckbox>
+
+          <div class="flex flex-wrap items-center gap-3">
+            <UInput
+              v-model="showcaseLabels[row.botId]"
+              :placeholder="row.name"
+              class="min-w-40 flex-1"
+            />
+            <BaseCheckbox v-model="showcaseShowAbsolute[row.botId]">
+              {{ t('settings.showcase.showAbsolute') }}
+            </BaseCheckbox>
+          </div>
+          <small class="block text-sm text-neutral-600 dark:text-neutral-400">
+            {{ t('settings.showcase.labelHint') }}
+          </small>
+
+          <p
+            v-if="showcaseStatus[row.botId] === 'unsupported'"
+            class="text-sm text-amber-600 dark:text-amber-400"
+          >
+            {{ t('settings.showcase.unsupported') }}
+          </p>
+          <p
+            v-else-if="showcaseStatus[row.botId] === 'error'"
+            class="text-sm text-rose-600 dark:text-rose-400"
+          >
+            {{ t('settings.showcase.loadError') }}
+          </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <UButton :loading="showcaseSaving" @click="saveShowcaseSettings">
+            {{ t('settings.showcase.save') }}
+          </UButton>
+          <UButton color="neutral" @click="generateShareLink">
+            {{ t('settings.showcase.generate') }}
+          </UButton>
+          <UButton v-if="shareLink" color="neutral" @click="copyShareLink">
+            {{ t('settings.showcase.copy') }}
+          </UButton>
+        </div>
+
+        <div v-if="shareLink" class="space-y-1">
+          <label class="block text-sm">{{ t('settings.showcase.shareTitle') }}</label>
+          <UInput :model-value="shareLink" readonly class="w-full" />
+          <small class="block text-sm text-neutral-600 dark:text-neutral-400">
+            {{ t('settings.showcase.shareHint') }}
+          </small>
         </div>
       </div>
     </div>

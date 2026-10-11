@@ -2,6 +2,34 @@ import { workspaceMessages } from './workspace';
 import { researchMessages } from './research';
 
 export default {
+  showcase: {
+    pageTitle: 'Live-Überblick',
+    refreshed: 'Automatische Aktualisierung alle {seconds}s',
+    login: 'Anmelden',
+    defaultLabel: 'Trading-Überblick',
+    status: 'Status',
+    running: 'Läuft',
+    stopped: 'Gestoppt',
+    unknown: 'Unbekannt',
+    exchange: 'Börse',
+    uptime: 'Laufzeit',
+    version: 'Version',
+    openTrades: 'Offene Trades',
+    tradeCount: 'Trades',
+    winRate: 'Trefferquote',
+    profitFactor: 'Profitfaktor',
+    expectancy: 'Erwartungswert',
+    maxDrawdown: 'Max. Drawdown',
+    totalProfit: 'Gesamtrendite',
+    absoluteProfit: 'Absoluter Gewinn',
+    profitCurve: 'Gewinnkurve',
+    blockDisabled: 'Dieser Bot stellt keine öffentliche Übersicht bereit.',
+    blockError:
+      'Die Daten dieses Bots sind derzeit nicht verfügbar. Es wird automatisch erneut versucht.',
+    loading: 'Wird geladen…',
+    retry: 'Erneut versuchen',
+    updated: 'Aktualisiert {time}',
+  },
   workspace: workspaceMessages.de,
   research: researchMessages.de,
   language: {
@@ -85,6 +113,29 @@ export default {
     corsDocs: 'Freqtrade-CORS-Dokumentation',
   },
   settings: {
+    showcase: {
+      title: 'Für Gäste sichtbar',
+      hint: 'Wählen Sie, welche Bots Besucher auf der Showcase-Seite sehen dürfen.',
+      empty: 'Lokal ist noch kein Bot konfiguriert.',
+      enabled: 'Gäste dürfen die Übersicht sehen',
+      showAbsolute: 'Absoluten Gewinn anzeigen',
+      labelHint:
+        'Die Bezeichnung wird zur Überschrift dieses Blocks auf der Showcase-Seite. Leer lassen, um den Bot-Namen zu verwenden.',
+      unsupported:
+        'Dieser Bot unterstützt den Online-Schalter noch nicht. Aktivieren Sie die öffentliche Übersicht manuell in der Konfigurationsdatei.',
+      loadError: 'Die Showcase-Einstellungen dieses Bots konnten nicht gelesen werden.',
+      save: 'Einstellungen speichern',
+      saved: 'Einstellungen gespeichert.',
+      saveFailed: 'Speichern fehlgeschlagen. Bitte später erneut versuchen.',
+      shareTitle: 'Freigabelink',
+      generate: 'Freigabelink erzeugen',
+      copy: 'Kopieren',
+      copied: 'Link kopiert.',
+      copyFailed: 'Kopieren fehlgeschlagen, bitte manuell kopieren.',
+      noSelection: 'Bitte zuerst mindestens einen Bot auswählen.',
+      shareHint:
+        'Der Link enthält nur API-Basisadressen, keine Token oder Schlüssel, und kann bedenkenlos geteilt werden.',
+    },
     title: 'CK Quant Einstellungen',
     uiVersion: 'UI-Version',
     uiSettings: 'Oberflächeneinstellungen',

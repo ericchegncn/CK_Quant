@@ -2,6 +2,34 @@ import { workspaceMessages } from './workspace';
 import { researchMessages } from './research';
 
 export default {
+  showcase: {
+    pageTitle: 'Vitrine en direct',
+    refreshed: 'Actualisation automatique toutes les {seconds} s',
+    login: 'Connexion',
+    defaultLabel: 'Aperçu de trading',
+    status: 'Statut',
+    running: 'En cours',
+    stopped: 'Arrêté',
+    unknown: 'Inconnu',
+    exchange: 'Bourse',
+    uptime: 'Durée de fonctionnement',
+    version: 'Version',
+    openTrades: 'Positions ouvertes',
+    tradeCount: 'Transactions',
+    winRate: 'Taux de réussite',
+    profitFactor: 'Facteur de profit',
+    expectancy: 'Espérance',
+    maxDrawdown: 'Perte maximale',
+    totalProfit: 'Rendement total',
+    absoluteProfit: 'Gain absolu',
+    profitCurve: 'Courbe de profit',
+    blockDisabled: "Ce bot n'expose pas de vitrine publique.",
+    blockError:
+      'Les données de ce bot sont indisponibles pour le moment. Une nouvelle tentative sera faite automatiquement.',
+    loading: 'Chargement…',
+    retry: 'Réessayer',
+    updated: 'Mis à jour {time}',
+  },
   workspace: workspaceMessages.fr,
   research: researchMessages.fr,
   language: {
@@ -85,6 +113,29 @@ export default {
     corsDocs: 'Documentation CORS de Freqtrade',
   },
   settings: {
+    showcase: {
+      title: 'Visible par les visiteurs',
+      hint: 'Choisissez les bots que les visiteurs peuvent voir sur la vitrine.',
+      empty: "Aucun bot n'est encore configuré localement.",
+      enabled: 'Autoriser les visiteurs à voir l’aperçu',
+      showAbsolute: 'Afficher le gain absolu',
+      labelHint:
+        'Le libellé devient le titre de ce bloc sur la vitrine. Laissez vide pour utiliser le nom du bot.',
+      unsupported:
+        "Ce bot ne prend pas encore en charge l'interrupteur en ligne. Activez la vitrine publique manuellement dans son fichier de configuration.",
+      loadError: 'Impossible de lire les réglages de vitrine de ce bot.',
+      save: 'Enregistrer les réglages',
+      saved: 'Réglages enregistrés.',
+      saveFailed: "Échec de l'enregistrement. Veuillez réessayer plus tard.",
+      shareTitle: 'Lien de partage',
+      generate: 'Générer le lien de partage',
+      copy: 'Copier',
+      copied: 'Lien copié.',
+      copyFailed: 'Échec de la copie, veuillez copier manuellement.',
+      noSelection: 'Sélectionnez au moins un bot au préalable.',
+      shareHint:
+        "Le lien ne contient que les adresses de base de l'API, aucun jeton ni clé. Il peut être partagé sans risque.",
+    },
     title: 'Paramètres CK Quant',
     uiVersion: "Version de l'interface",
     uiSettings: "Paramètres de l'interface",
