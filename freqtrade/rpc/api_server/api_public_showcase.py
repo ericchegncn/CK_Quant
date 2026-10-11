@@ -1,9 +1,10 @@
 """
 Public, read-only *showcase* endpoint.
 
-Exposes a small, aggregate-only view of a single bot so a public web page can
-display it.  Each bot/server publishes its own instance - no cross-bot
-aggregation happens here, that is the frontend's job.
+Exposes an aggregate-only view of a single bot so a public web page can display
+the same headline numbers the authenticated dashboard shows on its first screen
+(absolute USDT amounts included).  Each bot/server publishes its own instance -
+no cross-bot aggregation happens here, that is the frontend's job.
 
 The endpoint is:
 
@@ -15,15 +16,27 @@ The endpoint is:
 * sanitized — the payload carries numbers plus a display label only.  It
   deliberately contains **no** pair names, no strategy name, no per-trade /
   per-order rows, no ``best_pair`` / ``worst_pair`` style fields, no log lines,
-  no config dump, no API credentials and - unless ``show_absolute`` is on - no
-  balances at all.
+  no config dump and no API credentials.  Absolute (stake currency) amounts are
+  set to ``None`` - as one group, see ``ABSOLUTE_FIELDS`` - unless
+  ``show_absolute`` is switched on.
 * cached — a module level TTL cache keeps a public URL from turning into a CPU
   amplifier: the (comparatively expensive) aggregation runs at most once per
   ``cache_ttl_secs``, no matter how many anonymous requests arrive.
 
-All numbers reuse the RPC layer's existing aggregates (``_rpc_trade_statistics``
-and the daily time-unit profit curve); nothing here recomputes trade maths.
+Nothing here recomputes trade maths; every number comes from the very same RPC
+entry points the authenticated dashboard uses, so the public page cannot drift
+away from it:
+
+* the scalar block comes from ``RPC._rpc_trade_statistics`` - the ``"all"`` entry
+  of ``/profit_all``, which is what the dashboard overview cards render.
+* ``profit_history`` comes from ``RPC._rpc_profit_history`` - the exact series
+  behind ``GET /profit_history`` (``ftbot.ts getProfitHistory()`` ->
+  ``activeBot.profitHistory.data`` -> ``CumProfitChart``).
+* ``starting_capital`` / ``balance_total`` mirror the dashboard balance card,
+  i.e. ``RPC._rpc_balance()["total_bot"]`` (with a wallet based fallback).
+
 Every ratio is a *ratio* (``1.0`` == ``+100%``); the frontend multiplies by 100.
+Amounts are in ``stake_currency`` (USDT for the bots this ships with).
 
 This module also owns the label rules, which the authenticated admin endpoints
 (``api_ck_quant_admin``) reuse when an operator edits the showcase settings.
@@ -52,11 +65,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Hard ceiling on the number of daily buckets pulled from the existing
-# aggregation.  The effective window is additionally clipped to the bot's own
-# runtime, so a young bot does not issue hundreds of empty per-day queries.
-MAX_HISTORY_DAYS = 365
-
 # Neutral fallback for the public display label.  A container name, a database
 # name or a strategy name must never end up here - the repository is public and
 # the strategies are private.
@@ -69,16 +77,33 @@ CACHE_TTL_DEFAULT = 30
 # Only these bot states are published; anything else collapses to "unknown".
 _BOT_STATE_MAP = {"running": "running", "stopped": "stopped"}
 
+# The scalar fields that carry an absolute amount in the stake currency (USDT).
+# When ``show_absolute`` is off they are nulled as one group, so "hide the money"
+# can never end up as a half-forgotten, per-field switch.  Keep in sync with
+# ``PublicOverview`` - the unit tests assert the exact key set of the payload.
+ABSOLUTE_FIELDS = (
+    "expectancy",
+    "trading_volume",
+    "profit_total_abs",
+    "profit_closed_abs",
+    "profit_open_abs",
+    "open_profit_abs",
+    "starting_capital",
+    "balance_total",
+    "max_drawdown_abs",
+    "current_drawdown_abs",
+)
+
 
 class PublicProfitPoint(BaseModel):
-    """A single point of the cumulative profit curve."""
+    """One point of the cumulative total-profit curve (same shape as /profit_history)."""
 
     date: int
-    profit: float
+    profit_abs: float
 
 
 class PublicOverview(BaseModel):
-    """Sanitized, aggregate-only overview of the bot."""
+    """Sanitized, aggregate-only overview of the bot - dashboard first screen."""
 
     bot_state: str
     runmode: str
@@ -88,17 +113,39 @@ class PublicOverview(BaseModel):
     trading_mode: str | None = None
     start_date: str | None = None
     uptime_seconds: int | None = None
+    as_of: str
+    # --- positions and trade counts ----------------------------------------
     open_trades: int
+    max_open_trades: int
     trade_count: int
+    # --- performance -------------------------------------------------------
+    win_count: int
+    loss_count: int
     win_rate: float | None = None
     profit_factor: float | None = None
     expectancy: float | None = None
-    max_drawdown_ratio: float | None = None
+    expectancy_ratio: float | None = None
+    avg_duration_seconds: int | None = None
+    # --- totals (absolute amounts are None unless show_absolute) -----------
+    trading_volume: float | None = None
+    profit_total_abs: float | None = None
     profit_total_ratio: float | None = None
+    profit_closed_abs: float | None = None
     profit_closed_ratio: float | None = None
-    profit_abs: float | None = None
+    profit_open_abs: float | None = None
+    profit_open_ratio: float | None = None
+    profit_total_ratio_sum: float | None = None
+    profit_closed_ratio_sum: float | None = None
     starting_capital: float | None = None
-    as_of: str
+    balance_total: float | None = None
+    stake_currency: str | None = None
+    # --- drawdown ----------------------------------------------------------
+    max_drawdown_ratio: float | None = None
+    max_drawdown_abs: float | None = None
+    current_drawdown_ratio: float | None = None
+    current_drawdown_abs: float | None = None
+    # --- chart -------------------------------------------------------------
+    open_profit_abs: float | None = None
     profit_history: list[PublicProfitPoint] = Field(default_factory=list)
 
 
@@ -193,24 +240,66 @@ def showcase_settings(config: dict[str, Any]) -> dict[str, Any]:
 
     Single source of truth for both the public endpoint and the authenticated
     admin endpoints, so a hand-edited config file cannot smuggle an unsafe label
-    into the payload.
+    into the payload.  ``show_absolute`` defaults to *on* - the showcase page
+    mirrors a dashboard that is denominated in stake currency amounts.
     """
     block = _showcase_block(config)
     return {
         "enabled": bool(block.get("enabled", False)),
         "label": normalize_label(block.get("label", LABEL_DEFAULT)),
-        "show_absolute": bool(block.get("show_absolute", False)),
+        "show_absolute": bool(block.get("show_absolute", True)),
         "cache_ttl_secs": int(coerce_cache_ttl(block.get("cache_ttl_secs", CACHE_TTL_DEFAULT))),
     }
 
 
 def _as_float(value: Any) -> float | None:
+    """Return a finite float for ``value``, else None (guards bool/NaN/inf)."""
     if value is None or isinstance(value, bool):
         return None
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return None
+    if not math.isfinite(number):
+        # ``float("inf")`` is not valid JSON and would break the response.
+        return None
+    return number
+
+
+def _difference(left: float | None, right: float | None) -> float | None:
+    """``left - right`` when both sides are known, else None."""
+    if left is None or right is None:
+        return None
+    return left - right
+
+
+def _duration_seconds(value: Any) -> int | None:
+    """Parse the RPC layer's ``avg_duration`` text (``H:MM:SS`` or ``D days, H:MM:SS``)."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    days = 0
+    if "," in text:
+        head, _, tail = text.partition(",")
+        head = head.strip()
+        lowered = head.lower()
+        if lowered.endswith(("day", "days")):
+            head = head.split(" ", 1)[0]
+        try:
+            days = int(head)
+        except ValueError:
+            return None
+        text = tail.strip()
+    parts = text.split(":")
+    if len(parts) != 3:
+        return None
+    try:
+        hours, minutes, seconds = (int(part) for part in parts)
+    except ValueError:
+        return None
+    if min(hours, minutes, seconds, days) < 0:
+        return None
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 
 def _iso_z(moment: datetime | None) -> str | None:
@@ -223,7 +312,7 @@ def _iso_z(moment: datetime | None) -> str | None:
 
 
 def _to_epoch_ms(value: Any) -> int | None:
-    """Normalize the daily-curve key to epoch milliseconds."""
+    """Normalize a curve key (datetime/date/epoch s/epoch ms/ISO string) to epoch ms."""
     if isinstance(value, datetime):
         moment = value if value.tzinfo else value.replace(tzinfo=UTC)
     elif isinstance(value, date):
@@ -264,54 +353,81 @@ def _earliest_trade_date() -> datetime | None:
     return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
+def _balance_total(rpc: RPC, stake_currency: str, fiat_display_currency: str) -> float | None:
+    """
+    Total account value in the stake currency, matching the dashboard balance card.
+
+    ``/balance``'s ``total_bot`` is what the authenticated UI renders, so the
+    public page reports the same number.  The per-currency rows ``_rpc_balance``
+    also returns (coin names!) are never touched, and a wallet based fallback
+    keeps the public endpoint answering if the balance aggregation fails.
+    """
+    try:
+        return _as_float(rpc._rpc_balance(stake_currency, fiat_display_currency).get("total_bot"))
+    except Exception:
+        logger.debug("public showcase: balance aggregation failed", exc_info=True)
+    try:
+        return _as_float(rpc._freqtrade.wallets.get_total_stake_amount())
+    except Exception:  # pragma: no cover - defensive
+        logger.debug("public showcase: wallet total unavailable", exc_info=True)
+        return None
+
+
 def _profit_history(
     rpc: RPC,
-    config: dict[str, Any],
     show_absolute: bool,
-    starting_balance: float | None,
-    start_dt: datetime | None,
+    as_of: datetime,
+    total_profit_abs: float | None,
+    open_trades: int,
 ) -> list[dict[str, Any]]:
     """
-    Map the RPC layer's daily profit curve onto ascending ``{date, profit}`` points.
+    The dashboard's cumulative-profit curve, computed server side.
 
-    ``profit`` is the *cumulative* value: an absolute amount when ``show_absolute``
-    is on, a ratio of the starting capital otherwise.  Days without any realized
-    profit are dropped - the cumulative value does not change on them, so the
-    chart is identical while the payload stays small.
+    Source of truth is ``RPC._rpc_profit_history`` - the same function behind
+    ``GET /profit_history``, i.e. exactly the series the dashboard chart binds to
+    (``ftbot.ts`` -> ``activeBot.profitHistory.data`` -> ``CumProfitChart``).  It
+    walks the closed trades in close-date order and returns the running sum of
+    their absolute profit, so no per-trade row ever leaves this module.
+
+    The dashboard chart then projects the still-open positions onto the end of
+    that curve (``CumProfitChart.appendOpenProfitProjection``).  The same rule is
+    applied here, server side: a final point at ``as_of`` whose value is the
+    realized total plus the open floating profit - i.e. the headline
+    ``profit_total_abs``.  The result is one ascending series of absolute amounts.
+
+    With ``show_absolute`` off the series is withheld (empty list), because every
+    point of it is an absolute amount.
     """
-    window_days = MAX_HISTORY_DAYS
-    if start_dt is not None:
-        elapsed = (datetime.now(UTC) - start_dt).days + 1
-        window_days = max(1, min(MAX_HISTORY_DAYS, elapsed))
+    if not show_absolute:
+        return []
 
-    curve = rpc._rpc_timeunit_profit(
-        window_days,
-        config["stake_currency"],
-        config.get("fiat_display_currency", ""),
-        "days",
-    )
+    try:
+        curve = rpc._rpc_profit_history()
+    except Exception:  # pragma: no cover - defensive, DB may be unavailable
+        logger.debug("public showcase: profit history unavailable", exc_info=True)
+        curve = None
 
-    buckets: list[tuple[int, float]] = []
-    for row in curve.get("data", []):
-        timestamp = _to_epoch_ms(row.get("date"))
-        if timestamp is None:
-            continue
-        buckets.append((timestamp, _as_float(row.get("abs_profit")) or 0.0))
-    buckets.sort(key=lambda item: item[0])
-
+    rows = curve.get("data", []) if isinstance(curve, dict) else []
     history: list[dict[str, Any]] = []
-    cumulative = 0.0
-    for timestamp, amount in buckets:
-        cumulative += amount
-        if amount == 0.0:
+    for row in rows:
+        if not isinstance(row, dict):
             continue
-        if show_absolute:
-            value = cumulative
-        elif starting_balance:
-            value = cumulative / float(starting_balance)
-        else:
-            value = 0.0
-        history.append({"date": timestamp, "profit": round(value, 8)})
+        timestamp = _to_epoch_ms(row.get("date"))
+        value = _as_float(row.get("profit"))
+        if timestamp is None or value is None:
+            continue
+        if history and timestamp <= history[-1]["date"]:
+            timestamp = history[-1]["date"] + 1
+        history.append({"date": timestamp, "profit_abs": round(value, 8)})
+
+    projected = _as_float(total_profit_abs)
+    if open_trades and projected is not None:
+        last = history[-1]["profit_abs"] if history else None
+        if last is None or not math.isclose(last, projected, rel_tol=1e-9, abs_tol=1e-6):
+            timestamp = _to_epoch_ms(as_of) or 0
+            if history and timestamp <= history[-1]["date"]:
+                timestamp = history[-1]["date"] + 1
+            history.append({"date": timestamp, "profit_abs": round(projected, 8)})
     return history
 
 
@@ -320,12 +436,31 @@ def _build_public_overview(
 ) -> dict[str, Any]:
     show_absolute = bool(settings["show_absolute"])
     now = datetime.now(UTC)
-    stats = rpc._rpc_trade_statistics(config["stake_currency"], config.get("fiat_display_currency"))
-    starting_balance = _as_float(rpc._freqtrade.wallets.get_starting_balance())
+    stake_currency = config["stake_currency"]
+    fiat_display_currency = config.get("fiat_display_currency", "")
 
+    # Same entry point the dashboard overview cards read (/profit_all -> "all").
+    stats = rpc._rpc_trade_statistics(stake_currency, fiat_display_currency)
+    starting_balance = _as_float(rpc._freqtrade.wallets.get_starting_balance())
     start_dt = _bot_start_datetime(stats) or _earliest_trade_date()
 
-    return {
+    open_trades = Trade.get_open_trade_count()
+    profit_total_abs = _as_float(stats.get("profit_all_coin"))
+    profit_closed_abs = _as_float(stats.get("profit_closed_coin"))
+    profit_total_ratio = _as_float(stats.get("profit_all_ratio"))
+    profit_closed_ratio = _as_float(stats.get("profit_closed_ratio"))
+    # Floating profit of the still-open positions - derived exactly like the
+    # dashboard does it (total minus closed).
+    profit_open_abs = _difference(profit_total_abs, profit_closed_abs)
+    profit_open_ratio = _difference(profit_total_ratio, profit_closed_ratio)
+
+    raw_max_open_trades = config.get("max_open_trades")
+    try:
+        max_open_trades = int(raw_max_open_trades) if raw_max_open_trades is not None else 0
+    except (TypeError, ValueError):
+        max_open_trades = 0
+
+    payload: dict[str, Any] = {
         "bot_state": _BOT_STATE_MAP.get(str(rpc._freqtrade.state), "unknown"),
         "runmode": RunMode.DRY_RUN.value if config.get("dry_run") else RunMode.LIVE.value,
         "version": __version__,
@@ -334,21 +469,44 @@ def _build_public_overview(
         "trading_mode": config.get("trading_mode", "spot"),
         "start_date": _iso_z(start_dt),
         "uptime_seconds": int((now - start_dt).total_seconds()) if start_dt else None,
-        "open_trades": Trade.get_open_trade_count(),
+        "as_of": _iso_z(now),
+        "open_trades": open_trades,
+        "max_open_trades": max_open_trades,
         "trade_count": int(_as_float(stats.get("trade_count")) or 0),
+        "win_count": int(_as_float(stats.get("winning_trades")) or 0),
+        "loss_count": int(_as_float(stats.get("losing_trades")) or 0),
         "win_rate": _as_float(stats.get("winrate")),
         "profit_factor": _as_float(stats.get("profit_factor")),
         "expectancy": _as_float(stats.get("expectancy")),
+        "expectancy_ratio": _as_float(stats.get("expectancy_ratio")),
+        "avg_duration_seconds": _duration_seconds(stats.get("avg_duration")),
+        "trading_volume": _as_float(stats.get("trading_volume")),
+        "profit_total_abs": profit_total_abs,
+        "profit_total_ratio": profit_total_ratio,
+        "profit_closed_abs": profit_closed_abs,
+        "profit_closed_ratio": profit_closed_ratio,
+        "profit_open_abs": profit_open_abs,
+        "profit_open_ratio": profit_open_ratio,
+        "profit_total_ratio_sum": _as_float(stats.get("profit_all_ratio_sum")),
+        "profit_closed_ratio_sum": _as_float(stats.get("profit_closed_ratio_sum")),
+        "starting_capital": starting_balance,
+        "balance_total": _balance_total(rpc, stake_currency, fiat_display_currency),
+        "stake_currency": stake_currency,
         "max_drawdown_ratio": _as_float(stats.get("max_drawdown")),
-        "profit_total_ratio": _as_float(stats.get("profit_all_ratio")),
-        "profit_closed_ratio": _as_float(stats.get("profit_closed_ratio")),
-        # Balances are withheld unless explicitly enabled - this is the field most
-        # likely to be considered sensitive.
-        "profit_abs": _as_float(stats.get("profit_all_coin")) if show_absolute else None,
-        "starting_capital": starting_balance if show_absolute else None,
-        "as_of": _iso_z(now),
-        "profit_history": _profit_history(rpc, config, show_absolute, starting_balance, start_dt),
+        "max_drawdown_abs": _as_float(stats.get("max_drawdown_abs")),
+        "current_drawdown_ratio": _as_float(stats.get("current_drawdown")),
+        "current_drawdown_abs": _as_float(stats.get("current_drawdown_abs")),
+        # Same value as ``profit_open_abs``; an own key because the chart binds
+        # its open-profit projection to it.
+        "open_profit_abs": profit_open_abs,
+        "profit_history": _profit_history(rpc, show_absolute, now, profit_total_abs, open_trades),
     }
+
+    if not show_absolute:
+        # Amounts (and, above, the curve) are withheld as one group.
+        for field in ABSOLUTE_FIELDS:
+            payload[field] = None
+    return payload
 
 
 @router.get("/public/overview", response_model=PublicOverview, tags=["Info"])

@@ -6,6 +6,12 @@ Contract under test:
 * ``GET /api/v1/public/overview`` requires **no** authentication, answers ``404``
   while the feature is disabled and exposes exactly the documented aggregate
   fields - never a pair, a strategy name, a per-trade row or a balance.
+* the payload is dashboard-equivalent: the scalars come from the same
+  ``_rpc_trade_statistics`` block the dashboard cards render, and
+  ``profit_history`` is the very series behind ``GET /profit_history`` (closed
+  out by the dashboard's open-profit projection).
+* absolute (stake currency) amounts are published only while ``show_absolute``
+  is on - otherwise every amount field is ``None`` and the curve is empty.
 * ``GET|POST /api/v1/ck_quant/public_showcase`` is the authenticated way to read
   and change the same settings (and persists them to the active config file).
 """
@@ -23,6 +29,7 @@ from freqtrade.loggers import setup_logging, setup_logging_pre
 from freqtrade.rpc import RPC
 from freqtrade.rpc.api_server import ApiServer, api_public_showcase
 from freqtrade.rpc.api_server.api_public_showcase import (
+    ABSOLUTE_FIELDS,
     LABEL_DEFAULT,
     label_problem,
     normalize_label,
@@ -33,6 +40,7 @@ from tests.conftest import EXMS, create_mock_trades_usdt, get_patched_freqtradeb
 BASE_URI = "/api/v1"
 OVERVIEW_URI = f"{BASE_URI}/public/overview"
 SHOWCASE_URI = f"{BASE_URI}/ck_quant/public_showcase"
+DASHBOARD_HISTORY_URI = f"{BASE_URI}/profit_history"
 
 _TEST_USER = "FreqTrader"
 _TEST_PASS = "SuperSecurePassword1!"
@@ -50,24 +58,61 @@ SHOWCASE_DEFAULTS = {
 # updating this set is a contract change, not a cosmetic one.
 PUBLIC_OVERVIEW_KEYS = {
     "as_of",
+    "avg_duration_seconds",
+    "balance_total",
     "bot_state",
+    "current_drawdown_abs",
+    "current_drawdown_ratio",
     "exchange",
     "expectancy",
+    "expectancy_ratio",
     "label",
+    "loss_count",
+    "max_drawdown_abs",
     "max_drawdown_ratio",
+    "max_open_trades",
+    "open_profit_abs",
     "open_trades",
-    "profit_abs",
+    "profit_closed_abs",
     "profit_closed_ratio",
+    "profit_closed_ratio_sum",
     "profit_factor",
     "profit_history",
+    "profit_open_abs",
+    "profit_open_ratio",
+    "profit_total_abs",
     "profit_total_ratio",
+    "profit_total_ratio_sum",
     "runmode",
-    "starting_capital",
+    "stake_currency",
     "start_date",
+    "starting_capital",
     "trade_count",
     "trading_mode",
+    "trading_volume",
     "uptime_seconds",
     "version",
+    "win_count",
+    "win_rate",
+}
+
+# Every point of the curve carries these two keys - nothing else.
+PROFIT_HISTORY_KEYS = {"date", "profit_abs"}
+
+# Absolute amounts: must be ``None`` while ``show_absolute`` is off.
+ABSOLUTE_KEYS = set(ABSOLUTE_FIELDS)
+
+# Ratios / counts / labels: still available when the amounts are hidden.
+RATIO_KEYS = {
+    "expectancy_ratio",
+    "max_drawdown_ratio",
+    "current_drawdown_ratio",
+    "profit_closed_ratio",
+    "profit_closed_ratio_sum",
+    "profit_factor",
+    "profit_open_ratio",
+    "profit_total_ratio",
+    "profit_total_ratio_sum",
     "win_rate",
 }
 
@@ -162,7 +207,7 @@ def _configure(ftbot, *, enabled: bool, label=LABEL_DEFAULT, show_absolute=False
     }
 
 
-# --- label rules -------------------------------------------------------------
+# --- label rules and settings -------------------------------------------------
 
 
 @pytest.mark.parametrize("label", ["Demo Bot", "  Demo Bot  ", "Bot", "demo.bot-1"])
@@ -190,6 +235,39 @@ def test_label_problem_rejects_unsafe_labels(label):
     assert normalize_label(label) == LABEL_DEFAULT
 
 
+def test_showcase_settings_default_to_absolute_and_disabled():
+    """Amounts are on by default, the endpoint itself stays off."""
+    settings = api_public_showcase.showcase_settings({})
+
+    assert settings["enabled"] is False
+    assert settings["show_absolute"] is True
+    assert settings["label"] == LABEL_DEFAULT
+    assert settings["cache_ttl_secs"] == 30
+
+    # An explicit opt-out still wins.
+    explicit = api_public_showcase.showcase_settings(
+        {"api_server": {"public_showcase": {"show_absolute": False}}}
+    )
+    assert explicit["show_absolute"] is False
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("0:00:00", 0),
+        ("3:04:05", 11045),
+        ("2 days, 3:04:05", 183845),
+        ("1 day, 0:00:01", 86401),
+        ("", None),
+        ("nonsense", None),
+        ("3:04", None),
+        (None, None),
+    ],
+)
+def test_duration_seconds_parses_rpc_average_duration(text, expected):
+    assert api_public_showcase._duration_seconds(text) == expected
+
+
 # --- public endpoint ---------------------------------------------------------
 
 
@@ -208,7 +286,7 @@ def test_public_overview_enabled_without_token_exact_contract(
 ):
     ftbot, client, _ = showcase_client
     _patch_exchange(mocker, ticker, fee, markets)
-    _configure(ftbot, enabled=True, label="Demo Bot")
+    _configure(ftbot, enabled=True, label="Demo Bot", show_absolute=True)
     create_mock_trades_usdt(fee, is_short=None)
 
     # Deliberately no Authorization header at all.
@@ -217,6 +295,8 @@ def test_public_overview_enabled_without_token_exact_contract(
     assert rc.status_code == 200
     payload = rc.json()
     assert set(payload) == PUBLIC_OVERVIEW_KEYS
+    # The frozen set above is the model's own field list - no drift either way.
+    assert set(payload) == set(api_public_showcase.PublicOverview.model_fields)
 
     assert payload["label"] == "Demo Bot"
     assert payload["version"] == __version__
@@ -224,13 +304,19 @@ def test_public_overview_enabled_without_token_exact_contract(
     assert payload["bot_state"] == "running"
     assert payload["runmode"] == "dry_run"
     assert payload["trading_mode"] == "spot"
+    # The field mirrors the bot's configured stake currency.
+    assert payload["stake_currency"] == ftbot.config["stake_currency"]
     assert payload["start_date"] is not None
     assert payload["start_date"].endswith("Z")
     assert payload["as_of"].endswith("Z")
     assert isinstance(payload["uptime_seconds"], int)
-    assert payload["open_trades"] >= 0
-    assert payload["trade_count"] == 7
     assert isinstance(payload["as_of"], str)
+    # 6 closed + 1 open trade live in this fixture.
+    assert payload["trade_count"] == 7
+    assert payload["open_trades"] >= 1
+    assert payload["max_open_trades"] >= 1
+    assert payload["win_count"] + payload["loss_count"] <= payload["trade_count"]
+    assert isinstance(payload["avg_duration_seconds"], int)
 
 
 def test_public_overview_payload_is_sanitized(showcase_client, mocker, ticker, fee, markets):
@@ -255,6 +341,32 @@ def test_public_overview_payload_is_sanitized(showcase_client, mocker, ticker, f
             continue
         assert not isinstance(value, (dict, list)), f"{key} must stay a scalar"
 
+    # The curve itself is numbers only - no pair, no order id, nothing per-trade.
+    for point in payload["profit_history"]:
+        assert set(point) == PROFIT_HISTORY_KEYS
+
+
+def test_public_overview_hides_amounts_when_absolute_is_off(
+    showcase_client, mocker, ticker, fee, markets
+):
+    ftbot, client, _ = showcase_client
+    _patch_exchange(mocker, ticker, fee, markets)
+    _configure(ftbot, enabled=True, label="Relative", show_absolute=False)
+    create_mock_trades_usdt(fee, is_short=None)
+
+    payload = client.get(OVERVIEW_URI).json()
+
+    for field in ABSOLUTE_KEYS:
+        assert payload[field] is None, f"{field} must be withheld without show_absolute"
+    # The whole curve is denominated in absolute amounts.
+    assert payload["profit_history"] == []
+    # Ratios, counts and labels stay available.
+    assert isinstance(payload["profit_total_ratio"], float)
+    assert isinstance(payload["profit_closed_ratio"], float)
+    assert isinstance(payload["win_rate"], float)
+    assert payload["trade_count"] == 7
+    assert payload["stake_currency"] == ftbot.config["stake_currency"]
+
 
 def test_public_overview_absolute_toggle(showcase_client, mocker, ticker, fee, markets):
     ftbot, client, _ = showcase_client
@@ -263,33 +375,103 @@ def test_public_overview_absolute_toggle(showcase_client, mocker, ticker, fee, m
 
     _configure(ftbot, enabled=True, label="Relative", show_absolute=False)
     relative = client.get(OVERVIEW_URI).json()
-    assert relative["profit_abs"] is None
+    assert relative["profit_total_abs"] is None
+    assert relative["profit_closed_abs"] is None
     assert relative["starting_capital"] is None
     assert isinstance(relative["profit_total_ratio"], float)
 
     _configure(ftbot, enabled=True, label="Absolute", show_absolute=True)
     absolute = client.get(OVERVIEW_URI).json()
-    assert isinstance(absolute["profit_abs"], (int, float))
-    assert not isinstance(absolute["profit_abs"], bool)
-    assert isinstance(absolute["starting_capital"], (int, float))
-    assert not isinstance(absolute["starting_capital"], bool)
+    for field in ABSOLUTE_KEYS:
+        value = absolute[field]
+        assert isinstance(value, (int, float)), field
+        assert not isinstance(value, bool), field
+    assert absolute["starting_capital"] > 0
+    # Total = closed + floating, the same split the dashboard shows.
+    assert absolute["profit_total_abs"] == pytest.approx(
+        absolute["profit_closed_abs"] + absolute["profit_open_abs"]
+    )
+    assert absolute["open_profit_abs"] == pytest.approx(absolute["profit_open_abs"])
 
 
 def test_public_overview_profit_history_shape(showcase_client, mocker, ticker, fee, markets):
     ftbot, client, _ = showcase_client
     _patch_exchange(mocker, ticker, fee, markets)
-    _configure(ftbot, enabled=True, label="Curve")
+    _configure(ftbot, enabled=True, label="Curve", show_absolute=True)
     create_mock_trades_usdt(fee, is_short=None)
 
-    history = client.get(OVERVIEW_URI).json()["profit_history"]
+    payload = client.get(OVERVIEW_URI).json()
+    history = payload["profit_history"]
 
     assert history
     dates = [point["date"] for point in history]
     assert dates == sorted(dates)
+    assert len(set(dates)) == len(dates)
     for point in history:
-        assert set(point) == {"date", "profit"}
+        assert set(point) == PROFIT_HISTORY_KEYS
         assert isinstance(point["date"], int)
-        assert isinstance(point["profit"], float)
+        assert not isinstance(point["date"], bool)
+        assert isinstance(point["profit_abs"], float)
+    # The curve is the running sum of closed profit, closed out by the projected
+    # floating profit - so it ends exactly on the headline total.
+    assert history[-1]["profit_abs"] == pytest.approx(payload["profit_total_abs"])
+
+
+def test_public_overview_profit_history_matches_dashboard_series(
+    showcase_client, mocker, ticker, fee, markets
+):
+    """The public curve must be the same series the dashboard chart draws."""
+    ftbot, client, _ = showcase_client
+    _patch_exchange(mocker, ticker, fee, markets)
+    _configure(ftbot, enabled=True, show_absolute=True)
+    create_mock_trades_usdt(fee, is_short=None)
+
+    payload = client.get(OVERVIEW_URI).json()
+    # Same source the dashboard reads: GET /profit_history (authenticated).
+    dashboard = client.get(DASHBOARD_HISTORY_URI, headers=_admin_headers()).json()
+
+    assert dashboard["data"], "the fixture must produce a closed-trade curve"
+    realized = payload["profit_history"][: len(dashboard["data"])]
+
+    # Point for point the same realized curve ...
+    assert [point["date"] for point in realized] == [point["date"] for point in dashboard["data"]]
+    assert [point["profit_abs"] for point in realized] == [
+        round(point["profit"], 8) for point in dashboard["data"]
+    ]
+    assert dashboard["closed_profit"] == pytest.approx(realized[-1]["profit_abs"])
+    # ... plus, while positions are open, the dashboard's open-profit projection
+    # onto the headline total.
+    if payload["profit_open_abs"]:
+        assert len(payload["profit_history"]) == len(dashboard["data"]) + 1
+        assert payload["profit_history"][-1]["date"] > realized[-1]["date"]
+    assert payload["profit_history"][-1]["profit_abs"] == pytest.approx(payload["profit_total_abs"])
+
+
+def test_public_overview_profit_history_uses_the_rpc_series(
+    showcase_client, mocker, ticker, fee, markets
+):
+    ftbot, client, _ = showcase_client
+    _patch_exchange(mocker, ticker, fee, markets)
+    _configure(ftbot, enabled=True, show_absolute=True)
+    create_mock_trades_usdt(fee, is_short=None)
+
+    original = RPC._rpc_profit_history
+    calls: list[dict] = []
+
+    def _spy(self):
+        result = original(self)
+        calls.append(result)
+        return result
+
+    mocker.patch("freqtrade.rpc.rpc.RPC._rpc_profit_history", _spy)
+
+    payload = client.get(OVERVIEW_URI).json()
+
+    # No daily-bucket curve and no per-trade replay: one call, one series.
+    assert len(calls) == 1
+    curve = calls[0]
+    assert payload["profit_history"][0]["date"] == curve["data"][0]["date"]
+    assert payload["profit_history"][0]["profit_abs"] == pytest.approx(curve["data"][0]["profit"])
 
 
 @pytest.mark.parametrize("unsafe_label", ["bot/name", "bot_1", "x" * 33, "   "])
@@ -386,7 +568,7 @@ def test_showcase_admin_post_persists_and_takes_effect(
     public = client.get(OVERVIEW_URI)
     assert public.status_code == 200
     assert public.json()["label"] == "Live Account"
-    assert isinstance(public.json()["profit_abs"], (int, float))
+    assert isinstance(public.json()["profit_total_abs"], (int, float))
 
 
 def test_showcase_admin_post_merges_partial_payload(showcase_client, mocker):
