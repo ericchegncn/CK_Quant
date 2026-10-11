@@ -869,7 +869,7 @@ CONF_SCHEMA = {
                             "default": "Bot",
                             "maxLength": 32,
                         },
-                        "show_absolute": {"type": "boolean", "default": False},
+                        "show_absolute": {"type": "boolean", "default": True},
                         "cache_ttl_secs": {
                             "type": "integer",
                             "default": 30,

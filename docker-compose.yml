@@ -17,10 +17,14 @@ services:
       # 交易所侧止损单状态查询分批：每 2 轮查一遍「已成功挂出」的持仓（缺单的仍每轮必查）。
       # 止损由交易所执行，分批只延后状态同步，不影响止损触发；实测该阶段 3.9s → ~2.0s。
       CKQ_STOPLOSS_CHECK_BATCH: "1"   # 2026-10-07: 2→1，每轮全量检查止损状态（上游行为，不引入额外延迟）
+    # 2026-10-11: 追加第二个 --config 打开对外展示页（api_server.public_showcase）。
+    # 该文件位于 user_data/ 内（已 gitignore），既不入库也不会被打进镜像；
+    # 去掉这一行即可对游客完全关闭展示页。
     command: >
       trade
       --userdir /CK_Quant/user_data
       --logfile /CK_Quant/user_data/logs/CK_Trend_15m.log
       --db-url sqlite:////CK_Quant/user_data/CK_Trend_15m.sqlite
       --config /CK_Quant/user_data/config_binance.json
+      --config /CK_Quant/user_data/config_public_showcase.json
       --strategy CK_Trend_15m

@@ -92,6 +92,8 @@ ABSOLUTE_FIELDS = (
     "balance_total",
     "max_drawdown_abs",
     "current_drawdown_abs",
+    "profit_total_fiat",
+    "profit_closed_fiat",
 )
 
 
@@ -144,6 +146,12 @@ class PublicOverview(BaseModel):
     max_drawdown_abs: float | None = None
     current_drawdown_ratio: float | None = None
     current_drawdown_abs: float | None = None
+    # --- trade dates (epoch ms; not money, so never gated by show_absolute) --
+    first_trade_timestamp: int | None = None
+    last_trade_timestamp: int | None = None
+    # --- fiat equivalents (dashboard parity) --------------------------------
+    profit_total_fiat: float | None = None
+    profit_closed_fiat: float | None = None
     # --- chart -------------------------------------------------------------
     open_profit_abs: float | None = None
     profit_history: list[PublicProfitPoint] = Field(default_factory=list)
@@ -457,6 +465,10 @@ def _build_public_overview(
     except (TypeError, ValueError):
         max_open_trades = 0
 
+    # 首笔/最近开仓时间戳：与仪表盘同一来源（trade_statistics，0 表示无交易）
+    first_trade_ts = _as_float(stats.get("first_trade_timestamp"))
+    last_trade_ts = _as_float(stats.get("latest_trade_timestamp"))
+
     payload: dict[str, Any] = {
         "bot_state": _BOT_STATE_MAP.get(str(rpc._freqtrade.state), "unknown"),
         "runmode": RunMode.DRY_RUN.value if config.get("dry_run") else RunMode.LIVE.value,
@@ -493,6 +505,10 @@ def _build_public_overview(
         "max_drawdown_abs": _as_float(stats.get("max_drawdown_abs")),
         "current_drawdown_ratio": _as_float(stats.get("current_drawdown")),
         "current_drawdown_abs": _as_float(stats.get("current_drawdown_abs")),
+        "first_trade_timestamp": int(first_trade_ts) if first_trade_ts else None,
+        "last_trade_timestamp": int(last_trade_ts) if last_trade_ts else None,
+        "profit_total_fiat": _as_float(stats.get("profit_all_fiat")),
+        "profit_closed_fiat": _as_float(stats.get("profit_closed_fiat")),
         # Same value as ``profit_open_abs``; an own key because the chart binds
         # its open-profit projection to it.
         "open_profit_abs": profit_open_abs,
