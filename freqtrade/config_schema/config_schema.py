@@ -851,6 +851,33 @@ CONF_SCHEMA = {
                     "type": "string",
                     "enum": ["error", "info"],
                 },
+                "public_showcase": {
+                    "description": (
+                        "Public, read-only and sanitized overview endpoint. "
+                        "Served without authentication and disabled by default."
+                    ),
+                    "type": "object",
+                    "default": {},
+                    "properties": {
+                        "enabled": {"type": "boolean", "default": False},
+                        "label": {
+                            "description": (
+                                "Neutral display label for the public page. "
+                                "Must not carry a strategy or host name."
+                            ),
+                            "type": "string",
+                            "default": "Bot",
+                            "maxLength": 32,
+                        },
+                        "show_absolute": {"type": "boolean", "default": False},
+                        "cache_ttl_secs": {
+                            "type": "integer",
+                            "default": 30,
+                            "minimum": 0,
+                        },
+                    },
+                    "additionalProperties": False,
+                },
             },
             "required": [
                 "enabled",

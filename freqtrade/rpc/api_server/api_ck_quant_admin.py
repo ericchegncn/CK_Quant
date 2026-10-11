@@ -21,6 +21,10 @@ from freqtrade.configuration.load_config import CONFIG_PARSE_MODE
 from freqtrade.constants import Config
 from freqtrade.exceptions import ConfigurationError
 from freqtrade.misc import deep_merge_dicts
+from freqtrade.rpc.api_server.api_public_showcase import (
+    label_problem,
+    showcase_settings,
+)
 from freqtrade.rpc.api_server.deps import get_config, get_exchange, get_rpc_optional
 from freqtrade.rpc.rpc import RPC
 
@@ -576,3 +580,123 @@ def restore_admin_backup(
         {"source_backup_id": payload.backup_id, "safety_backup_id": result.backup_id},
     )
     return result
+
+
+# --- Public showcase settings (authenticated toggle) --------------------------
+# Additive: lets an authenticated operator switch the public, read-only and
+# sanitized overview endpoint on/off and set its neutral display label.
+#
+# These routes are registered on the admin router, so they inherit its
+# authentication (HTTP basic / JWT - see `ApiServer.configure_app`), its
+# "hidden while disabled" behaviour (404 unless `ck_quant_admin.enabled`) and the
+# `config_edit` permission gate.  Persisting reuses the admin module's existing
+# machinery: validate -> backup -> atomic write -> audit -> optional reload.
+
+
+class PublicShowcaseSettings(BaseModel):
+    enabled: bool
+    label: str
+    show_absolute: bool
+    cache_ttl_secs: int
+    config_writable: bool = False
+
+
+class PublicShowcaseUpdate(BaseModel):
+    enabled: bool | None = None
+    label: str | None = None
+    show_absolute: bool | None = None
+
+
+def _config_writable(config: Config) -> bool:
+    """Whether the active configuration file may be rewritten by this process."""
+    try:
+        _config_path(config)
+    except HTTPException:
+        return False
+    return True
+
+
+def _public_showcase_state(config: Config) -> PublicShowcaseSettings:
+    return PublicShowcaseSettings(
+        **showcase_settings(config),
+        config_writable=_config_writable(config),
+    )
+
+
+def _set_nested(document: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
+    """Additive variant of `_set_path_value` that creates missing intermediate keys."""
+    current = document
+    for part in path[:-1]:
+        child = current.get(part)
+        if not isinstance(child, dict):
+            child = {}
+            current[part] = child
+        current = child
+    current[path[-1]] = value
+
+
+@router.get(
+    "/ck_quant/public_showcase",
+    response_model=PublicShowcaseSettings,
+    tags=["CK Quant Admin"],
+)
+def get_public_showcase(config: Config = Depends(_require_enabled)):
+    """Read this bot's `api_server.public_showcase` settings."""
+    _require_permission(config, "config_edit")
+    return _public_showcase_state(config)
+
+
+@router.post(
+    "/ck_quant/public_showcase",
+    response_model=PublicShowcaseSettings,
+    tags=["CK Quant Admin"],
+)
+def update_public_showcase(
+    payload: PublicShowcaseUpdate,
+    config: Config = Depends(_require_enabled),
+    rpc: RPC | None = Depends(get_rpc_optional),
+):
+    """Update this bot's `api_server.public_showcase` block and persist it."""
+    _require_permission(config, "config_edit")
+
+    if payload.label is not None:
+        problem = label_problem(payload.label)
+        if problem:
+            raise HTTPException(status_code=422, detail=problem)
+
+    path = _config_path(config)
+    source = _read(path)
+    document = _parse_config(source)
+
+    current = showcase_settings(config)
+    updated = {
+        "enabled": current["enabled"] if payload.enabled is None else bool(payload.enabled),
+        "label": current["label"] if payload.label is None else str(payload.label).strip(),
+        "show_absolute": (
+            current["show_absolute"]
+            if payload.show_absolute is None
+            else bool(payload.show_absolute)
+        ),
+        "cache_ttl_secs": current["cache_ttl_secs"],
+    }
+    _set_nested(document, ("api_server", "public_showcase"), updated)
+
+    _save(
+        kind="config",
+        path=path,
+        source=_serialize_config(document),
+        expected_revision=_revision(source),
+        # Reloading needs a live bot; in webserver mode we still persist the file.
+        apply=rpc is not None,
+        config=config,
+        rpc=rpc,
+    )
+
+    # Make the switch effective immediately instead of waiting for a restart.
+    api_server = config.get("api_server")
+    if not isinstance(api_server, dict):
+        api_server = {}
+        config["api_server"] = api_server
+    api_server["public_showcase"] = updated
+
+    return _public_showcase_state(config)

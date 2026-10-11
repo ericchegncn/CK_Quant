@@ -208,6 +208,7 @@ class ApiServer(RPCHandler):
         from freqtrade.rpc.api_server.api_download_data import router as api_download_data
         from freqtrade.rpc.api_server.api_pair_history import router as api_pair_history
         from freqtrade.rpc.api_server.api_pairlists import router as api_pairlists
+        from freqtrade.rpc.api_server.api_public_showcase import router as api_public_showcase
         from freqtrade.rpc.api_server.api_trading import router as api_trading
         from freqtrade.rpc.api_server.api_v1 import router as api_v1
         from freqtrade.rpc.api_server.api_v1 import router_public as api_v1_public
@@ -217,6 +218,9 @@ class ApiServer(RPCHandler):
         from freqtrade.rpc.api_server.web_ui import router_ui
 
         app.include_router(api_v1_public, prefix="/api/v1")
+        # Public, read-only, sanitized showcase endpoint.  Deliberately mounted
+        # without authentication - it is opt-in and answers 404 while disabled.
+        app.include_router(api_public_showcase, prefix="/api/v1")
 
         app.include_router(router_login, prefix="/api/v1", tags=["Auth"])
         app.include_router(
