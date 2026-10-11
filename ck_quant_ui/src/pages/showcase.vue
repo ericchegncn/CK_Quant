@@ -602,134 +602,137 @@ const overviewColumns = computed<TableColumn<OverviewRow>[]>(() => [
       </article>
 
       <!-- The dashboard's first screen, minus everything that would leak: no
-           pair column and no open-trade detail table. -->
-      <div
-        v-else
-        class="showcase-overview grid min-h-full grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.04fr)_minmax(420px,0.96fr)] lg:items-start"
-      >
-        <div class="flex min-w-0 flex-col gap-4">
-          <section class="ckq-glass-card overflow-hidden px-3 py-3">
-            <h3 class="mb-2 text-left text-sm font-semibold">{{ t('showcase.overview') }}</h3>
-            <div class="overflow-x-auto">
-              <UTable
-                :data="[view.row]"
-                :columns="overviewColumns"
-                :ui="{ td: 'px-2 py-2 text-default text-sm text-left whitespace-nowrap' }"
-              >
-                <template #label-cell="{ row }">
-                  <div class="flex flex-row items-center gap-2">
-                    <span class="font-medium">{{ row.original.label }}</span>
-                    <UBadge v-if="row.original.runmode" color="neutral" variant="subtle">
-                      {{ row.original.runmode }}
-                    </UBadge>
-                  </div>
-                </template>
-                <template #status-cell="{ row }">
-                  <span class="showcase-status-pill" :class="row.original.statusClass">
-                    {{ row.original.status }}
-                  </span>
-                </template>
-                <template #profitOpen-cell="{ row }">
-                  <ProfitPill
-                    v-if="row.original.profitOpen !== undefined"
-                    :profit-ratio="row.original.profitOpenRatio"
-                    :profit-abs="row.original.profitOpen"
-                    :stake-currency="row.original.balanceCurrency"
-                  />
-                  <span v-else>{{ MISSING }}</span>
-                </template>
-                <template #profitClosed-cell="{ row }">
-                  <ProfitPill
-                    v-if="row.original.profitClosed !== undefined"
-                    :profit-ratio="row.original.profitClosedRatio"
-                    :profit-abs="row.original.profitClosed"
-                    :stake-currency="row.original.balanceCurrency"
-                  />
-                  <span v-else>{{ MISSING }}</span>
-                </template>
-                <template #balance-cell="{ row }">
-                  <div v-if="row.original.balance !== undefined" class="tabular-nums">
-                    <span>{{ formatPrice(row.original.balance, 3) }}</span>
-                    <span class="ms-1 text-sm">{{ row.original.balanceCurrency }}</span>
-                  </div>
-                  <span v-else>{{ MISSING }}</span>
-                </template>
-                <template #winVsLoss-cell="{ row }">
-                  <div class="tabular-nums">
-                    <span class="text-profit">{{ countText(row.original.winCount) }}</span>
-                    /
-                    <span class="text-loss">{{ countText(row.original.lossCount) }}</span>
-                  </div>
-                </template>
-              </UTable>
-            </div>
-          </section>
+           pair column and no open-trade detail table. One single card holds
+           both columns - bot overview, ROI and indicators on the left, the
+           profit curve on the right - exactly like the dashboard overview. -->
+      <div v-else class="ckq-glass-card">
+        <div
+          class="showcase-overview grid min-h-full grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(0,1.04fr)_minmax(420px,0.96fr)] lg:items-start"
+        >
+          <div class="flex min-w-0 flex-col gap-4">
+            <section class="min-w-0">
+              <h3 class="mb-2 text-left text-sm font-semibold">{{ t('showcase.overview') }}</h3>
+              <div class="overflow-x-auto">
+                <UTable
+                  :data="[view.row]"
+                  :columns="overviewColumns"
+                  :ui="{ td: 'px-2 py-2 text-default text-sm text-left whitespace-nowrap' }"
+                >
+                  <template #label-cell="{ row }">
+                    <div class="flex flex-row items-center gap-2">
+                      <span class="font-medium">{{ row.original.label }}</span>
+                      <UBadge v-if="row.original.runmode" color="neutral" variant="subtle">
+                        {{ row.original.runmode }}
+                      </UBadge>
+                    </div>
+                  </template>
+                  <template #status-cell="{ row }">
+                    <span class="showcase-status-pill" :class="row.original.statusClass">
+                      {{ row.original.status }}
+                    </span>
+                  </template>
+                  <template #profitOpen-cell="{ row }">
+                    <ProfitPill
+                      v-if="row.original.profitOpen !== undefined"
+                      :profit-ratio="row.original.profitOpenRatio"
+                      :profit-abs="row.original.profitOpen"
+                      :stake-currency="row.original.balanceCurrency"
+                    />
+                    <span v-else>{{ MISSING }}</span>
+                  </template>
+                  <template #profitClosed-cell="{ row }">
+                    <ProfitPill
+                      v-if="row.original.profitClosed !== undefined"
+                      :profit-ratio="row.original.profitClosedRatio"
+                      :profit-abs="row.original.profitClosed"
+                      :stake-currency="row.original.balanceCurrency"
+                    />
+                    <span v-else>{{ MISSING }}</span>
+                  </template>
+                  <template #balance-cell="{ row }">
+                    <div v-if="row.original.balance !== undefined" class="tabular-nums">
+                      <span>{{ formatPrice(row.original.balance, 3) }}</span>
+                      <span class="ms-1 text-sm">{{ row.original.balanceCurrency }}</span>
+                    </div>
+                    <span v-else>{{ MISSING }}</span>
+                  </template>
+                  <template #winVsLoss-cell="{ row }">
+                    <div class="tabular-nums">
+                      <span class="text-profit">{{ countText(row.original.winCount) }}</span>
+                      /
+                      <span class="text-loss">{{ countText(row.original.lossCount) }}</span>
+                    </div>
+                  </template>
+                </UTable>
+              </div>
+            </section>
 
-          <section class="space-y-3">
-            <div class="grid gap-3 md:grid-cols-2">
-              <article
-                v-for="item in view.roi"
-                :key="item.label"
-                class="overview-stat-card relative overflow-hidden rounded-xl border border-default/60 bg-elevated/55 p-4"
-              >
-                <div
-                  class="absolute inset-y-0 left-0 w-1"
-                  :class="item.positive ? 'bg-emerald-500' : 'bg-rose-500'"
-                />
-                <p class="text-center text-sm font-semibold uppercase tracking-wide">
-                  {{ item.label }}
-                </p>
-                <div class="mt-2 flex flex-col items-center gap-1">
-                  <strong
-                    class="text-2xl tabular-nums"
-                    :class="item.positive ? 'text-emerald-400' : 'text-rose-400'"
+            <section class="space-y-3">
+              <div class="grid gap-3 md:grid-cols-2">
+                <article
+                  v-for="item in view.roi"
+                  :key="item.label"
+                  class="overview-stat-card relative overflow-hidden rounded-xl border border-default/60 bg-elevated/55 p-4"
+                >
+                  <div
+                    class="absolute inset-y-0 left-0 w-1"
+                    :class="item.positive ? 'bg-emerald-500' : 'bg-rose-500'"
+                  />
+                  <p class="text-center text-sm font-semibold uppercase tracking-wide">
+                    {{ item.label }}
+                  </p>
+                  <div class="mt-2 flex flex-col items-center gap-1">
+                    <strong
+                      class="text-2xl tabular-nums"
+                      :class="item.positive ? 'text-emerald-400' : 'text-rose-400'"
+                    >
+                      {{ item.value }}
+                    </strong>
+                    <span class="text-sm tabular-nums text-muted">{{ item.sum }}</span>
+                  </div>
+                  <p class="mt-1 text-center text-sm tabular-nums text-muted">{{ item.fiat }}</p>
+                </article>
+              </div>
+
+              <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                <article
+                  v-for="item in view.metrics"
+                  :key="item.label"
+                  class="overview-stat-card min-w-0 rounded-lg border border-default/50 bg-default/25 px-3.5 py-3"
+                >
+                  <p class="text-left text-sm font-medium text-muted">{{ item.label }}</p>
+                  <p
+                    class="mt-1.5 break-words text-left text-base font-semibold leading-snug tabular-nums"
+                    :class="{
+                      'text-profit': item.accent === 'profit',
+                      'text-loss': item.accent === 'loss',
+                    }"
                   >
                     {{ item.value }}
-                  </strong>
-                  <span class="text-sm tabular-nums text-muted">{{ item.sum }}</span>
-                </div>
-                <p class="mt-1 text-center text-sm tabular-nums text-muted">{{ item.fiat }}</p>
-              </article>
-            </div>
+                  </p>
+                </article>
+              </div>
+            </section>
+          </div>
 
-            <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              <article
-                v-for="item in view.metrics"
-                :key="item.label"
-                class="overview-stat-card min-w-0 rounded-lg border border-default/50 bg-default/25 px-3.5 py-3"
-              >
-                <p class="text-left text-sm font-medium text-muted">{{ item.label }}</p>
-                <p
-                  class="mt-1.5 break-words text-left text-base font-semibold leading-snug tabular-nums"
-                  :class="{
-                    'text-profit': item.accent === 'profit',
-                    'text-loss': item.accent === 'loss',
-                  }"
-                >
-                  {{ item.value }}
-                </p>
-              </article>
+          <section
+            class="profit-curve h-[360px] min-h-[360px] rounded-xl border border-default/60 bg-default/20 p-2 lg:sticky lg:top-4 lg:h-[620px] lg:min-h-[620px]"
+          >
+            <div class="flex items-center justify-between px-2 pt-1">
+              <h3 class="text-sm font-semibold">{{ t('showcase.profitCurve') }}</h3>
+              <span class="text-xs text-muted">{{ view.title }}</span>
+            </div>
+            <div class="h-[320px] min-h-[320px] lg:h-[580px] lg:min-h-[580px]">
+              <CumProfitChart
+                :trades="NO_TRADES"
+                :open-trades="view.chartOpenTrades"
+                :profit-history="view.history"
+                profit-column="profit_abs"
+                :show-title="false"
+              />
             </div>
           </section>
         </div>
-
-        <section
-          class="profit-curve h-[360px] min-h-[360px] rounded-xl border border-default/60 bg-default/20 p-2 lg:h-[620px] lg:min-h-[620px]"
-        >
-          <div class="flex items-center justify-between px-2 pt-1">
-            <h3 class="text-sm font-semibold">{{ t('showcase.profitCurve') }}</h3>
-            <span class="text-xs text-muted">{{ view.title }}</span>
-          </div>
-          <div class="h-[320px] min-h-[320px] lg:h-[580px] lg:min-h-[580px]">
-            <CumProfitChart
-              :trades="NO_TRADES"
-              :open-trades="view.chartOpenTrades"
-              :profit-history="view.history"
-              profit-column="profit_abs"
-              :show-title="false"
-            />
-          </div>
-        </section>
       </div>
 
       <p
