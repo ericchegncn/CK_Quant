@@ -635,6 +635,15 @@ CONF_SCHEMA = {
                     ),
                     "type": "string",
                 },
+                "language": {
+                    "description": (
+                        "Language of the Telegram messages. Same locales as the WebUI. "
+                        "Can be changed per chat at runtime with /language."
+                    ),
+                    "type": "string",
+                    "enum": ["en", "zh-CN", "zh-TW", "de", "ja", "fr", "ko"],
+                    "default": "en",
+                },
                 "topic_id": {
                     "description": (
                         "Telegram topic ID - only applicable for group chats. "

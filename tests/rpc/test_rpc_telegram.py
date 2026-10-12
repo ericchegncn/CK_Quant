@@ -173,7 +173,7 @@ def test_telegram_init(default_conf, mocker, caplog) -> None:
         "['reload_conf', 'reload_config'], ['show_conf', 'show_config'], "
         "['pause', 'stopbuy', 'stopentry'], ['whitelist'], ['blacklist'], "
         "['bl_delete', 'blacklist_delete'], "
-        "['logs'], ['health'], ['help'], ['version'], ['marketdir'], "
+        "['logs'], ['health'], ['help'], ['version'], ['lang', 'language'], ['marketdir'], "
         "['order'], ['list_custom_data'], ['tg_info'], ['profit_long'], ['profit_short']]"
     )
 

@@ -94,6 +94,34 @@ In the below example, only the user with the id "1234567" is allowed to control 
    "authorized_users": ["1234567"]
 ```
 
+## Message language / 多语言
+
+The bot speaks the same 7 locales as the WebUI (`zh-CN`, `zh-TW`, `en`, `de`, `ja`, `fr`, `ko`).
+Everything the bot sends is localized: entry/exit notifications, the command
+outputs (`/status`, `/profit`, `/balance`, `/daily`, `/weekly`, `/monthly`,
+`/performance`, `/whitelist`, `/help`, ...) and the errors reported by the RPC
+layer. The default locale is `en`.
+
+```json
+"telegram": {
+  "token": "your-token",
+  "chat_id": "your-chat-id",
+  "language": "zh-CN"
+}
+```
+
+The language can also be changed for a single chat at runtime:
+
+```
+/language          # show the current language and the available ones
+/language zh-CN    # switch this chat to Simplified Chinese (alias: /lang)
+```
+
+The choice is stored in `user_data/bot_languages.json` and survives restarts.
+Messages that carry data (pair names, entry tags, exit reasons, exchange status
+strings) and messages produced by your own strategy (`custom_exit` reasons,
+custom Telegram messages) are sent through as-is.
+
 ## Control telegram noise
 
 Freqtrade provides means to control the verbosity of your telegram bot.
@@ -207,8 +235,9 @@ official commands. You can ask at any moment for help with `/help`.
 | `/reload_config` | Reloads the configuration file
 | `/show_config` | Shows part of the current configuration with relevant settings to operation
 | `/logs [limit]` | Show last log messages.
-| `/help` | Show help message
-| `/version` | Show version
+| `/help` | Show help message |
+| `/language [locale]` | (CK Quant) Show or change the language of this chat - see [Message language](#message-language--多语言) |
+| `/version` | Show version |
 | **Status** |
 | `/status` | Lists all open trades
 | `/status <trade_id>` | Lists one or more specific trade. Separate multiple <trade_id> with a blank space.

@@ -17,6 +17,7 @@
 | **崩溃安全订单恢复** | 应对快速反手交易时的交易所订单恢复，防止无限重启循环 |
 | **合成冰山单** | 可选：把大订单拆成多个隐藏小子单（入场/出场） |
 | **卡片式响应式 UI** | 半透明、移动端友好的 WebUI，支持 7 种语言（简中/繁中/英/德/日/法/韩） |
+| **多语言机器人** | Telegram 通知、命令与报错同样支持 7 种语言，可用 `/language` 按会话切换 |
 | **经鉴权的管理后台** | 在线编辑/校验配置与策略、自动备份、安全重载/重启 |
 | **Android App** | 手机连接量化服务器、管理机器人、操作订单 |
 | **CK Quant 桌面版** | 面向小白用户的 Windows 工作台：终身机器码授权、凭据加密、AI 助手、串行回测、G1-G10 确定性门禁、巡检和经确认的模拟盘部署 |
@@ -144,6 +145,20 @@ WebUI 提供 7 种语言和经鉴权的管理后台：
 下载。安装后输入服务器地址以及 `api_server` 用户名和密码即可连接。
 完整配置、反向代理和安全说明见
 [docs/ck_quant_mobile_admin.md](docs/ck_quant_mobile_admin.md)。
+
+**Telegram 机器人**：同样支持这 7 种语言 —— 开平仓通知、`/status`、`/profit`、
+`/balance`、日/周/月报表，以及 RPC 层在聊天里回报的错误信息全部本地化。
+默认语言在 `config.json` 里设置：
+
+```json
+"telegram": {
+  "language": "zh-CN"
+}
+```
+
+`/language`（别名 `/lang`）可在运行中切换单个会话的语言，选择会持久化保存
+（`user_data/bot_languages.json`），重启后依然生效。命令与说明见
+[docs/telegram-usage.md](docs/telegram-usage.md)。
 
 ### 2. 涨跌幅排名交易对（GainersLosersPairList）
 

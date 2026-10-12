@@ -17,6 +17,7 @@
 | **Crash-safe order recovery** | Restores exchange orders after rapid stop-and-reverse trading, preventing infinite restart loops |
 | **Synthetic iceberg orders** | Optional split of large orders into hidden slices for entries and exits |
 | **Card-based responsive UI** | Translucent, mobile-friendly WebUI with 7 locales (zh-CN, zh-TW, en, de, ja, fr, ko) |
+| **Multilingual bot** | Telegram notifications, commands and chat errors use the same 7 locales; switch a chat with `/language` |
 | **Authenticated admin workspace** | Edit/validate config & strategy online, auto-backup, safe reload/restart |
 | **Android app** | Connect to your server, manage bots, operate trades from your phone |
 | **CK Quant Desktop** | Beginner-oriented Windows workspace with offline lifetime machine licensing, encrypted credentials, AI chat, serial backtests, deterministic G1-G10 gates, monitoring and confirmed paper deployment |
@@ -148,6 +149,21 @@ Admin is **disabled by default**; enable it explicitly in `config.json`:
 After install, enter your server address plus the `api_server` username/password.
 Full setup, reverse-proxy and security notes:
 [docs/ck_quant_mobile_admin.md](docs/ck_quant_mobile_admin.md).
+
+**Telegram bot**: the same 7 locales cover every message the bot sends — order
+notifications, `/status`, `/profit`, `/balance`, the daily/weekly/monthly
+reports and the errors the RPC layer reports in the chat. Pick the default
+language in `config.json`:
+
+```json
+"telegram": {
+  "language": "zh-CN"
+}
+```
+
+`/language` (alias `/lang`) switches the language of a single chat at runtime
+and the choice survives restarts (`user_data/bot_languages.json`). Reference and
+the full list of commands: [docs/telegram-usage.md](docs/telegram-usage.md).
 
 ### 2. Gainers/Losers pairlist (rank by percent change)
 

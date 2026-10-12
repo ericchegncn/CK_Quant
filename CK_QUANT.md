@@ -20,6 +20,9 @@ operational safety, large-order execution, and a card-oriented web interface.
 2. Synthetic iceberg execution for entries and exits, disabled by default.
 3. CK Quant UI with an iOS-inspired translucent card system.
 4. Reproducible CPU and FreqAI Docker images.
+5. Localized bot messages - Telegram follows the same 7 locales as the WebUI
+   (`telegram.language` in the config, `/language` per chat at runtime).
+   Catalogues live in `freqtrade/rpc/locales/`.
 
 Never commit a real `config*.json` or any file from a live `user_data` folder.
 

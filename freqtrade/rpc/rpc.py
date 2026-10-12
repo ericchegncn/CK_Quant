@@ -52,6 +52,7 @@ from freqtrade.persistence import CustomDataWrapper, KeyValueStore, Order, PairL
 from freqtrade.persistence.models import PairLock, custom_data_rpc_wrapper
 from freqtrade.plugins.pairlist.pairlist_helpers import expand_pairlist
 from freqtrade.rpc.fiat_convert import CryptoToFiatConverter
+from freqtrade.rpc.i18n import I18n
 from freqtrade.rpc.rpc_types import RPCSendMsg
 from freqtrade.util import (
     decimals_per_coin,
@@ -159,6 +160,22 @@ class RPC:
         self._profit_all_cache_lock = threading.RLock()
         if self._config.get("fiat_display_currency"):
             self._fiat_converter = CryptoToFiatConverter(self._config)
+
+    @property
+    def _i18n(self) -> I18n:
+        """
+        Localization catalogue for user facing messages.
+        Built on first access, so RPC construction stays cheap.
+        """
+        i18n = self.__dict__.get("_i18n_instance")
+        if i18n is None:
+            i18n = I18n(self._config)
+            self.__dict__["_i18n_instance"] = i18n
+        return i18n
+
+    def _t(self, key: str, *, chat_id: int | str | None = None, **kwargs: Any) -> str:
+        """Translate a user facing message (see freqtrade/rpc/locales/rpc.en.json)."""
+        return self._i18n.t(key, chat_id=chat_id, **kwargs)
 
     def _rpc_profit_all_cached(self, config: Config) -> dict[str, Any]:
         """
@@ -272,7 +289,7 @@ class RPC:
             trades = Trade.get_open_trades()
 
         if not trades:
-            raise RPCException("no active trade")
+            raise RPCException(self._t("rpc.no_active_trade"))
         else:
             results = []
             for trade in trades:
@@ -374,7 +391,7 @@ class RPC:
         """
         nonspot = self._config.get("trading_mode", TradingMode.SPOT) != TradingMode.SPOT
         if not Trade.get_open_trades():
-            raise RPCException("no active trade")
+            raise RPCException(self._t("rpc.no_active_trade"))
 
         trades_list = []
         fiat_profit_sum = nan
@@ -468,7 +485,7 @@ class RPC:
             return timedelta(**{timeunit: step})
 
         if not (isinstance(timescale, int) and timescale > 0):
-            raise RPCException("timescale must be an integer greater than 0")
+            raise RPCException(self._t("rpc.timescale_invalid"))
 
         profit_units: dict[date, dict] = {}
         daily_stake = self._freqtrade.wallets.get_total_stake_amount()
@@ -1577,7 +1594,7 @@ class RPC:
         """
         trade = Trade.get_trades(trade_filter=[Trade.id == trade_id]).first()
         if not trade:
-            raise RPCException(f"Could not find trade with id {trade_id}.")
+            raise RPCException(self._t("rpc.trade_not_found", trade_id=trade_id))
 
         self._freqtrade.handle_onexchange_order(trade)
         return {"status": "Reloaded from orders from exchange"}
@@ -1631,7 +1648,9 @@ class RPC:
                 )
                 remaining = (trade.amount - amount) * current_rate
                 if min_exit_stake and remaining < min_exit_stake:
-                    raise RPCException(f"Remaining amount of {remaining} would be too small.")
+                    raise RPCException(
+                        self._t("rpc.remaining_amount_too_small", remaining=remaining)
+                    )
                 sub_amount = amount
 
             self._freqtrade.execute_trade_exit(
@@ -1660,7 +1679,7 @@ class RPC:
         """
 
         if self._freqtrade.state == State.STOPPED:
-            raise RPCException("trader is not running")
+            raise RPCException(self._t("rpc.trader_not_running"))
 
         with self._freqtrade._exit_lock:
             if trade_id == "all":
@@ -1684,32 +1703,32 @@ class RPC:
             )
             if not trade:
                 logger.warning("force_exit: Invalid argument received")
-                raise RPCException("invalid argument")
+                raise RPCException(self._t("rpc.invalid_argument"))
 
             result = self.__exec_force_exit(trade, ordertype, amount, price)
             Trade.commit()
             self._freqtrade.wallets.update()
             if not result:
-                raise RPCException("Failed to exit trade.")
+                raise RPCException(self._t("rpc.failed_to_exit_trade"))
             return {"result": f"Created exit order for trade {trade_id}."}
 
     def _force_entry_validations(self, pair: str, order_side: SignalDirection):
         if not self._freqtrade.config.get("force_entry_enable", False):
-            raise RPCException("Force_entry not enabled.")
+            raise RPCException(self._t("rpc.force_entry_not_enabled"))
 
         if self._freqtrade.state != State.RUNNING:
-            raise RPCException("trader is not running")
+            raise RPCException(self._t("rpc.trader_not_running"))
 
         if order_side == SignalDirection.SHORT and self._freqtrade.trading_mode == TradingMode.SPOT:
-            raise RPCException("Can't go short on Spot markets.")
+            raise RPCException(self._t("rpc.cant_go_short_on_spot"))
 
         if pair not in self._freqtrade.exchange.get_markets(tradable_only=True):
-            raise RPCException("Symbol does not exist or market is not active.")
+            raise RPCException(self._t("rpc.symbol_market_inactive"))
         # Check if pair quote currency equals to the stake currency.
         stake_currency = self._freqtrade.config.get("stake_currency")
         if not self._freqtrade.exchange.get_pair_quote_currency(pair) == stake_currency:
             raise RPCException(
-                f"Wrong pair selected. Only pairs with stake-currency {stake_currency} allowed."
+                self._t("rpc.wrong_pair_stake_currency", stake_currency=stake_currency)
             )
 
     def _rpc_force_entry(
@@ -1739,15 +1758,21 @@ class RPC:
         if trade:
             is_short = trade.is_short
             if not self._freqtrade.strategy.position_adjustment_enable:
-                raise RPCException(f"position for {pair} already open - id: {trade.id}")
+                raise RPCException(
+                    self._t("rpc.position_already_open", pair=pair, trade_id=trade.id)
+                )
             if trade.has_open_orders:
                 raise RPCException(
-                    f"position for {pair} already open - id: {trade.id} "
-                    f"and has open order {','.join(trade.open_orders_ids)}"
+                    self._t(
+                        "rpc.position_already_open_with_orders",
+                        pair=pair,
+                        trade_id=trade.id,
+                        order_ids=",".join(trade.open_orders_ids),
+                    )
                 )
         else:
             if Trade.get_open_trade_count() >= self._config["max_open_trades"]:
-                raise RPCException("Maximum number of trades is reached.")
+                raise RPCException(self._t("rpc.max_open_trades_reached"))
 
         if not stake_amount:
             # gen stake amount
@@ -1776,11 +1801,11 @@ class RPC:
                 trade = Trade.get_trades([Trade.is_open.is_(True), Trade.pair == pair]).first()
                 return trade
             else:
-                raise RPCException(f"Failed to enter position for {pair}.")
+                raise RPCException(self._t("rpc.failed_to_enter_position", pair=pair))
 
     def _rpc_cancel_open_order(self, trade_id: int):
         if self._freqtrade.state == State.STOPPED:
-            raise RPCException("trader is not running")
+            raise RPCException(self._t("rpc.trader_not_running"))
         with self._freqtrade._exit_lock:
             # Query for trade
             trade = Trade.get_trades(
@@ -1791,17 +1816,17 @@ class RPC:
             ).first()
             if not trade:
                 logger.warning("cancel_open_order: Invalid trade_id received.")
-                raise RPCException("Invalid trade_id.")
+                raise RPCException(self._t("rpc.invalid_trade_id"))
             if not trade.has_open_orders:
                 logger.warning("cancel_open_order: No open order for trade_id.")
-                raise RPCException("No open order for trade_id.")
+                raise RPCException(self._t("rpc.no_open_order_for_trade_id"))
 
             for open_order in trade.open_orders:
                 try:
                     order = self._freqtrade.exchange.fetch_order(open_order.order_id, trade.pair)
                 except ExchangeError as e:
                     logger.info(f"Cannot query order for {trade} due to {e}.", exc_info=True)
-                    raise RPCException("Order not found.")
+                    raise RPCException(self._t("rpc.order_not_found"))
                 self._freqtrade.handle_cancel_order(
                     order, open_order, trade, CANCEL_REASON["USER_CANCEL"]
                 )
@@ -1817,7 +1842,7 @@ class RPC:
             trade = Trade.get_trades(trade_filter=[Trade.id == trade_id]).first()
             if not trade:
                 logger.warning("delete trade: Invalid argument received")
-                raise RPCException(f"Trade with id '{trade_id}' not found.")
+                raise RPCException(self._t("rpc.trade_id_not_found", trade_id=trade_id))
 
             # Try cancelling regular order if that exists
             for open_order in trade.open_orders:
@@ -1880,7 +1905,9 @@ class RPC:
 
         if not trades:
             raise RPCException(
-                f"No trade found for trade_id: {trade_id}" if trade_id else "No open trades found."
+                self._t("rpc.no_trade_found_for_trade_id", trade_id=trade_id)
+                if trade_id
+                else self._t("rpc.no_open_trades_found")
             )
 
         results = []
@@ -1909,13 +1936,21 @@ class RPC:
 
             # Handle case when there is no custom data found across trades.
             if not results:
-                message_details = ""
                 if key:
-                    message_details += f"with key '{key}' "
-                message_details += (
-                    f"found for Trade ID: {trade_id}." if trade_id else "found for any open trades."
+                    raise RPCException(
+                        self._t(
+                            "rpc.no_custom_data_with_key_for_trade",
+                            custom_key=key,
+                            trade_id=trade_id,
+                        )
+                        if trade_id
+                        else self._t("rpc.no_custom_data_with_key_for_open_trades", custom_key=key)
+                    )
+                raise RPCException(
+                    self._t("rpc.no_custom_data_for_trade", trade_id=trade_id)
+                    if trade_id
+                    else self._t("rpc.no_custom_data_for_open_trades")
                 )
-                raise RPCException(f"No custom-data {message_details}")
 
         return results
 
@@ -1954,7 +1989,7 @@ class RPC:
     def _rpc_count(self) -> dict[str, float]:
         """Returns the number of trades running"""
         if self._freqtrade.state == State.STOPPED:
-            raise RPCException("trader is not running")
+            raise RPCException(self._t("rpc.trader_not_running"))
 
         trades = Trade.get_open_trades()
         return {
@@ -2278,7 +2313,12 @@ class RPC:
                 )
                 if pair not in _data:
                     raise RPCException(
-                        f"No data for {pair}, {timeframe} in {config.get('timerange')} found."
+                        I18n(config).t(
+                            "rpc.no_data_for_pair_timerange",
+                            pair=pair,
+                            timeframe=timeframe,
+                            timerange=config.get("timerange"),
+                        )
                     )
                 data = _data[pair]
 
@@ -2294,8 +2334,12 @@ class RPC:
                 )
                 if prev_len > 0 and len(df_analyzed) == 0:
                     raise RPCException(
-                        f"After trimming by startup_candle_count, no data for "
-                        f"{pair}, {timeframe} in {config.get('timerange')} left."
+                        I18n(config).t(
+                            "rpc.no_data_after_trimming",
+                            pair=pair,
+                            timeframe=timeframe,
+                            timerange=config.get("timerange"),
+                        )
                     )
                 annotations = strategy.ft_plot_annotations(pair=pair, dataframe=df_analyzed)
 
