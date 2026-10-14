@@ -1399,6 +1399,11 @@ class Exchange:
             # True unless checking a stoploss order
             return not is_stop
         if not orderbook:
+            # 2026-10-14：优先用本轮批量行情（_prefetch_exit_rates）缓存下来的买一/卖一
+            #    —— 与 depth=1 语义完全等价（下方只读 bids[0]/asks[0]），命中即 0 次请求。
+            #    未命中/过期返回 None，下一行按原逻辑发请求，绝不漏判。
+            orderbook = self.dry_top_of_book(pair)
+        if not orderbook:
             orderbook = self.fetch_l2_order_book(pair, 1)
         try:
             if (side == "buy" and not is_stop) or (side == "sell" and is_stop):

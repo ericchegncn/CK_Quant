@@ -1894,9 +1894,11 @@ class FreqtradeBot(LoggingMixin):
         批量请求失败时静默返回：get_rate(refresh=False) 缓存未命中会自动回退单笔请求，
         因此不会因为批量失败而错过退出。
         """
+        _sp0 = perf_counter()
         pairs = list(
             dict.fromkeys(t.pair for t in trades if t.is_open and t.has_open_position)
         )
+        _sp_pairs = perf_counter() - _sp0
         if not pairs:
             return
         # 2026-10-07 修复（原 BUG）：原先 use_order_book=True 时直接 return，导致本函数完全不生效
@@ -1907,6 +1909,7 @@ class FreqtradeBot(LoggingMixin):
         #   （批量 bookTicker = 最优买一/卖一，与 order_book_top=1 语义完全等价）。
         # 批量失败时下方 except 会静默返回，get_rate(refresh=False) 缓存未命中会自动回退单笔请求，
         # 因此不会因为批量失败而错过退出。
+        _sp1 = perf_counter()
         try:
             tickers = self.exchange.get_tickers(
                 pairs, market_type=getattr(self.exchange, "trading_mode", None)
@@ -1916,6 +1919,7 @@ class FreqtradeBot(LoggingMixin):
             return
         if not tickers:
             return
+        _sp_tick = perf_counter() - _sp1
         # 2026-10-14：把批量行情里的买一/卖一顺手交给 exchange —— dry-run 的止损穿越判定
         #   直接复用（0 额外请求）；拿不到就回退原有逐单 L2 请求，不会漏判。
         try:
@@ -1931,6 +1935,7 @@ class FreqtradeBot(LoggingMixin):
             self.config.get("entry_pricing", {}).get("use_order_book", False)
             or self.config.get("exit_pricing", {}).get("use_order_book", False)
         )
+        _sp2 = perf_counter()
         for trade in trades:
             if not trade.is_open or not trade.has_open_position:
                 continue
@@ -1958,6 +1963,20 @@ class FreqtradeBot(LoggingMixin):
             except Exception:
                 # 单笔失败不影响其他交易；缓存未命中时该笔会自行请求行情
                 continue
+        # 2026-10-14：细分计时（仅日志，零行为影响）。用于定位 prefetch 的真实耗时来源。
+        _sp_rates = perf_counter() - _sp2
+        _sp_total = _sp_pairs + _sp_tick + _sp_rates
+        if _sp_total > 0.5:
+            logger.warning(
+                "CK Quant performance: exit.prefetch 细分 pairs=%.3fs tickers=%.3fs "
+                "rates=%.3fs 合计=%.3fs (交易 %d / 对 %d)",
+                _sp_pairs,
+                _sp_tick,
+                _sp_rates,
+                _sp_total,
+                len(trades),
+                len(pairs),
+            )
 
     @staticmethod
     def _stoploss_check_batch() -> int:
