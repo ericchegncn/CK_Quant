@@ -2098,13 +2098,21 @@ class FreqtradeBot(LoggingMixin):
         # 低内存/CPU 加固：exit_positions 传入 refresh_rate=False 时使用本轮批量预取的
         # 缓存价（避免每笔各发一次行情请求）；其他调用路径保持原行为（实时取价）。
         # 缓存未命中时 get_rate 自动回退单笔实时请求，不会因预取失败而错过退出。
-        # 订单簿定价（use_order_book）必须实时盘口，始终刷新。
-        _use_order_book = self.config.get("exit_pricing", {}).get("use_order_book", False)
+        # 2026-10-14：原注释「订单簿定价（use_order_book）必须实时盘口，始终刷新」的前提
+        #   在本仓库不成立 —— 批量 bookTicker 的买一/卖一与 order_book_top=1 的盘口是同一份
+        #   数据，_prefetch_exit_rates 已按同一口径预热 exit/entry 两侧缓存。故不再用
+        #   use_order_book 强制实时刷新（原写法会让每笔每轮各发一次 L2 请求，33 笔 ≈3.2s）。
         exit_rate = self.exchange.get_rate(
             trade.pair,
             side="exit",
             is_short=trade.is_short,
-            refresh=(refresh_rate or _use_order_book),
+            # 2026-10-14：_prefetch_exit_rates 已用本轮批量买一/卖一（与 order_book_top=1 等价，
+            #   配置已确认 order_book_top=1）预热 exit/entry 两侧缓存。此处原先写作
+            #   refresh=(refresh_rate or _use_order_book)，而合约上 use_order_book 必须为 true，
+            #   于是恒为 refresh=True ⇒ 绕过缓存、每笔每轮各发一次 L2 请求（33 笔实测 3.24s/轮）。
+            #   改为按调用方要求：exit_positions 传 False 时读本轮缓存；其他调用方传 True 行为不变。
+            #   缓存未命中时 get_rate 仍回退单笔实时请求，不会使用过期或缺失的价格。
+            refresh=refresh_rate,
         )
         if self._check_and_execute_exit(trade, exit_rate, enter, exit_, exit_tag):
             return True
