@@ -25,6 +25,7 @@
 | **真实钱包回撤** | 权益回撤 = 已平仓收益 + 未平仓浮盈（市值计价） |
 | **涨跌幅排名交易对** | 按涨跌幅选涨幅榜 + 跌幅榜，可与成交额/静态列表混合 |
 | **实时盈利因子** | 计入未平仓浮盈 —— 机器人运行期间统计不滞后 |
+| **游客展示页** | 可选开启的只读公开概览（`/showcase`），未登录访客也能看业绩；只下发聚合数字，不含币对、策略名、逐笔与密钥 |
 
 ---
 
@@ -249,6 +250,33 @@ python -m freqtrade.ck_quant.tick_backtest \
 python scripts/release.py 2026.8          # 构建镜像 → 推送 Docker Hub → 打 tag → 创建 Release
 python scripts/release.py 2026.8 --dry-run  # 预览
 ```
+
+### 6. 游客展示页（对外分享）
+
+可选开启的**只读、只含聚合数字**的公开概览，让没有账号的访客也能看到机器人业绩。
+默认关闭（关闭时公开端点返回 `404`）：
+
+```json
+{
+    "api_server": {
+        "public_showcase": {
+            "enabled": true,
+            "label": "策略A",
+            "show_absolute": true,
+            "cache_ttl_secs": 30
+        }
+    }
+}
+```
+
+三种开启方式：写进主配置；另存一个 overlay 文件并用第二个 `--config` 追加；或登录后在
+WebUI「**设置 → 游客可见**」在线开关（同时生成 `/showcase?api=…&api=…` 分享链接，
+可一次展示多个机器人）。访客只能看到仪表盘首屏的聚合数字——**不含**币对、策略名、
+逐笔交易、配置与密钥——但该页**仍会公开你的业绩与余额**，请自行判断是否开启。
+
+完整说明见
+[CK_Quant部署与使用教程.md §9.1](CK_Quant部署与使用教程.md#91-游客展示页公开只读可对外分享)
+（英文版：[docs/ck-quant-public-showcase.md](docs/ck-quant-public-showcase.md)）。
 
 ---
 

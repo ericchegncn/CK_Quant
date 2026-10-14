@@ -25,6 +25,7 @@
 | **Mark-to-market drawdown** | Equity drawdown combining realized and unrealized P&L |
 | **Gainers/Losers pairlist** | Rank pairs by percent change (top gainers + top losers), mixable with volume/static lists |
 | **Real-time profit factor** | Includes unrealized P&L of open trades — statistics never lag while the bot runs |
+| **Public showcase page** | Opt-in, read-only public overview (`/showcase`) for visitors without an account — aggregate numbers only, no pairs, strategy names, trades or keys |
 | **One-command release** | Build → push Docker Hub → tag → GitHub Release in one command |
 
 
@@ -256,6 +257,32 @@ Details: [docs/advanced-iceberg.md](docs/advanced-iceberg.md).
 python scripts/release.py 2026.8          # build → push Docker Hub → tag → GitHub Release
 python scripts/release.py 2026.8 --dry-run  # preview
 ```
+
+### 6. Public showcase page (guest access)
+
+Optionally publish a read-only, aggregate-only overview so visitors without an account can see
+how a bot performs. It is off by default (the public endpoint answers `404` while disabled):
+
+```json
+{
+    "api_server": {
+        "public_showcase": {
+            "enabled": true,
+            "label": "Bot A",
+            "show_absolute": true,
+            "cache_ttl_secs": 30
+        }
+    }
+}
+```
+
+Enable it in the main config, as a separate overlay file added with a second `--config`, or from
+the WebUI (**Settings → Guest visibility**), which also generates a shareable
+`/showcase?api=…&api=…` link for several bots. Visitors only ever see the dashboard's aggregate
+first-screen numbers — never pair names, strategy names, trade rows, config or keys — but the page
+still publishes your performance and balance, so decide deliberately before sharing it.
+
+Details: [docs/ck-quant-public-showcase.md](docs/ck-quant-public-showcase.md).
 
 ---
 

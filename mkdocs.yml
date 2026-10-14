@@ -53,6 +53,8 @@ nav:
         - Tick-Level Backtest: advanced-tick-backtest.md
         - Producer/Consumer mode: producer-consumer.md
         - SQL Cheat-sheet: sql_cheatsheet.md
+    - CK Quant:
+        - Public showcase page (guest access): ck-quant-public-showcase.md
     - FAQ: faq.md
     - Strategy migration: strategy_migration.md
     - Updating Freqtrade: updating.md
