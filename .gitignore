@@ -177,3 +177,13 @@ artifacts/
 .hotfix-build-*/
 LOGO/
 CK_Quant_Rust/
+
+# 2026-10-14（同批，同类隐患）：下面这些仍是「未跟踪但未被忽略」，内容里带私有策略名/
+# 部署标记 —— 同样是一次 `git add -A` 就会推上公开仓库（实测：docker-compose*.bak_* 里
+# 就有本次刚删掉的那个私有策略名）。备份文件与私有开发文档本来也不该入库，
+# 与 .dockerignore 里的同名排除保持一致。
+*.bak_*
+**/*.bak_*
+docs/antimartingale-pyramid.md
+docs/strategy-dev-progress.md
+docs/webui-low-memory-remediation-plan.md
