@@ -258,6 +258,12 @@ class Exchange:
 
         # Holds all open sell orders for dry_run
         self._dry_run_open_orders: dict[str, Any] = {}
+        # 本轮 dry-run 顶档买一/卖一缓存（由主循环的批量行情预取 set_dry_top_of_book 写入）
+        # 背景：dry-run 止损穿越判定只需 bids[0]/asks[0]（见 _dry_is_price_crossed），
+        #   原先每个止损单、每轮都发一次 depth=20 的 L2 请求（33 持仓实测 ≈3.0s/轮）。
+        #   命中本缓存即 0 次请求；未命中/过期一律回退原逻辑，判定语义不变。
+        self._dry_top_of_book: dict[str, tuple[float, float]] = {}
+        self._dry_top_of_book_ts: float = 0.0
         self._is_demo_trading = exchange_conf.get("demo_trading", False)
         if self._config["dry_run"]:
             logger.info("Instance is running with dry_run enabled")
@@ -1348,6 +1354,38 @@ class Exchange:
 
         return rate
 
+    def set_dry_top_of_book(self, tickers: dict) -> None:
+        """
+        记录批量行情里的买一/卖一，供 dry-run 止损穿越判定复用（仅 dry_run 生效）。
+
+        由主循环的 _prefetch_exit_rates 调用：它本来就要为所有持仓对做一次批量 bookTicker，
+        把结果留在这里，dry-run 的止损穿越判定就不必再为每个止损单各发一次 L2 请求。
+        """
+        if not self._config.get("dry_run"):
+            return
+        book: dict[str, tuple[float, float]] = {}
+        for pair, ticker in (tickers or {}).items():
+            bid, ask = ticker.get("bid"), ticker.get("ask")
+            if bid and ask:
+                book[pair] = (float(bid), float(ask))
+        if book:
+            self._dry_top_of_book = book
+            self._dry_top_of_book_ts = dt_ts()          # 毫秒（与本文件其它计时一致）
+
+    def dry_top_of_book(self, pair: str, ttl: float = 2.0) -> dict | None:
+        """
+        取本轮缓存的顶档盘口；未命中/过期返回 None（调用方回退真实请求，绝不漏判）。
+        """
+        if not self._config.get("dry_run"):
+            return None
+        if not self._dry_top_of_book or (dt_ts() - self._dry_top_of_book_ts) > ttl * 1000:
+            return None
+        hit = self._dry_top_of_book.get(pair)
+        if not hit:
+            return None
+        bid, ask = hit
+        return {"bids": [[bid, 0.0]], "asks": [[ask, 0.0]]}
+
     def _dry_is_price_crossed(
         self,
         pair: str,
@@ -1385,6 +1423,14 @@ class Exchange:
         if order["status"] != "closed" and order.get("ft_order_type") == "stoploss":
             # Stoploss branch
             pair = order["symbol"]
+            _from_top_cache = False
+            if not orderbook:
+                # 2026-10-14：先用本轮批量行情缓存里的买一/卖一（0 次请求）。
+                #   穿越判定只读 bids[0]/asks[0]（见 _dry_is_price_crossed），与 depth=1 等价。
+                cached_book = self.dry_top_of_book(pair)
+                if cached_book:
+                    orderbook = cached_book
+                    _from_top_cache = True
             if not orderbook and self.exchange_has("fetchL2OrderBook"):
                 orderbook = self.fetch_l2_order_book(pair, 20)
             price = safe_value_fallback(order, self._ft_has["stop_price_prop"], "price")
@@ -1397,6 +1443,9 @@ class Exchange:
                 )
 
             if crossed:
+                if _from_top_cache and self.exchange_has("fetchL2OrderBook"):
+                    # 真被穿越（罕见）才补一次真实深度，成交价插值保真度不变
+                    orderbook = self.fetch_l2_order_book(pair, 20)
                 average = self.get_dry_market_fill_price(
                     pair,
                     order["side"],

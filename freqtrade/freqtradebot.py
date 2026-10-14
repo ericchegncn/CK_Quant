@@ -1916,6 +1916,12 @@ class FreqtradeBot(LoggingMixin):
             return
         if not tickers:
             return
+        # 2026-10-14：把批量行情里的买一/卖一顺手交给 exchange —— dry-run 的止损穿越判定
+        #   直接复用（0 额外请求）；拿不到就回退原有逐单 L2 请求，不会漏判。
+        try:
+            self.exchange.set_dry_top_of_book(tickers)
+        except Exception:
+            pass
         # 2026-10-07 修复②：use_order_book=true 时 get_rate 会忽略传入的 ticker，
         #   对每笔再发一次 fetch_l2_order_book ⇒ 32 持仓 × 2 侧 = 64 次串行往返 ≈ 8.6 秒/轮。
         #   批量 ticker 的 bid/ask 就是 1 档盘口，这里合成为 order_book 形状直接传入，
