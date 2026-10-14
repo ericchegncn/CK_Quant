@@ -1382,7 +1382,11 @@ class Exchange:
             return None
         hit = self._dry_top_of_book.get(pair)
         if not hit:
+            self._dtb_miss = getattr(self, "_dtb_miss", 0) + 1
+            if getattr(self, "_dtb_miss_sample", None) is None:
+                self._dtb_miss_sample = pair
             return None
+        self._dtb_hit = getattr(self, "_dtb_hit", 0) + 1
         bid, ask = hit
         return {"bids": [[bid, 0.0]], "asks": [[ask, 0.0]]}
 

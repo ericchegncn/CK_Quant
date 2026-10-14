@@ -1910,13 +1910,24 @@ class FreqtradeBot(LoggingMixin):
         # 批量失败时下方 except 会静默返回，get_rate(refresh=False) 缓存未命中会自动回退单笔请求，
         # 因此不会因为批量失败而错过退出。
         _sp1 = perf_counter()
+        # 2026-10-14：prefetch 只需要买一/卖一（下方合成为 order_book_top=1 的盘口），
+        #   一次 fetch_bids_asks 即可。原先的 get_tickers 在合约上要发两次请求
+        #   （fetch_tickers + fetch_bids_asks）并对全市场做 deep_merge —— 在 ccxt 速率
+        #   限制器配速下实测 ~1.4s/轮（同容器直测同两次调用 enableRateLimit=True 1367ms
+        #   vs False 259ms）。取不到时仍回退原 get_tickers 路径，行为不变。
+        tickers = {}
         try:
-            tickers = self.exchange.get_tickers(
-                pairs, market_type=getattr(self.exchange, "trading_mode", None)
-            )
+            tickers = self.exchange.fetch_bids_asks(pairs)
         except Exception as e:
-            logger.warning(f"批量行情刷新失败，回退到逐笔请求: {e}")
-            return
+            logger.warning(f"批量买一/卖一刷新失败，回退 get_tickers: {e}")
+        if not tickers:
+            try:
+                tickers = self.exchange.get_tickers(
+                    pairs, market_type=getattr(self.exchange, "trading_mode", None)
+                )
+            except Exception as e:
+                logger.warning(f"批量行情刷新失败，回退到逐笔请求: {e}")
+                return
         if not tickers:
             return
         _sp_tick = perf_counter() - _sp1
@@ -1976,6 +1987,19 @@ class FreqtradeBot(LoggingMixin):
                 _sp_total,
                 len(trades),
                 len(pairs),
+            )
+        # 2026-10-14 诊断：顶档缓存的命中/未命中（确认止损/限价判定是否真的复用了缓存）
+        _h = getattr(self.exchange, "_dtb_hit", 0)
+        _m = getattr(self.exchange, "_dtb_miss", 0)
+        if _h or _m:
+            _keys = getattr(self.exchange, "_dry_top_of_book", {}) or {}
+            logger.warning(
+                "CK Quant performance: 顶档缓存 命中=%d 未命中=%d 存量=%d 样例键=%s 未命中样例=%s",
+                _h,
+                _m,
+                len(_keys),
+                next(iter(_keys), None),
+                getattr(self.exchange, "_dtb_miss_sample", None),
             )
 
     @staticmethod
