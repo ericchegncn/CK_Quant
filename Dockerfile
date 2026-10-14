@@ -88,6 +88,28 @@ RUN if find /freqtrade -type f \( \
       echo 'Refusing to build: private deployment marker detected.' >&2; \
       exit 1; \
     fi \
+  # 第 4 条守卫（2026-10-14）：前三条只查策略「源码」与部署标记，于是
+  # 「策略名写在文本/文档文件里」这种回归能一路烤进公开镜像 —— 实测一份中文说明
+  # 文档里的 CK_* 策略名确实进了全部已发布镜像（本仓 docker-compose.yml 头部的
+  # 注释也曾把私有策略名带进公开仓库）。本守卫扫文件「内容」里的私有 CK_* 名字：
+  #   1) 文本类后缀（.md/.txt/.yml/.yaml/.json/...）；
+  #   2) 不限后缀的全量文本扫描，覆盖 .bak / 无后缀 / 其它扩展名。
+  # 白名单只保留产品名与公开的 CK_QUANT_* 环境变量契约，其余 CK_ 开头的大驼峰
+  # 名字（私有策略类名）一律拒绝构建。\b 保证 TICK_SIZE / CHECK_BATCH 这类
+  # 子串不会误报。
+  && if { \
+      grep -RhoIE '\bCK_[A-Z][A-Za-z0-9_]*' /freqtrade \
+        --include='*.md' --include='*.txt' --include='*.yml' --include='*.yaml' \
+        --include='*.json' --include='*.toml' --include='*.cfg' --include='*.ini' \
+        --include='*.rst' --include='*.html' --include='*.js' --include='*.ts' \
+        --include='*.vue' --include='*.css' --include='*.sh' ; \
+      grep -RhoIE '\bCK_[A-Z][A-Za-z0-9_]*' /freqtrade ; \
+    } | grep -vwE 'CK_Quant|CK_Quant_Rust|CK_Quant_Hedge|CK_QUANT(_[A-Z]+)*' \
+      | sort -u | tee /dev/stderr | grep -q .; then \
+      echo 'Refusing to build: private CK strategy name found in the Docker context (names listed above).' >&2; \
+      grep -RIlE '\bCK_[A-Z][A-Za-z0-9_]*' /freqtrade >&2; \
+      exit 1; \
+    fi \
   && pip install -e . --user --no-cache-dir \
   && mkdir -p /freqtrade/user_data/ /freqtrade/freqtrade/rpc/api_server/ui/installed/
 

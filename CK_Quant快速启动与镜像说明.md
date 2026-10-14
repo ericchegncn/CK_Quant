@@ -5,20 +5,32 @@ CK Quant。公开镜像和源代码地址如下：
 
 - GitHub：<https://github.com/ericchegncn/CK_Quant>
 - Docker 镜像：`ericchenghz/ck-quant:stable`
-- Docker Compose：<https://raw.githubusercontent.com/ericchegncn/CK_Quant/main/docker-compose.yml>
+- Docker Compose 模板：<https://raw.githubusercontent.com/ericchegncn/CK_Quant/main/docker-compose.ck-quant.example.yml>
 
 公开镜像只包含 CK Quant 程序和 WebUI，不包含个人配置、策略、交易所
 API Key、Telegram Token、数据库、日志或训练模型。所有私有数据都保存在
 部署机器的 `CK_Quant/user_data` 目录中。
 
-## 一、当前本机 CK_Trailing 模拟盘
+## 一、本机已有一个运行中的实例（维护者自用）
 
-- Docker 镜像：`ck-quant:local`
+仓库根目录的 `docker-compose.yml` 是维护者本机的运行文件（容器内用户目录
+`/CK_Quant/user_data`），它对外的部分只保留占位默认值；真正决定「跑哪个策略、
+写哪个数据库、日志叫什么」的三个值放在本目录的 `.env` 里：
+
+- `.env` 的 `CK_QUANT_STRATEGY`：策略类名（占位示例 `SampleStrategy`）
+- `.env` 的 `CK_QUANT_DATABASE`：数据库文件名（占位示例 `tradesv3.sqlite`）
+- `.env` 的 `CK_QUANT_LOGFILE`：日志文件名（占位示例 `freqtrade.log`）
+
+`.env` 已被 `.gitignore` 与 `.dockerignore` 同时排除：它只存在于本机，不会入库，
+也不会进入公开镜像。`.env` 里的值必须与 `user_data` 中真实存在的策略、数据库
+一致，否则容器会去载入不存在的策略 → 启动即退出 → 重启循环。改完 `.env` 后务必
+用 `docker compose -p ck_quant -f docker-compose.yml config` 复核渲染出的真实命令。
+
+本机这个实例的其他信息：
+
 - 容器：`CK_Quant`
-- 策略：`CK_Trailing`
-- 配置：`user_data/config_Trailing.json`
-- 日志：`user_data/logs/CK_Quant_Trailing_dryrun.log`
-- 数据库：`user_data/tradesv3_CK_Quant_Trailing_dryrun.sqlite`
+- 镜像：`ericchenghz/ck-quant:latest`
+- 配置：`user_data/config.json`（本机可传多个 `--config`，例如再追加一个展示页配置）
 - WebUI：<http://127.0.0.1:8080>
 
 本机这个已有实例使用 `/CK_Quant/user_data` 作为容器内用户目录，因此它的
@@ -28,8 +40,9 @@ API Key、Telegram Token、数据库、日志或训练模型。所有私有数�
 --userdir /CK_Quant/user_data
 ```
 
-新部署使用公开的标准 `docker-compose.yml`，容器内用户目录统一为
-`/freqtrade/user_data`，不要把两套路径混用。
+新部署请使用公开的变量版模板 `docker-compose.ck-quant.example.yml`（下载后另存为
+`docker-compose.yml`），容器内用户目录统一为 `/freqtrade/user_data`，不要把两套
+路径混用。
 
 ## 二、Linux 或云服务器首次部署
 
@@ -55,8 +68,9 @@ docker compose version
 mkdir -p CK_Quant
 cd CK_Quant
 
+# 下载变量版模板，另存为标准文件名；模板里的取值都可以用 .env 覆盖。
 curl -L \
-  https://raw.githubusercontent.com/ericchegncn/CK_Quant/main/docker-compose.yml \
+  https://raw.githubusercontent.com/ericchegncn/CK_Quant/main/docker-compose.ck-quant.example.yml \
   -o docker-compose.yml
 
 curl -L \
@@ -109,7 +123,7 @@ docker compose run --rm CK_Quant \
 已有配置时，把配置复制到 `user_data`，例如：
 
 ```text
-user_data/config_Trend.json
+user_data/config.json
 ```
 
 不要把真实 API Key、Secret 或 Telegram Token 写进 GitHub 仓库。
@@ -138,7 +152,7 @@ user_data/strategies/MyPrivateStrategy.py
 ```dotenv
 CK_QUANT_IMAGE=ericchenghz/ck-quant:stable
 CK_QUANT_CONTAINER_NAME=CK_Quant
-CK_QUANT_CONFIG=config_Trend.json
+CK_QUANT_CONFIG=config.json
 CK_QUANT_STRATEGY=MyPrivateStrategy
 CK_QUANT_DATABASE=tradesv3.sqlite
 CK_QUANT_LOGFILE=ck-quant.log
@@ -175,7 +189,7 @@ docker compose config
 docker compose run --rm CK_Quant \
   show-config \
   --userdir /freqtrade/user_data \
-  --config /freqtrade/user_data/config_Trend.json
+  --config /freqtrade/user_data/config.json
 ```
 
 检查策略是否能被找到：
@@ -184,7 +198,7 @@ docker compose run --rm CK_Quant \
 docker compose run --rm CK_Quant \
   list-strategies \
   --userdir /freqtrade/user_data \
-  --config /freqtrade/user_data/config_Trend.json
+  --config /freqtrade/user_data/config.json
 ```
 
 ### 9. 启动 CK Quant
@@ -220,7 +234,7 @@ New-Item -ItemType Directory -Path "$HOME\CK_Quant" -Force
 Set-Location "$HOME\CK_Quant"
 
 Invoke-WebRequest `
-  -Uri "https://raw.githubusercontent.com/ericchegncn/CK_Quant/main/docker-compose.yml" `
+  -Uri "https://raw.githubusercontent.com/ericchegncn/CK_Quant/main/docker-compose.ck-quant.example.yml" `
   -OutFile "docker-compose.yml"
 
 Invoke-WebRequest `
@@ -360,10 +374,10 @@ docker image ls ericchenghz/ck-quant
 `.tar` 仅包含镜像，不包含部署机器上的 `user_data`。配置、策略、数据库和模型
 必须单独备份和复制。
 
-本机之前导出的本地开发镜像位于：
+本机之前导出的本地开发镜像位于源码目录下的 `docker-images` 中：
 
 ```text
-D:\Eric Cheng\Documents\CK_Quant\docker-images\ck-quant-local-2026-07-31.tar
+<源码目录>\CK_Quant\docker-images\ck-quant-local-YYYY-MM-DD.tar
 ```
 
 ## 九、本地源码构建
@@ -371,7 +385,7 @@ D:\Eric Cheng\Documents\CK_Quant\docker-images\ck-quant-local-2026-07-31.tar
 只有开发 CK Quant 本身时才需要从源码构建：
 
 ```powershell
-Set-Location "D:\Eric Cheng\Documents\CK_Quant"
+Set-Location "<源码目录>\CK_Quant"
 docker build --tag ck-quant:local .
 docker image ls ck-quant
 ```

@@ -169,3 +169,11 @@ markets/*.spec
 
 desktop/pnpm-lock.yaml
 desktop/pnpm-workspace.yaml
+
+# 2026-10-14：以下 4 个路径此前「未跟踪但也没被忽略」——一次 `git add -A` 就会把它们
+# 推到公开仓库。artifacts/ 是本机 APK/发布导出物，.hotfix-build-*/ 里含私有名文档与
+# compose 快照，LOGO/ 与 CK_Quant_Rust/ 是本机开发资产，全部不入库。
+artifacts/
+.hotfix-build-*/
+LOGO/
+CK_Quant_Rust/

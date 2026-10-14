@@ -1,8 +1,18 @@
 ---
-# CK_Quant 本地 compose —— 所有值直接写死在这里，不使用 ${VAR} 变量替换。
-# 不要重新引入 .env: 2026-09-20 一个陈旧的 .env 曾静默覆盖 --strategy 与 --db-url,
-# 导致容器去载入已删除的 CK_Trend_HighLev_15m，并指向不存在的数据库 → 重启循环。
-# 公共模板见 docker-compose.ck-quant.example.yml（那个才是给新用户的变量版）。
+# CK_Quant 本机 compose 文件（同时充当公开仓库里的默认可下载模板）。
+#
+# ⚠️ 运行方式由本目录下的 .env 决定，而不是由本文件决定：
+#    .env 里的 CK_QUANT_STRATEGY / CK_QUANT_DATABASE / CK_QUANT_LOGFILE 就是本机实际
+#    使用的策略类名、数据库文件名和日志文件名。改 .env = 改运行方式：这三个值必须与
+#    本机 user_data 里真实存在的策略、数据库完全一致，否则容器会去载入不存在的策略
+#    或数据库 → 启动即退出 → 重启循环。
+#    事故教训（2026-09-20）：一个陈旧的 .env 曾静默覆盖 --strategy 与 --db-url，造成
+#    了上面这种重启循环。因此每改一次 .env，都要用
+#    `docker compose -p ck_quant -f docker-compose.yml config` 复核渲染出来的真实命令。
+#    .env 已被 .gitignore 与 .dockerignore 同时排除：只存在于本机，不入库、不进镜像。
+#    没有任何 .env 时，下面的默认值只是上游示例占位符（SampleStrategy / freqtrade.log /
+#    tradesv3.sqlite），不代表一份可用的本机配置。
+#    公共模板见 docker-compose.ck-quant.example.yml，变量清单见 .env.example。
 services:
   CK_Quant:
     image: ericchenghz/ck-quant:latest
@@ -23,8 +33,8 @@ services:
     command: >
       trade
       --userdir /CK_Quant/user_data
-      --logfile /CK_Quant/user_data/logs/CK_Trend_15m.log
-      --db-url sqlite:////CK_Quant/user_data/CK_Trend_15m.sqlite
+      --logfile /CK_Quant/user_data/logs/${CK_QUANT_LOGFILE:-freqtrade.log}
+      --db-url sqlite:////CK_Quant/user_data/${CK_QUANT_DATABASE:-tradesv3.sqlite}
       --config /CK_Quant/user_data/config_binance.json
       --config /CK_Quant/user_data/config_public_showcase.json
-      --strategy CK_Trend_15m
+      --strategy ${CK_QUANT_STRATEGY:-SampleStrategy}

@@ -108,3 +108,18 @@ desktop/docs/**
 scripts/**
 tests/**
 *.bak_*
+
+# 2026-10-14（第四批）：根目录的中文说明文档同样会进构建上下文 → 会被烤进公开镜像。
+# 它们只需要在 GitHub 上阅读，没有任何运行时用途；与上面的 docs/ 保持一致，一并排除。
+CK_QUANT.md
+CK_Quant*.md
+CK_Quant*.txt
+README.zh-CN.md
+
+# 2026-10-14（同批）：私有开发残留。Docker 的 `*` 不跨 `/`，上面那条 `*.bak_*`
+# 只挡住根目录，嵌套的 `freqtrade/freqtradebot.py.bak_2026xxxx` 这类核心文件备份
+# 一直在静默进镜像（含改动中的私有逻辑），必须用 `**/` 前缀排除。
+**/*.bak_*
+# 代码/发布工具在仓库根留下的索引快照与临时目录，含历史路径清单与机器用户名。
+.codex-release-index
+.gradle-tmp-apk/
