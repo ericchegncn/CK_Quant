@@ -219,6 +219,12 @@ const rowSelection = computed({
 
 <template>
   <div class="h-full overflow-auto w-full">
+    <div
+      v-if="props.activeTrades && props.trades.length > 0"
+      class="flex justify-end px-2 pt-2"
+    >
+      <CloseAllTradesButton :trades="props.trades" />
+    </div>
     <UTable
       ref="tradesTable"
       v-model:pagination="pagination"

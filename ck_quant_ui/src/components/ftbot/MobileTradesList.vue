@@ -17,6 +17,12 @@ const botStore = useBotStore();
       :active-trades="true"
       empty-text="Currently no open trades."
     /> -->
+    <div
+      v-if="!history && !botStore.activeBot.detailTradeId"
+      class="flex justify-end p-1"
+    >
+      <CloseAllTradesButton :trades="botStore.activeBot.openTrades" compact />
+    </div>
     <CustomTradeList
       v-if="!history && !botStore.activeBot.detailTradeId"
       :trades="botStore.activeBot.openTrades"

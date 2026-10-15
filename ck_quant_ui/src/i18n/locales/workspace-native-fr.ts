@@ -117,6 +117,11 @@ export const workspaceNativefr = {
   forceExitMarket: 'Forcer la sortie du marché',
   forceExitPartial: 'Sortie partielle de la position',
   cancelOpenOrders: 'Annuler les commandes ouvertes',
+  closeAllTrades: 'Clôturer toutes les positions',
+  closeAllTradesHint: 'Clôturer toutes les positions ouvertes des bots listés ici',
+  confirmCloseAllTrades: 'Clôturer les {n} positions ouvertes ? Action irréversible.',
+  confirmCloseAllTradesLive:
+    'Cela inclut des bots LIVE. Vraiment clôturer les {n} positions maintenant ?',
   increasePosition: 'Augmenter le poste',
   reload: 'Recharger',
   deleteTrade: "Supprimer l'échange",
