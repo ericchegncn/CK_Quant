@@ -2,7 +2,7 @@
 
 **隐私优先、支持网页与 Android 远程管理的 Freqtrade 二次发行版**
 
-**[English](README.md) | [中文](README.zh-CN.md)**
+**[English](README.md) | [中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [日本語](README.ja.md) | [한국어](README.ko.md)**
 
 [![GitHub Release](https://img.shields.io/github/v/release/ericchegncn/CK_Quant?display_name=tag)](https://github.com/ericchegncn/CK_Quant/releases/latest)
 [![Docker Hub](https://img.shields.io/docker/v/ericchenghz/ck-quant?label=Docker%20Hub&sort=semver)](https://hub.docker.com/r/ericchenghz/ck-quant/tags)
@@ -26,6 +26,7 @@
 | **涨跌幅排名交易对** | 按涨跌幅选涨幅榜 + 跌幅榜，可与成交额/静态列表混合 |
 | **实时盈利因子** | 计入未平仓浮盈 —— 机器人运行期间统计不滞后 |
 | **游客展示页** | 可选开启的只读公开概览（`/showcase`），未登录访客也能看业绩；只下发聚合数字，不含币对、策略名、逐笔与密钥 |
+| **一键全部平仓** | WebUI 按钮（桌面 + 手机）平掉列表中展示的那些 bot 的全部持仓；目标含实盘 bot 时追加第二次确认 |
 
 ---
 

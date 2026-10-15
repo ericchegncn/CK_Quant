@@ -2,7 +2,7 @@
 
 **A privacy-first Freqtrade distribution with Web & Android remote management**
 
-**[English](README.md) | [中文](README.zh-CN.md)**
+**[English](README.md) | [中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [日本語](README.ja.md) | [한국어](README.ko.md)**
 
 [![GitHub Release](https://img.shields.io/github/v/release/ericchegncn/CK_Quant?display_name=tag)](https://github.com/ericchegncn/CK_Quant/releases/latest)
 [![Docker Hub](https://img.shields.io/docker/v/ericchenghz/ck-quant?label=Docker%20Hub&sort=semver)](https://hub.docker.com/r/ericchenghz/ck-quant/tags)
@@ -27,6 +27,7 @@
 | **Real-time profit factor** | Includes unrealized P&L of open trades — statistics never lag while the bot runs |
 | **Public showcase page** | Opt-in, read-only public overview (`/showcase`) for visitors without an account — aggregate numbers only, no pairs, strategy names, trades or keys |
 | **One-command release** | Build → push Docker Hub → tag → GitHub Release in one command |
+| **One-click exit-all** | WebUI button (desktop + mobile) that closes every open position of the bots shown in the list, with a second confirmation when live bots are included |
 
 
 ---
